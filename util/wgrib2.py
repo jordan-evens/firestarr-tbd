@@ -134,7 +134,8 @@ def do_get(cmds, gfile, select):
     del my_wgrib2
     return data
 
-def get_all_members(cmds, mask, matches, m):
+def get_all_members(args):
+    cmds, mask, matches, m = args
     gfile = mask.format(m)
     if debug: logging.debug(gfile)
     results = []
@@ -167,8 +168,15 @@ def get_all_data(mask,
 
     if debug: logging.info(mask)
     results = {}
-    for m in indices:
-        results[m] = get_all_members(cmds, mask, matches, m)
+    n = len(indices)
+    # from multiprocessing import Pool
+    # pool = Pool(len(indices))
+    mapped = list(map(get_all_members, zip([cmds] * n, [mask] * n, [matches] * n, indices)))
+    for i in range(n):
+        m = indices[i]
+        results[m] = mapped[i]
+    # for m in indices:
+        # results[m] = get_all_members(cmds, mask, matches, m)
     # results = list(map(do_get, matches))
     return results
 
