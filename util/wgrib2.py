@@ -134,6 +134,14 @@ def do_get(cmds, gfile, select):
     del my_wgrib2
     return data
 
+def get_all_members(cmds, mask, matches, m):
+    gfile = mask.format(m)
+    if debug: logging.debug(gfile)
+    results = []
+    for select in matches:
+        results.append(do_get(cmds, gfile, select))
+    return results
+
 
 def get_all_data(mask,
                  indices,
@@ -159,13 +167,8 @@ def get_all_data(mask,
 
     if debug: logging.info(mask)
     results = {}
-    for i in range(len(indices)):
-        m = indices[i]
-        gfile = mask.format(m)
-        if debug: logging.debug(gfile)
-        results[m] = []
-        for select in matches:
-            results[m].append(do_get(cmds, gfile, select))
+    for m in indices:
+        results[m] = get_all_members(cmds, mask, matches, m)
     # results = list(map(do_get, matches))
     return results
 
