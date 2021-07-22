@@ -84,9 +84,58 @@ def wgrib2(my_wgrib2, arg):
     return err
 
 #####################################################################
+def do_get(cmds, gfile, select):
+    my_wgrib2 = open()
+    cmds[0] = gfile
+    # logging.debug(select)
+    cmds[2] = select
+    err = wgrib2(my_wgrib2, cmds)
 
-def get_all_data(my_wgrib2,
-                 mask,
+    if err > 0:
+        if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
+        nmatch = -1
+        return -1
+
+    if mem_size(my_wgrib2, 10) == 0:
+        if debug: logging.warning("no match")
+        nmatch = 0
+        return 0
+
+    string = get_str_mem(my_wgrib2, 10)
+    x = string.split()
+    nmatch = int(x[0])
+    ndata = int(x[1])
+    nx = int(x[2])
+    ny = int(x[3])
+    msgno = int(x[4])
+    submsgno = int(x[5])
+    if (nmatch == 0):
+        if debug: logging.warning("inq ",gfile," found no matches")
+        close(my_wgrib2)
+        del my_wgrib2
+        return None
+
+# for weird grids nx=-1/0 ny=-1/0
+    if (nx * ny != ndata):
+        nx = ndata
+        ny = 1
+    # logging.debug("Load")
+# get data, lat/lon
+    array_type = (ctypes.c_float * ndata)
+    array = array_type()
+
+    err = my_wgrib2.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
+    if (err == 0):
+        data = np.reshape(np.array(array), (nx, ny), order='F')
+        if use_np_nan:
+            data[np.logical_and((data > UNDEFINED_LOW), (data < UNDEFINED_HIGH))] = np.nan
+    # logging.debug("Done")
+    close(my_wgrib2)
+    del my_wgrib2
+    return data
+
+
+def get_all_data(mask,
                  indices,
                  matches,
                  Regex=False):
@@ -107,50 +156,7 @@ def get_all_data(my_wgrib2,
     cmds.append("-no_header")
     cmds.append("-rpn")
     cmds.append("sto_13")
-    def do_get(gfile, select):
-        cmds[0] = gfile
-        # logging.debug(select)
-        cmds[2] = select
-        err = wgrib2(my_wgrib2, cmds)
 
-        if err > 0:
-            if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
-            nmatch = -1
-            return -1
-
-        if mem_size(my_wgrib2, 10) == 0:
-            if debug: logging.warning("no match")
-            nmatch = 0
-            return 0
-
-        string = get_str_mem(my_wgrib2, 10)
-        x = string.split()
-        nmatch = int(x[0])
-        ndata = int(x[1])
-        nx = int(x[2])
-        ny = int(x[3])
-        msgno = int(x[4])
-        submsgno = int(x[5])
-        if (nmatch == 0):
-            if debug: logging.warning("inq ",gfile," found no matches")
-            return None
-
-    # for weird grids nx=-1/0 ny=-1/0
-        if (nx * ny != ndata):
-            nx = ndata
-            ny = 1
-        # logging.debug("Load")
-    # get data, lat/lon
-        array_type = (ctypes.c_float * ndata)
-        array = array_type()
-
-        err = my_wgrib2.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
-        if (err == 0):
-            data = np.reshape(np.array(array), (nx, ny), order='F')
-            if use_np_nan:
-                data[np.logical_and((data > UNDEFINED_LOW), (data < UNDEFINED_HIGH))] = np.nan
-        # logging.debug("Done")
-        return data
     if debug: logging.info(mask)
     results = {}
     for i in range(len(indices)):
@@ -159,16 +165,16 @@ def get_all_data(my_wgrib2,
         if debug: logging.debug(gfile)
         results[m] = []
         for select in matches:
-            results[m].append(do_get(gfile, select))
+            results[m].append(do_get(cmds, gfile, select))
     # results = list(map(do_get, matches))
     return results
 
 #####################################################################
 
-def match(my_wgrib2, gfile):
+def match(gfile):
     # logging.debug("Start")
     # based on grb2_inq() from ftn wgrib2api
-
+    my_wgrib2 = open()
     data = None
     lat = None
     lon = None
@@ -187,11 +193,15 @@ def match(my_wgrib2, gfile):
     if err > 0:
         if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
         nmatch = -1
+        close(my_wgrib2)
+        del my_wgrib2
         return -1
 
     if mem_size(my_wgrib2, 10) == 0:
         if debug: logging.warning("no match")
         nmatch = 0
+        close(my_wgrib2)
+        del my_wgrib2
         return 0
 
     string = get_str_mem(my_wgrib2, 10)
@@ -204,6 +214,8 @@ def match(my_wgrib2, gfile):
     submsgno = int(x[5])
     if (nmatch == 0):
         if debug: logging.warning("inq ",gfile," found no matches")
+        close(my_wgrib2)
+        del my_wgrib2
         return 0
 
 # for weird grids nx=-1/0 ny=-1/0
@@ -222,12 +234,15 @@ def match(my_wgrib2, gfile):
         logging.debug("ndata=", ndata, nx, ny)
         logging.debug("msg=", msgno, submsgno)
         logging.debug("has_data=", data is not None)
+    close(my_wgrib2)
+    del my_wgrib2
     return matched
 
 #####################################################################
 fix180 = np.vectorize(lambda x: x if x <= 180 else x - 360)
 
-def coords(my_wgrib2, gfile):
+def coords(gfile):
+    my_wgrib2 = open()
     # logging.debug("Start")
     # based on grb2_inq() from ftn wgrib2api
     data = None
@@ -248,11 +263,15 @@ def coords(my_wgrib2, gfile):
     if err > 0:
         if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
         nmatch = -1
+        close(my_wgrib2)
+        del my_wgrib2
         return -1
 
     if mem_size(my_wgrib2, 10) == 0:
         if debug: logging.warning("no match")
         nmatch = 0
+        close(my_wgrib2)
+        del my_wgrib2
         return 0
 
     string = get_str_mem(my_wgrib2, 10)
@@ -265,6 +284,8 @@ def coords(my_wgrib2, gfile):
     submsgno = int(x[5])
     if (nmatch == 0):
         if debug: logging.warning("inq ",gfile," found no matches")
+        close(my_wgrib2)
+        del my_wgrib2
         return None
 
 # for weird grids nx=-1/0 ny=-1/0
@@ -293,6 +314,8 @@ def coords(my_wgrib2, gfile):
         logging.debug("msg=", msgno, submsgno)
         logging.debug("has_data=", data is not None)
     lon = fix180(lon)
+    close(my_wgrib2)
+    del my_wgrib2
     return np.dstack([lat, lon])
 
 #####################################################################
