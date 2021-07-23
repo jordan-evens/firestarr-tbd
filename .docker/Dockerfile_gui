@@ -32,6 +32,7 @@ RUN apt-get update \
       /usr/lib/node_modules/npm/man/* \
       /usr/lib/node_modules/npm/doc/* \
       /usr/lib/node_modules/npm/html/* \
-      /usr/lib/node_modules/npm/scripts/*
+      /usr/lib/node_modules/npm/scripts/* \
+  && chmod -R +r /app
 EXPOSE 80
 EXPOSE 443

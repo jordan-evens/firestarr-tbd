@@ -3,6 +3,7 @@ git pull
 mkdir -p data/generated/tiled
 mkdir -p data/wx/longrange
 chmod +x WeatherSHIELD/update.sh
+chmod -R +r WeatherSHIELD/gui
 docker-compose stop
 docker-compose rm -f
 docker-compose up --build -d
