@@ -10,6 +10,8 @@ services:
       context: .
       dockerfile: .docker/Dockerfile_db
     image: kartoza/postgis:13-3.1
+    ports:
+      - "5432:5432"
     volumes:
       - postgis-data:/var/lib/postgresql
       - dbbackups:/backups
