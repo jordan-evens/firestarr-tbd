@@ -169,15 +169,27 @@ class HPFXLoader(WeatherLoader):
         actual_dates = list(map(lambda hour: for_run + datetime.timedelta(hours=hour), self.hours))
         n = len(actual_dates)
         # more than the number of cpus doesn't seem to help
-        pool = Pool(min(n, os.cpu_count()))
-        results = list(pool.map(read_wx,
-                               zip([save_dir] * n,
-                                   [self.name] * n,
-                                   [for_run] * n,
-                                   actual_dates)))
+        # pool = Pool(min(n, os.cpu_count()))
+        # results = list(pool.map(read_wx,
+                               # zip([save_dir] * n,
+                                   # [self.name] * n,
+                                   # [for_run] * n,
+                                   # actual_dates)))
         # don't save data until everything is loaded
-        wx = pd.concat(results)
-        self.save_data(wx)
+        # wx = pd.concat(results)
+        # self.save_data(wx)
+        try:
+            for d in actual_dates:
+                self.save_data(read_wx([save_dir, self.name, for_run, d]))
+        except Exception as e:
+            logging.error(e)
+            logging.debug("Deleting data for failed run import")
+            key = pd.DataFrame([self.name, for_run], columns=['model', 'forrun'])
+            cnxn = db.open_local_db()
+            db.trans_delete_data(cnxn, 'INPUTS.DAT_Model', key, False)
+            if cnxn:
+                cnxn.close()
+            return None
         logging.debug("Done")
         # return the run that we ended up loading data for
         # HACK: Timestamp format is nicer than datetime's

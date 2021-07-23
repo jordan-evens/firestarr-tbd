@@ -308,8 +308,8 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
         cnxn = open_local_db()
         cur_df = df
         cur_df = write_foreign(cnxn, schema, 'DAT_Location', ['latitude', 'longitude'], do_insert, cur_df)
-        cur_df = write_foreign(cnxn, schema, 'DAT_Model', ['model', modelFK], trans_save_data, cur_df)
-        cur_df = write_foreign(cnxn, schema, 'DAT_LocationModel', ['modelgeneratedid', 'locationid'], do_insert_only, cur_df)
+        cur_df = write_foreign(cnxn, schema, 'DAT_Model', ['model', modelFK], do_insert, cur_df)
+        cur_df = write_foreign(cnxn, schema, 'DAT_LocationModel', ['modelgeneratedid', 'locationid'], do_insert, cur_df)
         logging.debug('Writing data to {}'.format(final_table))
         do_insert_only(cnxn, '{}.{}'.format(schema, final_table), cur_df)
         cnxn.commit()
