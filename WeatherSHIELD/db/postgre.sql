@@ -2,17 +2,17 @@
 
 -- DROP DATABASE "FireGUARD";
 
-CREATE DATABASE "FireGUARD"
-    WITH 
-    OWNER = postgres
-    ENCODING = 'UTF8'
-    TABLESPACE = pg_default
-    CONNECTION LIMIT = -1;
+-- CREATE DATABASE "FireGUARD"
+    -- WITH 
+    -- OWNER = postgres
+    -- ENCODING = 'UTF8'
+    -- TABLESPACE = pg_default
+    -- CONNECTION LIMIT = -1;
 
-COMMENT ON DATABASE "FireGUARD"
-    IS 'weather and other information';
+-- COMMENT ON DATABASE "FireGUARD"
+    -- IS 'weather and other information';
 
-\c FireGUARD
+-- \c FireGUARD
 
 -- Enable PostGIS (as of 3.0 contains just geometry/geography)
 CREATE EXTENSION postgis;
