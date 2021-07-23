@@ -126,7 +126,7 @@ def fix_execute(cursor, stmt, data):
     @return None
     """
     try:
-        print(stmt)
+        # print(stmt)
         if 'DELETE' in stmt:
             psycopg2.extras.execute_batch(cursor, stmt, data, page_size=100000)
         else:
@@ -248,7 +248,7 @@ def write_foreign(cnxn, schema, table, index, fct_insert, cur_df):
     @return DataFrame with original data and merged foreign key data
     """
     qualified_table = '{}.{}'.format(schema, table)
-    logging.debug('Writing foreign key data to {}'.format(qualified_table))
+    # logging.debug('Writing foreign key data to {}'.format(qualified_table))
     new_index = cur_df.index.names
     cur_df = cur_df.reset_index()
     sub_data = cur_df[index].drop_duplicates().set_index(index)
