@@ -66,6 +66,9 @@ services:
       context: .
       dockerfile: .docker/Dockerfile_wxcli
     image: python:3.6-slim
+    environment:
+      # do threading in python but wgrib2 tries to also so stop that
+      - OMP_NUM_THREADS=1
     volumes:
       - type: bind
         source: ./settings.ini
