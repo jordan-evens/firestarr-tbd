@@ -94,11 +94,15 @@ def do_get(cmds, gfile, select):
     if err > 0:
         if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
         nmatch = -1
+        close(my_wgrib2)
+        del my_wgrib2
         return -1
 
     if mem_size(my_wgrib2, 10) == 0:
         if debug: logging.warning("no match")
         nmatch = 0
+        close(my_wgrib2)
+        del my_wgrib2
         return 0
 
     string = get_str_mem(my_wgrib2, 10)
@@ -125,13 +129,13 @@ def do_get(cmds, gfile, select):
     array = array_type()
 
     err = my_wgrib2.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
+    close(my_wgrib2)
+    del my_wgrib2
     if (err == 0):
         data = np.reshape(np.array(array), (nx, ny), order='F')
         if use_np_nan:
             data[np.logical_and((data > UNDEFINED_LOW), (data < UNDEFINED_HIGH))] = np.nan
     # logging.debug("Done")
-    close(my_wgrib2)
-    del my_wgrib2
     return data
 
 def get_all_members(args):
