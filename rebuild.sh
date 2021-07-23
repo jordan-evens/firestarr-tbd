@@ -1,4 +1,5 @@
 #############  setup commands
+git pull
 mkdir -p data/generated/tiled
 mkdir -p data/wx/longrange
 chmod +x WeatherSHIELD/update.sh
