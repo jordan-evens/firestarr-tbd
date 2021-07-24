@@ -84,9 +84,9 @@ def wgrib2(my_wgrib2, arg):
     return err
 
 #####################################################################
-def do_get(cmds, gfile, select):
-    my_wgrib2 = open()
+def do_get(my_wgrib2, cmds, gfile, select):
     cmds[0] = gfile
+    cmds[9] = gfile
     # logging.debug(select)
     cmds[2] = select
     err = wgrib2(my_wgrib2, cmds)
@@ -94,15 +94,11 @@ def do_get(cmds, gfile, select):
     if err > 0:
         if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
         nmatch = -1
-        close(my_wgrib2)
-        del my_wgrib2
         return -1
 
     if mem_size(my_wgrib2, 10) == 0:
         if debug: logging.warning("no match")
         nmatch = 0
-        close(my_wgrib2)
-        del my_wgrib2
         return 0
 
     string = get_str_mem(my_wgrib2, 10)
@@ -115,8 +111,6 @@ def do_get(cmds, gfile, select):
     submsgno = int(x[5])
     if (nmatch == 0):
         if debug: logging.warning("inq ",gfile," found no matches")
-        close(my_wgrib2)
-        del my_wgrib2
         return None
 
 # for weird grids nx=-1/0 ny=-1/0
@@ -129,8 +123,6 @@ def do_get(cmds, gfile, select):
     array = array_type()
 
     err = my_wgrib2.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
-    close(my_wgrib2)
-    del my_wgrib2
     if (err == 0):
         data = np.reshape(np.array(array), (nx, ny), order='F')
         if use_np_nan:
@@ -143,8 +135,16 @@ def get_all_members(args):
     gfile = mask.format(m)
     if debug: logging.debug(gfile)
     results = []
+    my_wgrib2 = open()
     for select in matches:
-        results.append(do_get(cmds, gfile, select))
+        # print(select)
+        d = do_get(my_wgrib2, cmds, gfile, select)
+        # print(d)
+        results.append(d)
+    # print("get_all_members() ending")
+    # print(results)
+    close(my_wgrib2)
+    del my_wgrib2
     return results
 
 
@@ -163,7 +163,7 @@ def get_all_data(mask,
     
     cmds = [
         'XXXX', '-match_fs', "XXXX", "-ftn_api_fn0", "-last0", "@mem:10",
-        "-inv", "/dev/null"
+        "-inv", "/dev/null", '-rewind_init', 'XXXX'
     ]
 
     cmds.append("-no_header")
@@ -175,13 +175,15 @@ def get_all_data(mask,
     n = len(indices)
     # from multiprocessing import Pool
     # pool = Pool(len(indices))
-    mapped = list(map(get_all_members, zip([cmds] * n, [mask] * n, [matches] * n, indices)))
-    for i in range(n):
-        m = indices[i]
-        results[m] = mapped[i]
-    # for m in indices:
-        # results[m] = get_all_members(cmds, mask, matches, m)
+    # mapped = list(map(get_all_members, zip([cmds] * n, [mask] * n, [matches] * n, indices)))
+    # for i in range(n):
+        # m = indices[i]
+        # results[m] = mapped[i]
+        # print(mapped[i])
+    for m in indices:
+        results[m] = get_all_members([cmds, mask, matches, m])
     # results = list(map(do_get, matches))
+    # print("end get_all_data()")
     return results
 
 #####################################################################
