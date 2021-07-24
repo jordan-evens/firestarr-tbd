@@ -162,7 +162,7 @@ def get_all_data(mask,
     match_option = '-fgrep'
     
     cmds = [
-        'XXXX', "-d", 'XXXX', "-ftn_api_fn0", "-last0", "@mem:10",
+        'XXXX', '-match_fs', "XXXX", "-ftn_api_fn0", "-last0", "@mem:10",
         "-inv", "/dev/null"
     ]
 
