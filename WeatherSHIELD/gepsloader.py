@@ -26,7 +26,7 @@ def read_wx(args):
     # logging.debug("for_run=" + str(for_run))
     diff = for_date - for_run
     real_hour = int((diff.days * 24) + (diff.seconds / 60 / 60))
-    logging.debug("{} {} + {:03d}h".format(name, for_run, real_hour))
+    logging.debug("{} {} + {:03d}h = {}".format(name, for_run, real_hour, for_date))
     date = for_run.strftime(r'%Y%m%d')
     time = int(for_run.strftime(r'%H'))
     save_as = '{}_{}{:02d}_{}_{:03d}'.format(name, date, time, "{}", real_hour)
