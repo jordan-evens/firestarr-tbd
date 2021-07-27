@@ -10,8 +10,10 @@ import glob
 import sys
 sys.path.append('../util')
 import common
+import db
 import os
 import pandas as pd
+import numpy as np
 import logging
 import socket
 import time
@@ -141,12 +143,39 @@ class HPFXLoader(WeatherLoader):
         # save into database that corresponds to the start of this run
         # if at any point for_run is already in the database then we're done
         # want to put the data into the database for the start date but check if it exists based on for_run
+        actual_dates = list(map(lambda hour: for_run + datetime.timedelta(hours=hour), self.hours))
         if not force:
             logging.debug('Checking if data is already present for {} model generated at {}'.format(self.name, for_run))
             exists = self.check_exists(for_run)
             if exists:
-                logging.debug('Data already loaded - aborting')
-                return pd.Timestamp(for_run)
+                # check that we have all the timesteps
+                cnxn = None
+                try:
+                    cnxn = db.open_local_db()
+                    have_dates = pd.read_sql("""SELECT DISTINCT(fortime)
+                                                FROM INPUTS.DAT_Forecast f
+                                                LEFT JOIN INPUTS.DAT_LocationModel loc ON f.locationmodelid=loc.locationmodelid
+                                                LEFT JOIN INPUTS.DAT_Model m ON m.modelgeneratedid=loc.modelgeneratedid
+                                                WHERE model='{}'
+                                                AND generated='{}'""".format(self.name, for_run), cnxn).sort_values(['fortime'])
+                finally:
+                    if cnxn:
+                        cnxn.close()
+                print(have_dates)
+                # have_dates = have_dates.values.flatten()
+                # f = have_dates[0]
+                # print(f)
+                # print(type(f))
+                # have_dates = pd.to_datetime(have_dates['fortime'], utc=True).values
+                # have_dates = list(map(lambda x: datetime.datetime(x),have_dates))
+                print(have_dates)
+                print(actual_dates)
+                need_dates = [x for x in actual_dates if not have_dates['fortime'].eq(x).any()]
+                print(need_dates)
+                if len(need_dates) == 0:
+                    logging.debug('Data already loaded - aborting')
+                    return pd.Timestamp(for_run)
+                actual_dates = need_dates
         results = []
         date = for_run.strftime(r'%Y%m%d')
         time = int(for_run.strftime(r'%H'))
@@ -164,9 +193,9 @@ class HPFXLoader(WeatherLoader):
             for_what = list(map(lambda x: self.indices[x], for_what))
             n = len(for_what)
             args = args + list(zip([self.host] * n, [self.dir] * n, [self.mask] * n, [save_dir] * n, [date] * n, [time] * n, [real_hour] * n, [save_as] * n, for_what))
-        pool = Pool(DOWNLOAD_THREADS)
-        pool.map(do_save, args)
-        actual_dates = list(map(lambda hour: for_run + datetime.timedelta(hours=hour), self.hours))
+        # pool = Pool(DOWNLOAD_THREADS)
+        # pool.map(do_save, args)
+        list(map(do_save, args))
         n = len(actual_dates)
         # more than the number of cpus doesn't seem to help
         # pool = Pool(min(n, os.cpu_count()))
@@ -183,12 +212,12 @@ class HPFXLoader(WeatherLoader):
                 self.save_data(read_wx([save_dir, self.name, for_run, d]))
         except Exception as e:
             logging.error(e)
-            logging.debug("Deleting data for failed run import")
-            key = pd.DataFrame([self.name, for_run], columns=['model', 'forrun'])
-            cnxn = db.open_local_db()
-            db.trans_delete_data(cnxn, 'INPUTS.DAT_Model', key, False)
-            if cnxn:
-                cnxn.close()
+            # logging.debug("Deleting data for failed run import")
+            # key = pd.DataFrame([self.name, for_run], columns=['model', 'forrun'])
+            # cnxn = db.open_local_db()
+            # db.trans_delete_data(cnxn, 'INPUTS.DAT_Model', key, False)
+            # if cnxn:
+                # cnxn.close()
             return None
         logging.debug("Done")
         # return the run that we ended up loading data for
