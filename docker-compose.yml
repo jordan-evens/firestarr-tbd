@@ -123,3 +123,6 @@ services:
       - type: bind
         source: ./data/generated/tiled
         target: /FireGUARD/100m/default
+      - type: bind
+        source: ./util
+        target: /FireGUARD/util
