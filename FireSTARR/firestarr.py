@@ -4,6 +4,8 @@ import common
 import json
 import logging
 import sys
+import pandas as pd
+import math
 
 startup = {
             'ffmc':          {'value': 85.0},
@@ -16,7 +18,6 @@ def unnest_values(dict):
     for i in dict:
         dict[i] = dict[i]['value']
 
-#wget -O wx.csv 'http://wxshield:80/wxshield/getWx.php?lat=46&long=-95&dateOffset=0&numDays=300&model=geps'
 def try_read_first(dict, key, fail_msg=None, is_fatal=False):
     result = dict[key]
     n = len(result)
@@ -45,6 +46,7 @@ if stn is not None:
     if stream is not None:
         startup = stream['condition']['startingCodes']
 unnest_values(startup)
+logging.info("Startup indices are: {}".format(startup))
 
 
 pt = None
@@ -62,7 +64,20 @@ if pt is None:
     # should have already exited but check
     logging.fatal("Ignition point not initialized")
 unnest_values(pt)
-
 logging.info("Startup coordinates are {}".format(pt))
-logging.info("Startup indices are: {}".format(startup))
 
+
+scenario = try_read_first(project['scenarios'], 'scenarios', is_fatal=True)['scenario']
+start_time = scenario['startTime']['time']
+start_time = pd.to_datetime(start_time)
+logging.info("Scenario start time is: {}".format(start_time))
+
+
+tz = (start_time.tz._minutes) / 60.0
+if math.floor(tz) != tz:
+    logging.fatal("Currently not set up to deal with partial hour timezones")
+    sys.exit(-1)
+logging.info("Timezone offset is {}".format(tz))
+
+
+#http:/wxshield:80/wxshield/getWx.php?model=geps&lat=46&long=-95&dateOffset=0&tz=-5&mode=daily
