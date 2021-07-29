@@ -180,7 +180,8 @@ class HPFXLoader(WeatherLoader):
         date = for_run.strftime(r'%Y%m%d')
         time = int(for_run.strftime(r'%H'))
         save_dir = common.ensure_dir(os.path.join(self.DIR_DATA, '{}{:02d}'.format(date, time)))
-        args = []
+        # args = []
+        pool = Pool(5)
         for hour in self.hours:
             logging.info("Downloading {} records from {} run for hour {}".format(self.name, for_run, hour))
             for_date = for_run + datetime.timedelta(hours=hour)
@@ -192,10 +193,13 @@ class HPFXLoader(WeatherLoader):
                 for_what = for_what + ['APCP']
             for_what = list(map(lambda x: self.indices[x], for_what))
             n = len(for_what)
-            args = args + list(zip([self.host] * n, [self.dir] * n, [self.mask] * n, [save_dir] * n, [date] * n, [time] * n, [real_hour] * n, [save_as] * n, for_what))
+            cur_args = list(zip([self.host] * n, [self.dir] * n, [self.mask] * n, [save_dir] * n, [date] * n, [time] * n, [real_hour] * n, [save_as] * n, for_what))
+            # args = args + cur_args
+            # NOTE: not as fast as pooling everything, but if the hour fails we don't have a bunch of extra requests
+            pool.map(do_save, cur_args)
         # pool = Pool(DOWNLOAD_THREADS)
         # pool.map(do_save, args)
-        list(map(do_save, args))
+        # list(map(do_save, args))
         n = len(actual_dates)
         # more than the number of cpus doesn't seem to help
         # pool = Pool(min(n, os.cpu_count()))
