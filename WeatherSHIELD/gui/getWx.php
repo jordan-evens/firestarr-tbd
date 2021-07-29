@@ -23,8 +23,17 @@ if('' == $numDays)
 }
 $member = strval($_GET['member']);
 $model = strtoupper(strval($_GET['model']));
-
-
+$mode = strval($_GET['mode']);
+$is_daily = true;
+if ($mode == '' or $mode == 'hourly')
+{
+  $is_daily = false;
+}
+else if ($mode != 'daily')
+{
+  echo('Invalid mode specified - must be daily or hourly');
+  exit();
+}
 function modelArray($last_row, $membersArray)
 {
     if(is_null($last_row['generated']))
@@ -165,7 +174,15 @@ if ($conn){
     header('Content-Disposition: attachment; filename=wx.csv');
     $EOL = "\n";
     // $EOL = "<br />";
-    echo "HOURLY,HOUR";
+    $first_day = intval(date_format(new DateTime($date_array[0]), 'Ymd'));
+    if ($is_daily)
+    {
+      echo "DAILY";
+    }
+    else
+    {
+      echo "HOURLY,HOUR";
+    }
     if ('' == $model)
     {
       echo ",MODEL";
@@ -175,37 +192,68 @@ if ($conn){
       echo ",MEMBER";
     }
     echo ",TEMP,RH,WD,WS,PREC".$EOL;
+    $fixed_dates = array();
+    $diff_noon =  array();
+    $best_diff = array();
+    foreach ($dates_array as $j=>$d)
+    {
+      $for_time = $dates_array[$j];
+      $time = new DateTime($for_time);
+      if (!is_null($zone))
+      {
+        $time->setTimezone($zone);
+      }
+      $fixed_dates[$j] = $time;
+      $diff_noon[$j] = 12 - intval(date_format($time, 'G'));
+      $date = intval(date_format($time, 'Ymd'));
+      # >= to prefer later in the day over earlier
+      if (is_null($best_diff[$date]) || (abs($best_diff[$date]) >= abs($diff_noon[$j])))
+      {
+        if ($diff_noon[$j] <= 3)
+        {
+          // NOTE: since max interval is 6 hours, we should always be within 3 of some timestep
+          // absolute max distance to time from noon, otherwise don't include day
+          $best_diff[$date] = $diff_noon[$j];
+        }
+      }
+    }
     foreach ($outputArray['Models'] as $x=>$cur_model)
     {
       foreach($cur_model['Members'] as $i=>$m) {
         $old_rain = 0;
-        // foreach ($dates_array as $j=>$for_time) {
+        // foreach ($fixed_dates as $j=>$for_time) {
           // $v = $m[$j];
         foreach ($m as $j=>$v) {
-          $for_time = $dates_array[$j];
-          $time = new DateTime($for_time);
-          if (!is_null($zone))
+          $for_time = $fixed_dates[$j];
+          $date = intval(date_format($for_time, 'Ymd'));
+          // check if tz offset puts this before start day
+          $before_start = $date < $first_day;
+          if (!$is_daily || (!$before_start && $best_diff[$date] == $diff_noon[$j]))
           {
-            $time->setTimezone($zone);
+            echo date_format($for_time, "Y-m-d");
+            if(!$is_daily)
+            {
+              echo date_format($for_time, ",G");
+            }
+            // echo ",".$diff_noon[$j];
+            if ('' == $model)
+            {
+              echo ",".$x;
+            }
+            if ('' == $member)
+            {
+              echo ",".$i;
+            }
+            # do these manually so we can treat rain differently and not have a loop plus that
+            echo ",".roundValue('tmp', $v[0]);
+            echo ",".roundValue('rh', $v[1]);
+            echo ",".roundValue('ws', $v[2]);
+            echo ",".roundValue('wd', $v[3]);
+            $cur_rain = $v[4] - $old_rain;
+            $old_rain = $v[4];
+            echo ",".roundValue('apcp', $cur_rain);
+            echo $EOL;
           }
-          echo date_format($time, "Y-m-d,G");
-          if ('' == $model)
-          {
-            echo ",".$x;
-          }
-          if ('' == $member)
-          {
-            echo ",".$i;
-          }
-          # do these manually so we can treat rain differently and not have a loop plus that
-          echo ",".roundValue('tmp', $v[0]);
-          echo ",".roundValue('rh', $v[1]);
-          echo ",".roundValue('ws', $v[2]);
-          echo ",".roundValue('wd', $v[3]);
-          $cur_rain = $v[4] - $old_rain;
-          $old_rain = $v[4];
-          echo ",".roundValue('apcp', $cur_rain);
-          echo $EOL;
         }
       }
     }
