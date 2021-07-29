@@ -1,10 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM gcc:10.3
+WORKDIR /FireGUARD/
+COPY .docker/requirements_firestarr.txt requirements_firestarr.txt
 WORKDIR /FireGUARD/FireSTARR/
 RUN apt-get update \
 	&& apt-get install -y gcc make git curl zip unzip tar \
 		libtiff-dev libgeotiff-dev g++ cmake sqlite3 libsqlite3-dev libpq-dev \
-		unixodbc-dev odbc-postgresql \
+		unixodbc-dev odbc-postgresql python3-pip \
+    libgdal-dev \
 	&& apt-get clean && rm -rf /var/lib/apt/lists/* \
 	&& rm -rf \
       /usr/share/man/* \
@@ -14,7 +17,10 @@ RUN apt-get update \
       /usr/lib/node_modules/npm/man/* \
       /usr/lib/node_modules/npm/doc/* \
       /usr/lib/node_modules/npm/html/* \
-      /usr/lib/node_modules/npm/scripts/*
+      /usr/lib/node_modules/npm/scripts/* \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+  && python -m pip install pip==21.0.1 \
+  && python -m pip install -r /FireGUARD/requirements_firestarr.txt
 #COPY ./FireSTARR/ /FireGUARD/FireSTARR/
 #RUN cmake --configure . \
 #  && cmake --build .

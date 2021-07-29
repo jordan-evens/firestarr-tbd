@@ -1,0 +1,8 @@
+pandas
+numpy
+rasterio
+ConfigParser
+shapely
+geopandas
+pycrs
+scipy
