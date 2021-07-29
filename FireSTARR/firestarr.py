@@ -17,55 +17,46 @@ def unnest_values(dict):
         dict[i] = dict[i]['value']
 
 #wget -O wx.csv 'http://wxshield:80/wxshield/getWx.php?lat=46&long=-95&dateOffset=0&numDays=300&model=geps'
+def try_read_first(dict, key, fail_msg=None, is_fatal=False):
+    result = dict[key]
+    n = len(result)
+    if n < 1:
+        msg = "No {} provided".format(key)
+        if fail_msg is not None:
+            msg = "{} - {}".format(msg, fail_msg)
+        if is_fatal:
+            logging.fatal(msg)
+            sys.exit(-1)
+        logging.warning(msg)
+        return None
+    else:
+        if len(result) > 1:
+            logging.warning("{} {} provided - only the first one will be used".format(n, key))
+    return result[0]
 
 with open(sys.argv[1]) as f:
   data = json.load(f)
 
+MSG_DEFAULT_STARTUP = 'using default startup indices'
 project = data['project']
-stns = project['stations']['stations']
-if len(stns) < 1:
-    logging.warning("No stations provided - using default startup indices")
-else:
-    if len(stns) > 1:
-        logging.warning("{} stations provided - only the first one will be used".format(len(stns)))
-    stn = stns[0]['station']
-    streams = stn['streams']
-    if len(streams) < 1:
-        logging.warning("No streams provided - using default startup indices")
-    else:
-        if len(streams) > 1:
-            logging.warning("{} streams provided - only the first one will be used for startup indices".format(len(streams)))
-        startup = streams[0]['condition']['startingCodes']
+stn = try_read_first(project['stations'], 'stations', MSG_DEFAULT_STARTUP)
+if stn is not None:
+    stream = try_read_first(stn['station'], 'streams', MSG_DEFAULT_STARTUP)
+    if stream is not None:
+        startup = stream['condition']['startingCodes']
 unnest_values(startup)
 
 
 pt = None
-ignitions = project['ignitions']['ignitions']
-if len(ignitions) < 1:
-    logging.fatal("No ignitions provided")
-else:
-    if len(ignitions) > 1:
-        logging.warning("{} ignitions provided - only the first one will be used".format(len(ignitions)))
-    ignition = ignitions[0]['ignition']
-    igns = ignition['ignitions']['ignitions']
-    if len(igns) < 1:
-        logging.fatal("No ignitions provided")
-    else:
-        if len(igns) > 1:
-            logging.warning("{} ignitions provided - only the first one will be used".format(len(igns)))
-        ign = igns[0]
-        if ign['polyType'] != 'POINT':
-            logging.fatal("Only point ignition is currently supported")
-        poly = ign['polygon']
-        if poly['units'] != 'LAT_LON':
-            logging.fatal("Only lat/long coordinates are currently supported")
-        pts = poly['polygon']['points']
-        if len(pts) < 1:
-            logging.fatal("No ignition points provided")
-        else:
-            if len(igns) > 1:
-                logging.warning("{} ignition points provided - only the first one will be used".format(len(pts)))
-            pt = pts[0]
+ignition = try_read_first(project['ignitions'], 'ignitions', is_fatal=True)
+ign = try_read_first(ignition['ignition']['ignitions'], 'ignitions', is_fatal=True)
+
+if ign['polyType'] != 'POINT':
+    logging.fatal("Only point ignition is currently supported")
+poly = ign['polygon']
+if poly['units'] != 'LAT_LON':
+    logging.fatal("Only lat/long coordinates are currently supported")
+pt = try_read_first(poly['polygon'], 'points', is_fatal=True)
 
 if pt is None:
     # should have already exited but check
