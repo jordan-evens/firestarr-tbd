@@ -110,7 +110,7 @@ df.columns = ['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD']
 # for some reason scenario numbers are negative right now?
 df['Scenario'] = df['Scenario'].apply(lambda x: -1 - int(x))
 df['Date'] = df['Date'].apply(lambda x: x + " 13:00:00")
-for col in ['FFMC', 'DMC', 'ISI', 'BUI', 'FWI']:
+for col in ['FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI']:
     df[col] = 0
 df.to_csv('wx.csv', index=False)
 
