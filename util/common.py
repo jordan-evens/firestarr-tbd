@@ -313,11 +313,11 @@ def filterXY(data):
     data = data[data[:, 1] <= BOUNDS['longitude']['max']]
     return data
 
-def read_all_data(coords, mask, matches, indices):
+def read_all_data(lib, coords, mask, matches, indices):
 # def read_data(args):
     # coords, mask, select, m = args
     # logging.debug('{} => {}'.format(mask.format(m), select))
-    results = wgrib2.get_all_data(mask, indices, matches)
+    results = wgrib2.get_all_data(lib, mask, indices, matches)
     # now we have an array of all the ensemble members
     final = {}
     for m in results.keys():
@@ -336,11 +336,11 @@ k_to_c = np.vectorize(kelvin_to_celcius)
 import concurrent.futures
 
 # def read_member(mask, select, coords, member, apcp):
-def read_members(mask, matches, coords, members, apcp):
+def read_members(lib, mask, matches, coords, members, apcp):
     indices = ['TMP', 'RH', 'UGRD', 'VGRD']
     if apcp:
         indices = indices + ['APCP']
-    results = read_all_data(coords, mask, matches, indices)
+    results = read_all_data(lib, coords, mask, matches, indices)
     temp = results['TMP']
     rh = results['RH']
     ugrd = results['UGRD']
@@ -391,15 +391,18 @@ def read_grib(mask, apcp=True):
     @param mask File mask for path to source grib2 file to read
     @return DataFrame with data read from file    
     """
-    matches = wgrib2.match(mask.format('TMP'))
+    lib = wgrib2.open()
+    matches = wgrib2.match(lib, mask.format('TMP'))
     members = list(map(lambda x: 0 if -1 != x.find('low-res ctl') else int(x[x.find('ENS=') + 4:]), matches))
     matches = list(map(lambda x: x[x.rfind(':'):], matches))
-    coords = wgrib2.coords(mask.format('TMP'))
-    results = read_members(mask, matches, coords, members, apcp)
+    coords = wgrib2.coords(lib, mask.format('TMP'))
+    results = read_members(lib, mask, matches, coords, members, apcp)
     # logging.debug(output)
     output = results.set_index(['latitude', 'longitude', 'Member'])
     output = output[['TMP', 'RH', 'WS', 'WD', 'APCP']]
     # need to add fortime and generated
+    wgrib2.close(lib)
+    del lib
     return output
 
 def try_remove(file):
