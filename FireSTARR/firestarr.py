@@ -7,6 +7,9 @@ import sys
 import pandas as pd
 import math
 import datetime
+import shlex
+import timeit
+import subprocess
 
 startup = {
             'ffmc':          {'value': 85.0},
@@ -111,6 +114,38 @@ for col in ['FFMC', 'DMC', 'ISI', 'BUI', 'FWI']:
     df[col] = 0
 df.to_csv('wx.csv', index=False)
 
-cmd = "./FireSTARR ./Data/output1 {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+cmd = "./FireSTARR"
+args = "./Data/output1 {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+# run generated command for parsing data
+run_what = [cmd] + shlex.split(args.replace('\\', '/'))
+logging.info("Running: " + ' '.join(run_what))
+t0 = timeit.default_timer()
+
+def start_process(run_what, cwd):
+    """!
+    Start running a command using subprocess
+    @param run_what Process to run
+    @param flags Flags to run with
+    @param cwd Directory to run in
+    @return Running subprocess
+    """
+    logging.debug(run_what)
+    p = subprocess.Popen(run_what,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE,
+                           cwd=cwd)
+    p.args = run_what
+    return p
+
+
+process = start_process(run_what, "/FireGUARD/FireSTARR")
+stdout, stderr = process.communicate()
+if process.returncode != 0:
+    #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
+    if -1073741510 == process.returncode:
+        sys.exit(process.returncode)
+    raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr + stdout)
+t1 = timeit.default_timer()
+logging.info("Took {}s to run simulations".format(t1 - t0))
 
 print(cmd)
