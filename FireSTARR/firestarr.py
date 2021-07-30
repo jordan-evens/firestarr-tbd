@@ -6,6 +6,7 @@ import logging
 import sys
 import pandas as pd
 import math
+import datetime
 
 startup = {
             'ffmc':          {'value': 85.0},
@@ -47,7 +48,10 @@ if stn is not None:
         startup = stream['condition']['startingCodes']
 unnest_values(startup)
 logging.info("Startup indices are: {}".format(startup))
-
+ffmc = startup['ffmc']
+dmc = startup['dmc']
+dc = startup['dc']
+apcp_0800 = startup['precipitation']
 
 pt = None
 ignition = try_read_first(project['ignitions'], 'ignitions', is_fatal=True)
@@ -65,19 +69,48 @@ if pt is None:
     logging.fatal("Ignition point not initialized")
 unnest_values(pt)
 logging.info("Startup coordinates are {}".format(pt))
-
+lat = pt['y']
+long = pt['x']
 
 scenario = try_read_first(project['scenarios'], 'scenarios', is_fatal=True)['scenario']
 start_time = scenario['startTime']['time']
 start_time = pd.to_datetime(start_time)
 logging.info("Scenario start time is: {}".format(start_time))
-
+hour = start_time.hour
+minute = start_time.minute
 
 tz = (start_time.tz._minutes) / 60.0
 if math.floor(tz) != tz:
     logging.fatal("Currently not set up to deal with partial hour timezones")
     sys.exit(-1)
+tz = int(tz)
 logging.info("Timezone offset is {}".format(tz))
 
+date_offset = 0
+start_date = datetime.date.today()
+# start_date = start_time.date()
+# if start_date != datetime.date.today():
+    # date_offset = (start_date - datetime.date.today()).days
+    # logging.warning("Simulation does not start today - date offset set to {}".format(date_offset))
 
-#http:/wxshield:80/wxshield/getWx.php?model=geps&lat=46&long=-95&dateOffset=0&tz=-5&mode=daily
+url = r"http://wxshield:80/wxshield/getWx.php?model=geps&lat={}&long={}&dateOffset={}&tz={}&mode=daily".format(lat, long, date_offset, tz)
+logging.debug(url)
+csv = common.download(url).decode("utf-8")
+data = [x.split(',') for x in csv.splitlines()]
+df = pd.DataFrame(data[1:], columns=data[0])
+print(df)
+
+# supposed to be really picky about inputs
+#"Scenario,Date,APCP,TMP,RH,WS,WD,FFMC,DMC,DC,ISI,BUI,FWI";
+df = df[['MEMBER', 'DAILY', 'PREC', 'TEMP', 'RH', 'WS', 'WD']]
+df.columns = ['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD']
+# for some reason scenario numbers are negative right now?
+df['Scenario'] = df['Scenario'].apply(lambda x: -1 - int(x))
+df['Date'] = df['Date'].apply(lambda x: x + " 13:00:00")
+for col in ['FFMC', 'DMC', 'ISI', 'BUI', 'FWI']:
+    df[col] = 0
+df.to_csv('wx.csv', index=False)
+
+cmd = "./FireSTARR ./Data/output1 {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+
+print(cmd)
