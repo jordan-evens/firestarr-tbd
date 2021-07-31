@@ -62,9 +62,11 @@ ign = try_read_first(ignition['ignition']['ignitions'], 'ignitions', is_fatal=Tr
 
 if ign['polyType'] != 'POINT':
     logging.fatal("Only point ignition is currently supported")
+    sys.exit(-1)
 poly = ign['polygon']
 if poly['units'] != 'LAT_LON':
     logging.fatal("Only lat/long coordinates are currently supported")
+    sys.exit(-1)
 pt = try_read_first(poly['polygon'], 'points', is_fatal=True)
 
 if pt is None:
