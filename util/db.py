@@ -125,12 +125,13 @@ def fix_execute(cursor, stmt, data):
     @param data Data to populate statement with
     @return None
     """
+    PAGE_SIZE = 100000
     try:
         # print(stmt)
         if 'DELETE' in stmt:
-            psycopg2.extras.execute_batch(cursor, stmt, data, page_size=100000)
+            psycopg2.extras.execute_batch(cursor, stmt, data, page_size=PAGE_SIZE)
         else:
-            psycopg2.extras.execute_values(cursor, stmt, (tuple(map(fix_Types, x)) for x in data))
+            psycopg2.extras.execute_values(cursor, stmt, (tuple(map(fix_Types, x)) for x in data),page_size=PAGE_SIZE)
         # doesn't want to work
         # cursor.execute("PREPARE stmt AS {}".format(stmt))
         # execute_batch(cur, "EXECUTE stmt (%s)", params_list)
