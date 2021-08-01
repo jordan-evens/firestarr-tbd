@@ -3,17 +3,19 @@ FROM gcc:10.3
 WORKDIR /FireGUARD/
 COPY .docker/requirements_firestarr.txt requirements_firestarr.txt
 WORKDIR /FireGUARD/FireSTARR/
-#RUN add-apt-repository --remove ppa:ubuntugis/ubuntugis \
+RUN add-apt-repository --remove ppa:ubuntugis/ubuntugis-unstable
+RUN add-apt-repository --remove ppa:ubuntugis/ppa
+RUN echo Adding ppa \
+#  && (add-apt-repository ppa:ubuntugis/ppa || echo Ignoring add error) \
+  && add-apt-repository ppa:ubuntugis/ubuntugis-unstable \
+  && echo Added ppa \
+  && (apt-get update || echo Ignoring update errors) \
+  && echo Updated
 RUN apt-get install -y gcc make git curl zip unzip tar \
     libtiff-dev libgeotiff-dev g++ cmake sqlite3 libsqlite3-dev libpq-dev \
     unixodbc-dev odbc-postgresql python3-pip software-properties-common \
-    libgdal-dev
-RUN echo Adding ppa \
-  && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable || echo Ignoring add error) \
-  && echo Added ppa \
-  && (apt-get update || echo Ignoring update errors) \
-  && echo Updated \
-  && apt-get install gdal-bin \
+    libgdal-dev\
+  && apt-get install gdal-bin libgdal-dev \
   && apt-get clean && rm -rf /var/lib/apt/lists/* \
   && rm -rf \
       /usr/share/man/* \
@@ -26,7 +28,11 @@ RUN echo Adding ppa \
       /usr/lib/node_modules/npm/scripts/* \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
   && python -m pip install pip==21.0.1 \
-  && python -m pip install -r /FireGUARD/requirements_firestarr.txt
+  && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+  && export C_INCLUDE_PATH=/usr/include/gdal \
+  && python -m pip install -r /FireGUARD/requirements_firestarr.txt \
+  && ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"\
+  && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
 #COPY ./FireSTARR/ /FireGUARD/FireSTARR/
 #RUN cmake --configure . \
 #  && cmake --build .
