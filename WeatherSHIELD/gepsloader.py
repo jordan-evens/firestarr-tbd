@@ -121,7 +121,8 @@ class HPFXLoader(WeatherLoader):
         @return None
         """
         import glob
-        files = glob.glob(self.DIR_DATA)
+        path = self.DIR_DATA + '/'
+        files = os.listdir(path)
         runs = list(set([os.path.basename(d) for d in files]))
         # sort so we do the dates chronologically
         runs.sort()
