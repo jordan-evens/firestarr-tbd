@@ -174,7 +174,7 @@ if ($conn){
     header('Content-Disposition: attachment; filename=wx.csv');
     $EOL = "\n";
     // $EOL = "<br />";
-    $first_day = intval(date_format(new DateTime($date_array[0]), 'Ymd'));
+    $first_day = intval(date_format(new DateTime($dates_array[0]), 'Ymd'));
     if ($is_daily)
     {
       echo "DAILY";
