@@ -93,10 +93,10 @@ logging.info("Timezone offset is {}".format(tz))
 
 date_offset = 0
 start_date = datetime.date.today()
-# start_date = start_time.date()
-# if start_date != datetime.date.today():
-    # date_offset = (start_date - datetime.date.today()).days
-    # logging.warning("Simulation does not start today - date offset set to {}".format(date_offset))
+start_date = start_time.date()
+if start_date != datetime.date.today():
+    date_offset = (start_date - datetime.date.today()).days
+    logging.warning("Simulation does not start today - date offset set to {}".format(date_offset))
 
 url = r"http://wxshield:80/wxshield/getWx.php?model=geps&lat={}&long={}&dateOffset={}&tz={}&mode=daily".format(lat, long, date_offset, tz)
 logging.debug(url)
