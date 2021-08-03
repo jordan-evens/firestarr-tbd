@@ -10,6 +10,13 @@ import datetime
 import shlex
 import timeit
 import subprocess
+from osgeo import ogr
+from osgeo import osr
+import statistics
+import fiona
+from shapely.geometry import Polygon, mapping
+import os
+import firestarr_gis
 
 startup = {
             'ffmc':          {'value': 85.0},
@@ -18,9 +25,14 @@ startup = {
             'precipitation': {'value': 0.0},
           }
 
+fire_name = "FIRE"
+out_dir = os.path.join("./Data", fire_name)
+common.ensure_dir(out_dir)
+
 def unnest_values(dict):
     for i in dict:
         dict[i] = dict[i]['value']
+    return dict
 
 def try_read_first(dict, key, fail_msg=None, is_fatal=False):
     result = dict[key]
@@ -60,22 +72,94 @@ pt = None
 ignition = try_read_first(project['ignitions'], 'ignitions', is_fatal=True)
 ign = try_read_first(ignition['ignition']['ignitions'], 'ignitions', is_fatal=True)
 
-if ign['polyType'] != 'POINT':
-    logging.fatal("Only point ignition is currently supported")
-    sys.exit(-1)
+perim = None
 poly = ign['polygon']
 if poly['units'] != 'LAT_LON':
     logging.fatal("Only lat/long coordinates are currently supported")
     sys.exit(-1)
-pt = try_read_first(poly['polygon'], 'points', is_fatal=True)
+if ign['polyType'] != 'POINT':
+    logging.fatal("Only point ignition is currently supported")
+    if ign['polyType'] == 'POLYGON_OUT':
+        pts = poly['polygon']['points']
+        pts = list(map(unnest_values, pts))
+        pts = [list(map(lambda v: [v['x'], v['y']], pts))]
+        lat = statistics.mean(list(map(lambda v: v[1], pts[0])))
+        long = statistics.mean(list(map(lambda v: v[0], pts[0])))
+        print(long)
+        orig_zone = 15
+        orig_long = -93
+        diff = long - orig_long
+        print(diff)
+        ZONE_SIZE = 6
+        zone_diff = round(diff / ZONE_SIZE)
+        print(zone_diff)
+        meridian = orig_long + (zone_diff * ZONE_SIZE)
+        print(meridian)
+        zone = orig_zone + zone_diff
+        # print(pts)
+        p = '''{"type": "Polygon",
+                "coordinates": ''' + str(pts) + ''',
+            }'''
+        # print(p)
+        g = ogr.CreateGeometryFromJson(p)
+        # print(g)
+        # print("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
+        # print("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
+        # for idx, f in enumerate(g):
+            # print("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
+        source = osr.SpatialReference()
+        source.ImportFromEPSG(4269)
+        target = osr.SpatialReference()
+        target.ImportFromEPSG(3159)
+        str = target.ExportToWkt()
+        str = str[:str.rindex(",AUTHORITY")] + "]"
+        str = str.replace('UTM zone 15N', 'UTM zone {}N')
+        str = str.replace('"central_meridian",-93', '"central_meridian",{}')
+        str = str.format(zone, meridian)
+        print(str)
+        print(target)
+        target.ImportFromWkt(str)
+        transform = osr.CoordinateTransformation(source, target)
+        g.Transform(transform)
+        print(g)
+        print("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
+        print("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
+        for idx, f in enumerate(g):
+            print("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
+        out_name = '{}.shp'.format(fire_name)
+        out_file = os.path.join(out_dir, out_name)
+        driver = ogr.GetDriverByName("Esri Shapefile")
+        ds = driver.CreateDataSource(out_file)
+        layr1 = ds.CreateLayer('',None, ogr.wkbPolygon)
+        # create the field
+        layr1.CreateField(ogr.FieldDefn('id', ogr.OFTInteger))
+        # Create the feature and set values
+        defn = layr1.GetLayerDefn()
+        feat = ogr.Feature(defn)
+        feat.SetField('id', 1)
+        feat.SetGeometry(g)
+        layr1.CreateFeature(feat)
+        # close the shapefile
+        ds.Destroy()
+        target.MorphToESRI()
+        with open(os.path.join(out_dir, '{}.prj'.format(fire_name)), 'w') as file:
+            file.write(target.ExportToWkt())
+        YEAR = 2021
+        perim = firestarr_gis.rasterize_perim(out_dir, out_file, YEAR, fire_name)[1]
+    if perim is None:
+        sys.exit(-1)
+else:
+    pt = try_read_first(poly['polygon'], 'points', is_fatal=True)
 
-if pt is None:
-    # should have already exited but check
-    logging.fatal("Ignition point not initialized")
-unnest_values(pt)
-logging.info("Startup coordinates are {}".format(pt))
-lat = pt['y']
-long = pt['x']
+    if pt is None:
+        # should have already exited but check
+        logging.fatal("Ignition point not initialized")
+        sys.exit(-1)
+    unnest_values(pt)
+    lat = pt['y']
+    long = pt['x']
+
+logging.info("Startup coordinates are {}, {}".format(lat, long))
 
 scenario = try_read_first(project['scenarios'], 'scenarios', is_fatal=True)['scenario']
 start_time = scenario['startTime']['time']
@@ -100,7 +184,11 @@ if start_date != datetime.date.today():
 
 url = r"http://wxshield:80/wxshield/getWx.php?model=geps&lat={}&long={}&dateOffset={}&tz={}&mode=daily".format(lat, long, date_offset, tz)
 logging.debug(url)
-csv = common.download(url).decode("utf-8")
+try:
+    csv = common.download(url).decode("utf-8")
+except:
+    logging.fatal("Unable to download weather")
+    sys.exit(-3)
 data = [x.split(',') for x in csv.splitlines()]
 df = pd.DataFrame(data[1:], columns=data[0])
 print(df)
@@ -117,7 +205,9 @@ for col in ['FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI']:
 df.to_csv('wx.csv', index=False)
 
 cmd = "./FireSTARR"
-args = "./Data/output1 {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+args = "{} {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+if perim is not None:
+    args = args + " --perim {}".format(perim)
 # run generated command for parsing data
 run_what = [cmd] + shlex.split(args.replace('\\', '/'))
 logging.info("Running: " + ' '.join(run_what))
@@ -149,5 +239,7 @@ if process.returncode != 0:
     raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr + stdout)
 t1 = timeit.default_timer()
 logging.info("Took {}s to run simulations".format(t1 - t0))
+with open(os.path.join(out_dir, "log.txt"), 'w') as log_file:
+    log_file.write(stdout)
 
 print(cmd)
