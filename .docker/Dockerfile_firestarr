@@ -3,19 +3,18 @@ FROM gcc:10.3
 WORKDIR /FireGUARD/
 COPY .docker/requirements_firestarr.txt requirements_firestarr.txt
 WORKDIR /FireGUARD/FireSTARR/
-RUN add-apt-repository --remove ppa:ubuntugis/ubuntugis-unstable
-RUN add-apt-repository --remove ppa:ubuntugis/ppa
-RUN echo Adding ppa \
-#  && (add-apt-repository ppa:ubuntugis/ppa || echo Ignoring add error) \
-  && add-apt-repository ppa:ubuntugis/ubuntugis-unstable \
+RUN (apt-get update || echo Ignoring update errors) \
+  && apt-get install -y software-properties-common \
+  && echo Adding ppa \
+  && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable || echo Ignoring add error) \
   && echo Added ppa \
   && (apt-get update || echo Ignoring update errors) \
-  && echo Updated
-RUN apt-get install -y gcc make git curl zip unzip tar \
+  && echo Updated \
+  && apt-get install -y gcc make git curl zip unzip tar \
     libtiff-dev libgeotiff-dev g++ cmake sqlite3 libsqlite3-dev libpq-dev \
-    unixodbc-dev odbc-postgresql python3-pip software-properties-common \
-    libgdal-dev\
-  && apt-get install gdal-bin libgdal-dev \
+    unixodbc-dev odbc-postgresql python3-pip \
+    libgdal-dev \
+  && apt-get install -y gdal-bin libgdal-dev \
   && apt-get clean && rm -rf /var/lib/apt/lists/* \
   && rm -rf \
       /usr/share/man/* \
