@@ -251,7 +251,7 @@ if ($conn){
             echo ",".roundValue('wd', $v[3]);
             $cur_rain = $v[4] - $old_rain;
             $old_rain = $v[4];
-            echo ",".roundValue('apcp', $cur_rain);
+            echo ",".roundValue('apcp', max(0, $cur_rain));
             echo $EOL;
           }
         }
