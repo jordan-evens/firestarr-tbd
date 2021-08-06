@@ -138,7 +138,7 @@ def fix_execute(cursor, stmt, data):
         # cursor.execute("DEALLOCATE stmt")
     except psycopg2.Error as e:
         logging.error(e)
-        sys.exit(-1)
+        raise e
 
 def open_local_db():
     """!
@@ -296,9 +296,16 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
     # final_table = common.FINAL_TABLE
     def do_insert(cnxn, table, data):
         """Insert and ignore duplicate key failures"""
-        stmt_insert = make_insert_statement(table, data.reset_index().columns, False)
-        # don't delete and insert without failure
-        trans_insert_data(cnxn, data, stmt_insert)
+        try:
+            stmt_insert = make_insert_statement(table, data.reset_index().columns, False)
+            # don't delete and insert without failure
+            trans_insert_data(cnxn, data, stmt_insert)
+            cnxn.commit()
+        except KeyboardInterrupt as e:
+            raise e
+        except:
+            # do nothing because insert would probably have failed since thing is in database already
+            pass
     def do_insert_only(cnxn, schema, table, data):
         """Insert and assume success because no duplicate keys should exist"""
         # rely on deleting from FK table to remove everything from this table, so just insert

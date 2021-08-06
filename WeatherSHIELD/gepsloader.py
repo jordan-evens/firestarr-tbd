@@ -138,7 +138,7 @@ class HPFXLoader(WeatherLoader):
             except KeyboardInterrupt as e:
                 raise e
             except Exception as e:
-                logging.errror(e)
+                logging.error(e)
                 logging.error("Unable to load run for {}".format(for_run))
     def load_specific_records(self, for_run, force=False):
         """!
@@ -195,14 +195,14 @@ class HPFXLoader(WeatherLoader):
             pool.map(do_save, cur_args)
         n = len(actual_dates)
         # more than the number of cpus doesn't seem to help
-        # pool = Pool(min(n, os.cpu_count()))
-        # results = list(pool.map(save_wx,
-                               # zip([save_dir] * n,
-                                   # [self.name] * n,
-                                   # [for_run] * n,
-                                   # actual_dates)))
-        for d in actual_dates:
-            save_wx([save_dir, self.name, for_run, d])
+        pool = Pool(min(n, os.cpu_count()))
+        results = list(pool.map(save_wx,
+                               zip([save_dir] * n,
+                                   [self.name] * n,
+                                   [for_run] * n,
+                                   actual_dates)))
+        # for d in actual_dates:
+            # save_wx([save_dir, self.name, for_run, d])
         # return the run that we ended up loading data for
         # HACK: Timestamp format is nicer than datetime's
         return pd.Timestamp(for_run)
