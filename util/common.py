@@ -51,6 +51,9 @@ def ensure_dir(dir):
     return dir
 
 
+def to_utc(d):
+    return pd.to_datetime(d, utc=True, infer_datetime_format=True)
+
 def read_config(force=False):
     """!
     Read configuration from default file

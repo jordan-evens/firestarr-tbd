@@ -34,8 +34,8 @@ def read_wx(args):
     save_as = '{}_{}{:02d}_{}_{:03d}'.format(name, date, time, "{}", real_hour)
     result = common.read_grib(os.path.join(dir, save_as), 0 != real_hour)
     # need to add fortime and generated
-    result['generated'] = pd.to_datetime(for_run, utc=True)
-    result['fortime'] = pd.to_datetime(for_date, utc=True)
+    result['generated'] = [common.to_utc(for_run)] * len(result)
+    result['fortime'] = [common.to_utc(for_date)] * len(result)
     index = result.index.names
     columns = result.columns
     result = result.reset_index()
