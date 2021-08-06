@@ -233,7 +233,6 @@ def trans_insert_data(cnxn, wx, stmt_insert):
         if 'int64' in str(all_wx[i].dtype):
             all_wx[i] = all_wx[i].astype(int)
     logging.debug("Inserting {} rows into database".format(len(all_wx)))
-    # use generator expression instead of list so we don't convert and then use
     fix_execute(cursor, stmt_insert, all_wx.values)
 
 
@@ -300,11 +299,24 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
         stmt_insert = make_insert_statement(table, data.reset_index().columns, False)
         # don't delete and insert without failure
         trans_insert_data(cnxn, data, stmt_insert)
-    def do_insert_only(cnxn, table, data):
+    def do_insert_only(cnxn, schema, table, data):
         """Insert and assume success because no duplicate keys should exist"""
         # rely on deleting from FK table to remove everything from this table, so just insert
-        stmt_insert = make_insert_statement(table, data.reset_index().columns)
-        trans_insert_data(cnxn, data, stmt_insert)
+        cursor = cnxn.cursor()
+        index = data.index.names
+        all_wx = data.reset_index()
+        # HACK: this is returning int64 when we know they aren't
+        for i in index:
+            # logging.debug("Fixing column " + str(i))
+            if 'int64' in str(all_wx[i].dtype):
+                all_wx[i] = all_wx[i].astype(int)
+        all_wx = all_wx[['locationmodelid', 'fortime', 'Member', 'TMP', 'RH', 'WS', 'WD', 'APCP']]
+        buffer = io.StringIO()
+        all_wx.to_csv(buffer, index=False, header=False)
+        buffer.seek(0)
+        # workaround for not being able to use qualified table name in copy_from
+        cursor.execute("SET search_path TO " + schema)
+        cursor.copy_from(buffer, table.lower(), sep=',')
     try:
         cnxn = open_local_db()
         cur_df = df
@@ -312,7 +324,7 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
         cur_df = write_foreign(cnxn, schema, 'DAT_Model', ['model', modelFK], do_insert, cur_df)
         cur_df = write_foreign(cnxn, schema, 'DAT_LocationModel', ['modelgeneratedid', 'locationid'], do_insert, cur_df)
         logging.debug('Writing data to {}'.format(final_table))
-        do_insert_only(cnxn, '{}.{}'.format(schema, final_table), cur_df)
+        do_insert_only(cnxn, schema, final_table, cur_df)
         cnxn.commit()
     finally:
         cnxn.close()
