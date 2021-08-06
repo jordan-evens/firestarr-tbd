@@ -147,36 +147,34 @@ class HPFXLoader(WeatherLoader):
         actual_dates = list(map(lambda hour: for_run + datetime.timedelta(hours=hour), self.hours))
         if not force:
             logging.debug('Checking if data is already present for {} model generated at {}'.format(self.name, for_run))
-            exists = self.check_exists(for_run)
-            if exists:
-                # check that we have all the timesteps
-                cnxn = None
-                try:
-                    cnxn = db.open_local_db()
-                    have_dates = pd.read_sql("""SELECT DISTINCT(fortime)
-                                                FROM INPUTS.DAT_Forecast f
-                                                LEFT JOIN INPUTS.DAT_LocationModel loc ON f.locationmodelid=loc.locationmodelid
-                                                LEFT JOIN INPUTS.DAT_Model m ON m.modelgeneratedid=loc.modelgeneratedid
-                                                WHERE model='{}'
-                                                AND generated='{}'""".format(self.name, for_run), cnxn).sort_values(['fortime'])
-                finally:
-                    if cnxn:
-                        cnxn.close()
-                print(have_dates)
-                # have_dates = have_dates.values.flatten()
-                # f = have_dates[0]
-                # print(f)
-                # print(type(f))
-                # have_dates = pd.to_datetime(have_dates['fortime'], utc=True).values
-                # have_dates = list(map(lambda x: datetime.datetime(x),have_dates))
-                print(have_dates)
-                print(actual_dates)
-                need_dates = [x for x in actual_dates if not have_dates['fortime'].eq(x).any()]
-                print(need_dates)
-                if len(need_dates) == 0:
-                    logging.debug('Data already loaded - aborting')
-                    return pd.Timestamp(for_run)
-                actual_dates = need_dates
+            # check that we have all the timesteps
+            cnxn = None
+            try:
+                cnxn = db.open_local_db()
+                have_dates = pd.read_sql("""SELECT DISTINCT(fortime)
+                                            FROM INPUTS.DAT_Forecast f
+                                            LEFT JOIN INPUTS.DAT_LocationModel loc ON f.locationmodelid=loc.locationmodelid
+                                            LEFT JOIN INPUTS.DAT_Model m ON m.modelgeneratedid=loc.modelgeneratedid
+                                            WHERE model='{}'
+                                            AND generated='{}'""".format(self.name, for_run), cnxn).sort_values(['fortime'])
+            finally:
+                if cnxn:
+                    cnxn.close()
+            print(have_dates)
+            # have_dates = have_dates.values.flatten()
+            # f = have_dates[0]
+            # print(f)
+            # print(type(f))
+            # have_dates = pd.to_datetime(have_dates['fortime'], utc=True).values
+            # have_dates = list(map(lambda x: datetime.datetime(x),have_dates))
+            print(have_dates)
+            print(actual_dates)
+            need_dates = [x for x in actual_dates if not have_dates['fortime'].eq(x).any()]
+            print(need_dates)
+            if len(need_dates) == 0:
+                logging.debug('Data already loaded - aborting')
+                return pd.Timestamp(for_run)
+            actual_dates = need_dates
         results = []
         date = for_run.strftime(r'%Y%m%d')
         time = int(for_run.strftime(r'%H'))
