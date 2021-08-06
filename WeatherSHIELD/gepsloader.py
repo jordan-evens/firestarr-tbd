@@ -131,7 +131,10 @@ class HPFXLoader(WeatherLoader):
             try:
                 if not year or for_run.year == year:
                     self.load_specific_records(for_run, force)
-            except:
+            except KeyboardInterrupt as e:
+                raise e
+            except Exception as e:
+                logging.errror(e)
                 logging.error("Unable to load run for {}".format(for_run))
     def load_specific_records(self, for_run, force=False):
         """!
