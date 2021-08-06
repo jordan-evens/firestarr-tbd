@@ -84,62 +84,62 @@ def wgrib2(lib, arg):
     return err
 
 #####################################################################
-def do_get(lib, cmds, gfile, select):
-    cmds[0] = gfile
-    cmds[9] = gfile
-    # logging.debug(select)
-    cmds[2] = select
-    err = wgrib2(lib, cmds)
-
-    if err > 0:
-        if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
-        nmatch = -1
-        return -1
-
-    if mem_size(lib, 10) == 0:
-        if debug: logging.warning("no match")
-        nmatch = 0
-        return 0
-
-    string = get_str_mem(lib, 10)
-    x = string.split()
-    nmatch = int(x[0])
-    ndata = int(x[1])
-    nx = int(x[2])
-    ny = int(x[3])
-    msgno = int(x[4])
-    submsgno = int(x[5])
-    if (nmatch == 0):
-        if debug: logging.warning("inq ",gfile," found no matches")
-        return None
-
-# for weird grids nx=-1/0 ny=-1/0
-    if (nx * ny != ndata):
-        nx = ndata
-        ny = 1
-    # logging.debug("Load")
-# get data, lat/lon
-    array_type = (ctypes.c_float * ndata)
-    array = array_type()
-
-    err = lib.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
-    if (err == 0):
-        data = np.reshape(np.array(array), (nx, ny), order='F')
-        if use_np_nan:
-            data[np.logical_and((data > UNDEFINED_LOW), (data < UNDEFINED_HIGH))] = np.nan
-    # logging.debug("Done")
-    return data
 
 def get_all_members(args):
     lib, cmds, mask, matches, m = args
     gfile = mask.format(m)
     if debug: logging.debug(gfile)
+    cmds[0] = gfile
+    cmds[9] = gfile
+    # logging.debug(select)
     results = []
+    array = None
     for select in matches:
-        # print(select)
-        d = do_get(lib, cmds, gfile, select)
+        # logging.debug(select)
+        # d = do_get(lib, cmds, gfile, select)
+        cmds[2] = select
+        err = wgrib2(lib, cmds)
+
+        if err > 0:
+            if debug: logging.error("inq ",gfile,": wgrib2 failed err=", err)
+            nmatch = -1
+            sys.exit(-1)
+
+        if mem_size(lib, 10) == 0:
+            if debug: logging.warning("no match")
+            nmatch = 0
+            sys.exit(-1)
+        # logging.debug('get_str_mem()')
+        string = get_str_mem(lib, 10)
+        x = string.split()
+        nmatch = int(x[0])
+        ndata = int(x[1])
+        nx = int(x[2])
+        ny = int(x[3])
+        msgno = int(x[4])
+        submsgno = int(x[5])
+        if (nmatch == 0):
+            if debug: logging.warning("inq ",gfile," found no matches")
+            sys.exit(-1)
+
+        # for weird grids nx=-1/0 ny=-1/0
+        if (nx * ny != ndata):
+            nx = ndata
+            ny = 1
+        # logging.debug("Load")
+        # get data, lat/lon
+        if array is None:
+            array_type = (ctypes.c_float * ndata)
+            array = array_type()
+        # logging.debug('get_reg_data()')
+        err = lib.wgrib2_get_reg_data(ctypes.byref(array), ndata, 13)
+        if (err == 0):
+            data = np.reshape(np.array(array), (nx, ny), order='F')
+            if use_np_nan:
+                data[np.logical_and((data > UNDEFINED_LOW), (data < UNDEFINED_HIGH))] = np.nan
+        # logging.debug("Done")
         # print(d)
-        results.append(d)
+        results.append(data)
     # print("get_all_members() ending")
     # print(results)
     return results
