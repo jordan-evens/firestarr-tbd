@@ -43,6 +43,10 @@ def read_wx(args):
     # logging.debug(result)
     return result.set_index(index + ['model'])[columns]
 
+def save_wx(args):
+    wx = read_wx(args)
+    db.insert_weather('INPUTS', 'DAT_Forecast', wx)
+
 def do_save(args):
     """!
     Generate URL containing data
@@ -189,33 +193,16 @@ class HPFXLoader(WeatherLoader):
             # args = args + cur_args
             # NOTE: not as fast as pooling everything, but if the hour fails we don't have a bunch of extra requests
             pool.map(do_save, cur_args)
-        # pool = Pool(DOWNLOAD_THREADS)
-        # pool.map(do_save, args)
-        # list(map(do_save, args))
         n = len(actual_dates)
         # more than the number of cpus doesn't seem to help
         # pool = Pool(min(n, os.cpu_count()))
-        # results = list(pool.map(read_wx,
+        # results = list(pool.map(save_wx,
                                # zip([save_dir] * n,
                                    # [self.name] * n,
                                    # [for_run] * n,
                                    # actual_dates)))
-        # don't save data until everything is loaded
-        # wx = pd.concat(results)
-        # self.save_data(wx)
-        try:
-            for d in actual_dates:
-                self.save_data(read_wx([save_dir, self.name, for_run, d]))
-        except Exception as e:
-            logging.error(e)
-            # logging.debug("Deleting data for failed run import")
-            # key = pd.DataFrame([self.name, for_run], columns=['model', 'forrun'])
-            # cnxn = db.open_local_db()
-            # db.trans_delete_data(cnxn, 'INPUTS.DAT_Model', key, False)
-            # if cnxn:
-                # cnxn.close()
-            return None
-        logging.debug("Done")
+        for d in actual_dates:
+            save_wx([save_dir, self.name, for_run, d])
         # return the run that we ended up loading data for
         # HACK: Timestamp format is nicer than datetime's
         return pd.Timestamp(for_run)
