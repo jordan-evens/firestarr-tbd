@@ -54,7 +54,7 @@ services:
     volumes:
       - type: bind
         source: ./settings.ini
-        target: /app/wxshield/settings.ini
+        target: /app/settings.ini
       - type: bind
         source: ./WeatherSHIELD/gui
         target: /app/wxshield/
