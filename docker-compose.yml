@@ -126,3 +126,5 @@ services:
       - type: bind
         source: ./util
         target: /FireGUARD/util
+    depends_on:
+      - wxshield
