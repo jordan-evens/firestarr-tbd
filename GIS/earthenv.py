@@ -90,6 +90,6 @@ if __name__ == '__main__':
            #~ src = rasterio.open(fp)
            src_files_to_mosaic.append(fp)
         import sys
-        sys.path.append(os.path.join(os.path.dirname(sys.executable), 'Scripts'))
+        sys.path.append(os.path.dirname(sys.executable))
         import gdal_merge as gm
         gm.main(['', '-co', 'COMPRESS=DEFLATE', '-co', 'BIGTIFF=YES', '-o', EARTHENV] + src_files_to_mosaic)
