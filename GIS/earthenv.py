@@ -23,6 +23,11 @@ import sys
 sys.path.append('../util')
 import common
 
+import sys
+sys.path.append(os.path.dirname(sys.executable))
+import gdal_merge as gm
+
+
 DATA_DIR = os.path.realpath('../data')
 GIS = os.path.join(DATA_DIR, 'GIS')
 OUT_DIR = os.path.join(DATA_DIR, 'extracted/earthenv')
@@ -78,18 +83,29 @@ if __name__ == '__main__':
         tar = tarfile.open(f)
         tar.extractall(OUT_DIR)
         tar.close()
+    # HACK: some .bil files don't work with gdal, so merge with rasterio to start
+    import rasterio
+    for long in RANGE_LONGITUDE:
+        files = glob.glob(os.path.join(OUT_DIR, '*{}*.bil'.format(long)))
+        out_file = os.path.join(OUT_DIR, "EarthEnv-DEM90_{}.tif".format(long))
+        if not os.path.exists(out_file):
+            print("Making {}".format(out_file))
+            dest, output_transform = rasterio.merge.merge(files)
+            with rasterio.open(files[0]) as src:
+                out_meta = src.meta.copy()
+            out_meta.update({"driver": "GTiff",
+                             "height": dest.shape[1],
+                             "width": dest.shape[2],
+                             "transform": output_transform})
+            with rasterio.open(out_file, "w", **out_meta) as dest1:
+                dest1.write(dest)
     if not os.path.exists(EARTHENV):
         if not os.path.exists(GIS_ELEVATION):
             os.makedirs(GIS_ELEVATION)
         print('Mosaicing...')
-        search_criteria = "EarthEnv-DEM90_*.bil"
-        q = os.path.join(OUT_DIR, search_criteria)
-        dem_fps = glob.glob(q)
+        dem_fps = glob.glob(os.path.join(OUT_DIR, "EarthEnv-DEM90_*.tif"))
         src_files_to_mosaic = []
         for fp in dem_fps:
            #~ src = rasterio.open(fp)
            src_files_to_mosaic.append(fp)
-        import sys
-        sys.path.append(os.path.dirname(sys.executable))
-        import gdal_merge as gm
         gm.main(['', '-co', 'COMPRESS=DEFLATE', '-co', 'BIGTIFF=YES', '-o', EARTHENV] + src_files_to_mosaic)
