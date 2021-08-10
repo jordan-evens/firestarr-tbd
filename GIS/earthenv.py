@@ -31,6 +31,7 @@ import gdal_merge as gm
 DATA_DIR = os.path.realpath('../data')
 GIS = os.path.join(DATA_DIR, 'GIS')
 OUT_DIR = os.path.join(DATA_DIR, 'extracted/earthenv')
+TIF_DIR = os.path.join(GIS, 'earthenv')
 INPUT = os.path.join(GIS, "input")
 GIS_ELEVATION = os.path.join(INPUT, "elevation")
 EARTHENV = os.path.join(GIS_ELEVATION, "EarthEnv.tif")
@@ -83,29 +84,27 @@ if __name__ == '__main__':
         tar = tarfile.open(f)
         tar.extractall(OUT_DIR)
         tar.close()
-    # HACK: some .bil files don't work with gdal, so merge with rasterio to start
+    # HACK: some .bil files don't work with gdal, so convert with rasterio to start
     import rasterio
-    for long in RANGE_LONGITUDE:
-        files = glob.glob(os.path.join(OUT_DIR, '*{}*.bil'.format(long)))
-        out_file = os.path.join(OUT_DIR, "EarthEnv-DEM90_{}.tif".format(long))
+    files = glob.glob(os.path.join(OUT_DIR, '*.bil'))
+    for file in files:
+        print(file)
+        out_file = os.path.join(TIF_DIR, os.path.basename(file.replace('.bil', '.tif')))
         if not os.path.exists(out_file):
-            print("Making {}".format(out_file))
-            dest, output_transform = rasterio.merge.merge(files)
-            with rasterio.open(files[0]) as src:
+            with rasterio.open(file) as src:
                 out_meta = src.meta.copy()
-            out_meta.update({"driver": "GTiff",
-                             "height": dest.shape[1],
-                             "width": dest.shape[2],
-                             "transform": output_transform})
-            with rasterio.open(out_file, "w", **out_meta) as dest1:
-                dest1.write(dest)
+                out_meta.update({"driver": "GTiff"})
+                array = src.read(1)
+                with rasterio.open(out_file,
+                                    "w", **out_meta, compress='DEFLATE',
+                                    tiled=True, blockxsize=256, blockysize=256) as dest1:
+                    dest1.write(array.astype(rasterio.uint16), 1)
     if not os.path.exists(EARTHENV):
         if not os.path.exists(GIS_ELEVATION):
             os.makedirs(GIS_ELEVATION)
         print('Mosaicing...')
-        dem_fps = glob.glob(os.path.join(OUT_DIR, "EarthEnv-DEM90_*.tif"))
+        dem_fps = glob.glob(os.path.join(TIF_DIR, "EarthEnv-DEM90_*.tif"))
         src_files_to_mosaic = []
         for fp in dem_fps:
-           #~ src = rasterio.open(fp)
            src_files_to_mosaic.append(fp)
         gm.main(['', '-co', 'COMPRESS=DEFLATE', '-co', 'BIGTIFF=YES', '-o', EARTHENV] + src_files_to_mosaic)
