@@ -47,7 +47,14 @@ def ensure_dir(dir):
     @return None
     """
     if not os.path.exists(dir):
-        os.makedirs(dir)
+        try:
+            os.makedirs(dir)
+        except:
+            # screws up when threaded sometimes
+            pass
+    if not os.path.exists(dir):
+        logging.fatal("Could not create directory {}".format(dir))
+        sys.exit(-1)
     return dir
 
 
