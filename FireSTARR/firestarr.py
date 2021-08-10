@@ -229,14 +229,17 @@ def start_process(run_what, cwd):
     p.args = run_what
     return p
 
+def finish_process(process):
+    stdout, stderr = process.communicate()
+    if process.returncode != 0:
+        #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
+        if -1073741510 == process.returncode:
+            sys.exit(process.returncode)
+        raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr + stdout)
+    return stdout, stderr
 
-process = start_process(run_what, "/FireGUARD/FireSTARR")
-stdout, stderr = process.communicate()
-if process.returncode != 0:
-    #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
-    if -1073741510 == process.returncode:
-        sys.exit(process.returncode)
-    raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr + stdout)
+stdout, stderr = finish_process(start_process(run_what, "/FireGUARD/FireSTARR"))
+
 t1 = timeit.default_timer()
 logging.info("Took {}s to run simulations".format(t1 - t0))
 with open(os.path.join(out_dir, "log.txt"), 'w') as log_file:
