@@ -5,5 +5,4 @@ ConfigParser
 shapely
 geopandas
 pycrs
-gdal
 scipy
