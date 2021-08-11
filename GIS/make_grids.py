@@ -73,7 +73,7 @@ TILED_DIR = os.path.join(GENERATED_DIR, 'tiled')
 TMP = os.path.realpath('/FireGUARD/data/tmp')
 CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=LZW']
 EARTHENV = os.path.join(DATA_DIR, 'GIS/input/elevation/EarthEnv.tif')
-FUEL_RASTER = os.path.join(EXTRACTED_DIR, r'fbp\fuel_layer\FBP_FuelLayer.tif')
+FUEL_RASTER = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
 
 INT_FUEL = os.path.join(INTERMEDIATE_DIR, 'fuel')
 DRIVER_SHP = ogr.GetDriverByName('ESRI Shapefile')
@@ -441,10 +441,10 @@ def check_merged(filled_tif, zone, cols, rows):
         ds_filled = None
         gc.collect()
         print('Adding water from polygons')
-        water = [checkAddLakes(zone, cols, rows, 'USA_Lakes', r'C:\FireGUARD\data\extracted\nhd\NHD_H_National_GDB.gdb', r'NHDWaterbody')]
-        water += [checkAddLakes(zone, cols, rows, 'USA_Other', r'C:\FireGUARD\data\extracted\nhd\NHD_H_National_GDB.gdb', r'NHDArea')]
+        water = [checkAddLakes(zone, cols, rows, 'USA_Lakes', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDWaterbody')]
+        water += [checkAddLakes(zone, cols, rows, 'USA_Other', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDArea')]
         for prov in ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']:
-            path_gdb = r'C:\FireGUARD\data\extracted\canvec\canvec_50K_{}_Hydro.gdb'.format(prov)
+            path_gdb = r'/FireGUARD/data/extracted/canvec/canvec_50K_{}_Hydro.gdb'.format(prov)
             water += [checkAddLakes(zone, cols, rows, prov, path_gdb, 'waterbody_2')]
         # should have a list of rasters that were made
         water = [x for x in water if x is not None]
@@ -475,7 +475,7 @@ def fix_nodata(out_tif):
     ds = None
 
 def clip_fuel(fp, zone):
-    # fp = os.path.join(EXTRACTED_DIR, r'fbp\fuel_layer\FBP_FuelLayer.tif')
+    # fp = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
     # zone = 14.5
     out_tif = os.path.join(DIR, 'fuel_{}'.format(zone).replace('.', '_')) + '.tif'
     if os.path.exists(out_tif):
