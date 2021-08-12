@@ -455,7 +455,6 @@ def check_merged(filled_tif, zone, cols, rows):
         process = subprocess.Popen(run_what,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE,
-                                   creationflags=0x08000000,
                                    cwd=CWD)
         stdout, stderr = process.communicate()
         if process.returncode != 0:
