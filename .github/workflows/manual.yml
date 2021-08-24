@@ -19,7 +19,7 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
     # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - name: Clone Repository (Late
+    - name: Clone Repository (Latest)
       uses: actions/checkout@v2
       if: github.event.inputs.git-ref == ''
     - name: Clone Repository (Custom Ref)
