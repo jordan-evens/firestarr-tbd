@@ -6,3 +6,4 @@ shapely
 geopandas
 pycrs
 scipy
+bs4
