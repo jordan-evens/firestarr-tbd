@@ -1,6 +1,5 @@
 import os
 import urllib.request as urllib2
-import zipfile
 
 def download(url, to_dir='.', to_file=None):
     if to_file is None:
@@ -18,12 +17,5 @@ def download(url, to_dir='.', to_file=None):
                     break 
                 f.write(tmp)
     return to_file
-
-
-def unzip(path, to_dir):
-    if not os.path.exists(to_dir):
-        os.mkdir(to_dir)
-    with zipfile.ZipFile(path, 'r') as zip_ref:
-        zip_ref.extractall(to_dir)
 
 

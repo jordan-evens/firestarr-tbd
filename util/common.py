@@ -24,6 +24,7 @@ import sys
 #import pywgrib2_s as wgrib2
 import wgrib2
 import copy
+import zipfile
 
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -477,3 +478,13 @@ def split_line(line):
     """
     return re.sub(r' +', ' ', line.strip()).split(' ')
 
+
+def unzip(path, to_dir, match=None):
+    if not os.path.exists(to_dir):
+        os.mkdir(to_dir)
+    with zipfile.ZipFile(path, 'r') as zip_ref:
+        if match is None:
+            zip_ref.extractall(to_dir)
+        else:
+            names = [x for x in zip_ref.namelist() if match in x]
+            zip_ref.extractall(to_dir, names)

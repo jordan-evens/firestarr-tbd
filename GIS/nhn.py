@@ -1,11 +1,11 @@
 from shared import download
-from shared import unzip
 import certifi
 import ssl
 import os
 import sys
 sys.path.append('../util')
 import common
+from common import unzip
 import urllib
 
 ## So HTTPS transfers work properly
