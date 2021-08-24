@@ -458,7 +458,7 @@ def check_merged(filled_tif, zone, cols, rows):
                                    cwd=CWD)
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            raise Exception('Error processing merge: ' + stderr)
+            raise Exception('Error processing merge: ' + stderr.decode('utf-8'))
         gc.collect()
     return merged_tif
 
@@ -530,7 +530,7 @@ def makeTiles():
                                    cwd=CWD)
         stdout, stderr = process.communicate()
         if process.returncode != 0:
-            raise Exception('Error processing retile: ' + stderr)
+            raise Exception('Error processing retile: ' + stderr.decode('utf-8'))
     # HACK: for some reason nodata values aren't set?
     for file in os.listdir(TILED_DIR):
         print(file)
