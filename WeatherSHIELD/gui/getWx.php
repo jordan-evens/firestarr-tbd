@@ -191,7 +191,7 @@ if ($conn){
     {
       echo ",MEMBER";
     }
-    echo ",TEMP,RH,WD,WS,PREC".$EOL;
+    echo ",TEMP,RH,WS,WD,PREC".$EOL;
     $fixed_dates = array();
     $diff_noon =  array();
     $best_diff = array();
