@@ -87,6 +87,7 @@ if __name__ == '__main__':
     # HACK: some .bil files don't work with gdal, so convert with rasterio to start
     import rasterio
     files = glob.glob(os.path.join(OUT_DIR, '*.bil'))
+    common.ensure_dir(TIF_DIR)
     for file in files:
         print(file)
         out_file = os.path.join(TIF_DIR, os.path.basename(file.replace('.bil', '.tif')))
