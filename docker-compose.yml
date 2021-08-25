@@ -58,6 +58,9 @@ services:
       - type: bind
         source: ./WeatherSHIELD/gui
         target: /app/wxshield/
+      - type: bind
+        source: ./data
+        target: /app/data
     depends_on:
       - db
 
