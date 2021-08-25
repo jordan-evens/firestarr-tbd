@@ -8,6 +8,8 @@ import sys
 sys.path.append('../util')
 import common
 import firestarr
+import timeit
+import logging
 
 SITE = 'http://psaasbc.dss.intellifirenwt.com'
 URL = SITE + '/jobs/archive/'
@@ -28,6 +30,8 @@ fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
 
 times = {}
 recent = {}
+simtimes = {}
+totaltime = 0
 for f in fires:
     print(f)
     times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
@@ -40,4 +44,13 @@ for f in fires:
     common.unzip(z, cur_dir)
     fgmj = os.path.join(cur_dir, 'job.fgmj')
     if os.path.exists(fgmj):
-        firestarr.do_run(fgmj)
+        t0 = timeit.default_timer()
+        log_name = firestarr.do_run(fgmj)
+        t1 = timeit.default_timer()
+        if log_name is not None:
+            simtimes[f] = t1 - t0
+            totaltime = totaltime + simtimes[f]
+            logging.info("Took {}s to run {}".format(simtimes[f], f))
+
+n = len(simtimes)
+logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))

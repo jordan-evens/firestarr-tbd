@@ -79,7 +79,7 @@ def do_run(fgmj):
     out_dir = os.path.join("./Data", fire_name, job_time)
     if os.path.exists(out_dir):
         print("Already done")
-        return
+        return None
     common.ensure_dir(out_dir)
     with open(fgmj) as f:
       data = json.load(f)
@@ -236,9 +236,11 @@ def do_run(fgmj):
     stdout, stderr = finish_process(start_process(run_what, "/FireGUARD/FireSTARR"))
     t1 = timeit.default_timer()
     logging.info("Took {}s to run simulations".format(t1 - t0))
-    with open(os.path.join(out_dir, "log.txt"), 'w') as log_file:
+    log_name = os.path.join(out_dir, "log.txt")
+    with open(log_name, 'w') as log_file:
         log_file.write(stdout.decode('utf-8'))
-    print(cmd)
+    return log_name
+    
 
 if __name__ == "__main__":
     do_run(sys.argv[1])
