@@ -11,6 +11,11 @@ import firestarr
 import timeit
 import logging
 
+import sys
+sys.path.append(os.path.dirname(sys.executable))
+sys.path.append('/usr/local/bin')
+import gdal_merge as gm
+
 SITE = 'http://psaasbc.dss.intellifirenwt.com'
 URL = SITE + '/jobs/archive/'
 DIR = '/FireGUARD/data/fgmj/'
@@ -52,5 +57,14 @@ for f in fires:
             totaltime = totaltime + simtimes[f]
             logging.info("Took {}s to run {}".format(simtimes[f], f))
 
+def merge_dir(dir):
+    files = [os.path.join(dir, x) for x in sorted(os.listdir(dir))]
+    gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=LZW', '-co', 'TILED=YES', '-o', dir + '.tif'] + files)
+    # gm.main(['', '-co', 'COMPRESS=LZW', '-co', 'TILED=YES', '-o', dir + '.tif'] + files)
+    # gm.main(['', '-o', dir + '.tif'] + files)
+
 n = len(simtimes)
-logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
+if n > 0:
+    logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
+    merge_dir('/FireGUARD/data/output/perimeter')
+    merge_dir('/FireGUARD/data/output/probability')

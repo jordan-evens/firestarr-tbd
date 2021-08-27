@@ -345,9 +345,14 @@ def rasterize_perim(run_output, perim, year, name, raster=None):
     #~ except:
         #~ return None, None
 
-def project_raster(filename, output_raster=None):
+def project_raster(filename, output_raster=None, options=['COMPRESS=LZW', 'TILED=YES']):
     input_raster = gdal.Open(filename)
     if output_raster is None:
         output_raster = filename[:-4] + '.tif'
-    warp = gdal.Warp(output_raster, input_raster, dstSRS='EPSG:4326')
+    warp = gdal.Warp(output_raster,
+                     input_raster,
+                     srcNodata=0,
+                     dstNodata=0,
+                     options=gdal.WarpOptions(dstSRS='EPSG:4326',
+                                              creationOptions=options))
     warp = None
