@@ -10,7 +10,7 @@ import common
 import firestarr
 import timeit
 import logging
-
+import shutil
 import sys
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append('/usr/local/bin')
@@ -57,14 +57,47 @@ for f in fires:
             totaltime = totaltime + simtimes[f]
             logging.info("Took {}s to run {}".format(simtimes[f], f))
 
-def merge_dir(dir):
-    files = [os.path.join(dir, x) for x in sorted(os.listdir(dir))]
-    gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=LZW', '-co', 'TILED=YES', '-o', dir + '.tif'] + files)
-    # gm.main(['', '-co', 'COMPRESS=LZW', '-co', 'TILED=YES', '-o', dir + '.tif'] + files)
-    # gm.main(['', '-o', dir + '.tif'] + files)
+import gdal_retile as gr
+import gdal_calc
+import gdal
+
+def merge_dir(dir_input):
+    # HACK: for some reason output tiles were both being called 'probability'
+    import importlib
+    importlib.reload(gr)
+    TILE_SIZE = str(1024)
+    file_tmp = dir_input + '_tmp.tif'
+    file_out = dir_input + '.tif'
+    file_int = dir_input + '_int.tif'
+    creation_options = ['COMPRESS=LZW', 'TILED=YES']
+    co = list(itertools.chain.from_iterable(map(lambda x: ['-co', x], creation_options)))
+    files = [os.path.join(dir_input, x) for x in sorted(os.listdir(dir_input)) if x.endswith('.tif')]
+    gm.main(['', '-n', '0', '-a_nodata', '0'] + co + ['-o', file_tmp] + files)
+    #gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
+    shutil.move(file_tmp, file_out)
+    gdal_calc.Calc(A=file_out, outfile=file_tmp, calc='A*100', NoDataValue=0, type='Byte', creation_options=creation_options)
+    shutil.move(file_tmp, file_int)
+    dir_tile = os.path.join(dir_input, 'tiled')
+    if os.path.exists(dir_tile):
+        print('Removing {}'.format(dir_tile))
+        shutil.rmtree(dir_tile)
+    dir_tile = common.ensure_dir(dir_tile)
+    gr.main(['', '-ot', 'Byte'] + co + ['-v', '-ps', TILE_SIZE, TILE_SIZE, '-overlap', '0', '-targetDir', dir_tile, file_int])
+    tiles = [os.path.join(dir_tile, x) for x in sorted(os.listdir(dir_tile)) if x.endswith('.tif')]
+    for t in tiles:
+        # print('Checking {}'.format(t))
+        ds = gdal.Open(t, 1)
+        rb = ds.GetRasterBand(1)
+        vals = rb.ReadAsArray(0, 0)
+        if (vals == 0).all():
+            print("Removing empty tile {}".format(t))
+            os.remove(t)
+        vals = None
+        rb = None
+        ds = None
 
 n = len(simtimes)
 if n > 0:
     logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
-    merge_dir('/FireGUARD/data/output/perimeter')
     merge_dir('/FireGUARD/data/output/probability')
+    merge_dir('/FireGUARD/data/output/perimeter')
