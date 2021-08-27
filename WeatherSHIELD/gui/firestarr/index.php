@@ -100,6 +100,16 @@ echo 'let prob_files = ['.listdir($PROB_DIR.'tiled/')."];\n";
                 opacity: 1.0,
                 inFilter: (v) => v !== 0
               });
+            layerProb.on('click', function (e) {
+              if (e.value !== null) {
+                let v = e.value;
+                let html = (`<span class="popupText">Probability ${v}%</span>`);
+                let popup = L.popup()
+                            .setLatLng(e.latlng)
+                            .setContent(html)
+                            .openOn(map);
+                }
+              });
               probs.push(layerProb);
             } catch(err) {
               expected_probs--;
@@ -134,16 +144,6 @@ echo 'let prob_files = ['.listdir($PROB_DIR.'tiled/')."];\n";
             position: 'bottomleft',
             collapsed: false
           }).addTo(map);
-          probGroup.on('click', function (e) {
-            if (e.value !== null) {
-              let v = e.value;
-              let html = ('<span class="popupText">Probability ${v}%</span>');
-              let popup = L.popup()
-                          .setLatLng(e.latlng)
-                          .setContent(html)
-                          .openOn(map);
-              }
-            });
           map.fitBounds(probGroup.getBounds());
         }
         setTimeout(checkWait, 100);
