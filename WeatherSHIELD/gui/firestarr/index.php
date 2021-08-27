@@ -4,8 +4,8 @@
 <head>
     <title>FireSTARR Outputs</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <link rel="stylesheet" href="dist/leaflet.css" />
-    <link rel="stylesheet" href="examples.css" />
+    <link rel="stylesheet" href="//npmcdn.com/leaflet@1.2.0/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://ihcantabria.github.io/Leaflet.CanvasLayer.Field/examples.css" />
 
     <link href="https://fonts.googleapis.com/css?family=Roboto:100,400" rel="stylesheet">
 </head>
