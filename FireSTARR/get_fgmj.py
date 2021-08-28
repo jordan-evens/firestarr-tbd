@@ -81,20 +81,11 @@ def merge_dir(dir_input):
     if os.path.exists(dir_tile):
         print('Removing {}'.format(dir_tile))
         shutil.rmtree(dir_tile)
+    import subprocess
+    file_cr = dir_input + '_cr.tif'
+    subprocess.call('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
-    gr.main(['', '-ot', 'Byte'] + co + ['-v', '-ps', TILE_SIZE, TILE_SIZE, '-overlap', '0', '-targetDir', dir_tile, file_int])
-    tiles = [os.path.join(dir_tile, x) for x in sorted(os.listdir(dir_tile)) if x.endswith('.tif')]
-    for t in tiles:
-        # print('Checking {}'.format(t))
-        ds = gdal.Open(t, 1)
-        rb = ds.GetRasterBand(1)
-        vals = rb.ReadAsArray(0, 0)
-        if (vals == 0).all():
-            print("Removing empty tile {}".format(t))
-            os.remove(t)
-        vals = None
-        rb = None
-        ds = None
+    subprocess.call('gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile))
 
 n = len(simtimes)
 if n > 0:
@@ -102,73 +93,3 @@ if n > 0:
     merge_dir('/FireGUARD/data/output/probability')
     merge_dir('/FireGUARD/data/output/perimeter')
 
-import os
-from bs4 import BeautifulSoup
-import numpy as np
-import gdal
-b = BeautifulSoup("".join([line.rstrip('\n') for line in open('/FireGUARD/FireSTARR/probability_int.qml')]))
-palette = b.findAll('paletteentry')
-p = {}
-for e in palette:
-    h = e.get('color')[1:]
-    # rgb = list(int(h[i:i+2], 16) for i in (0, 2, 4)) + [int(e.get('alpha'))]
-    rgb = list(int(h[i:i+2], 16) for i in (0, 2, 4)) + [min(255, int(255 * int(e.get('value'))/ 100.0) + 30)]
-    p[int(e.get('value'))] = rgb
-
-file_int = '/FireGUARD/data/output/probability_int.tif'
-file_rgba = '/FireGUARD/data/output/probability_rgb.tif'
-if os.path.exists(file_rgba):
-    os.remove(file_rgba)
-
-DRIVER_TIF = gdal.GetDriverByName('GTiff')
-ds = gdal.Open(file_int, 1)
-
-tmp_ds = gdal.GetDriverByName('MEM').CreateCopy('', ds, 0)
-tmp_ds.AddBand()
-tmp_ds.AddBand()
-tmp_ds.AddBand()
-
-dst_ds = DRIVER_TIF.CreateCopy(file_rgba, tmp_ds, 0, options=CREATION_OPTIONS)
-dst_ds = None
-tmp_ds = None
-rb = ds.GetRasterBand(1)
-vals = rb.ReadAsArray(0, 0)
-u = np.unique(vals)
-for i in u:
-    if not i in p.keys():
-        print('Setting {} to be transparent'.format(i))
-        p[i] = [0, 0, 0, 0]
-
-rb = None
-ds = None
-
-# get_r = np.vectorize(lambda v: p[v][0])
-# get_r = np.frompyfunc(lambda v: p[v][0], 1, 1)
-# r = get_r(vals)
-
-
-get_rgb = np.frompyfunc(lambda v: p[v], 1, 1)
-v_rgb = get_rgb(vals)
-
-get_r = np.vectorize(lambda v: v[0])
-get_g = np.vectorize(lambda v: v[1])
-get_b = np.vectorize(lambda v: v[2])
-get_a = np.vectorize(lambda v: v[3])
-
-r = get_r(v_rgb)
-g = get_g(v_rgb)
-b = get_b(v_rgb)
-a = get_a(v_rgb)
-
-ds = gdal.Open(file_rgba, 1)
-def write_band(i, v):
-    rb = ds.GetRasterBand(i)
-    rb.WriteArray(v, 0, 0)
-    rb.FlushCache()
-    rb = None
-
-write_band(1, r)
-write_band(2, g)
-write_band(3, b)
-write_band(4, a)
-ds = None
