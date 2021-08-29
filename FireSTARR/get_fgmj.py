@@ -86,7 +86,7 @@ def merge_dir(dir_input):
     file_cr = dir_input + '_cr.tif'
     subprocess.call('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
-    subprocess.call('gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile))
+    subprocess.call('/usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile))
 
 n = len(simtimes)
 if n > 0:
