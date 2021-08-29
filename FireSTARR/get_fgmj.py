@@ -15,6 +15,7 @@ import sys
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append('/usr/local/bin')
 import gdal_merge as gm
+import itertools
 
 SITE = 'http://psaasbc.dss.intellifirenwt.com'
 URL = SITE + '/jobs/archive/'
