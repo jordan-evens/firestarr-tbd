@@ -51,13 +51,16 @@ for f in fires:
     common.unzip(z, cur_dir)
     fgmj = os.path.join(cur_dir, 'job.fgmj')
     if os.path.exists(fgmj):
-        t0 = timeit.default_timer()
-        log_name = firestarr.do_run(fgmj)
-        t1 = timeit.default_timer()
-        if log_name is not None:
-            simtimes[f] = t1 - t0
-            totaltime = totaltime + simtimes[f]
-            logging.info("Took {}s to run {}".format(simtimes[f], f))
+        try:
+            t0 = timeit.default_timer()
+            log_name = firestarr.do_run(fgmj)
+            t1 = timeit.default_timer()
+            if log_name is not None:
+                simtimes[f] = t1 - t0
+                totaltime = totaltime + simtimes[f]
+                logging.info("Took {}s to run {}".format(simtimes[f], f))
+        except Exception as e:
+            logging.error(e)
 
 import gdal_retile as gr
 import gdal_calc
