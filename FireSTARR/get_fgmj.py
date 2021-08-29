@@ -30,37 +30,37 @@ def getPage(url):
     # parse the html using beautiful soup and return
     return BeautifulSoup(page, 'html.parser')
 
-p = getPage(URL)
-a = p.findAll('a')
-zips = [x.get('href') for x in a if x.get('href').endswith('.zip')]
-fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
-
-times = {}
-recent = {}
-simtimes = {}
-totaltime = 0
-for f in fires:
-    print(f)
-    times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
-    recent[f] = {
-                    'time': max(times[f]),
-                    'url': [x for x in zips if x[x.rindex('/') + 1:x.index('_')] == f and datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') == max(times[f])][0],
-                }
-    z = common.save_http(DIR, SITE + recent[f]['url'], ignore_existing=True)
-    cur_dir = os.path.join(EXT_DIR, os.path.basename(z)[:-4])
-    common.unzip(z, cur_dir)
-    fgmj = os.path.join(cur_dir, 'job.fgmj')
-    if os.path.exists(fgmj):
-        try:
-            t0 = timeit.default_timer()
-            log_name = firestarr.do_run(fgmj)
-            t1 = timeit.default_timer()
-            if log_name is not None:
-                simtimes[f] = t1 - t0
-                totaltime = totaltime + simtimes[f]
-                logging.info("Took {}s to run {}".format(simtimes[f], f))
-        except Exception as e:
-            logging.error(e)
+def run_fires():
+    p = getPage(URL)
+    a = p.findAll('a')
+    zips = [x.get('href') for x in a if x.get('href').endswith('.zip')]
+    fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
+    times = {}
+    recent = {}
+    simtimes = {}
+    totaltime = 0
+    for f in fires:
+        print(f)
+        times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
+        recent[f] = {
+                        'time': max(times[f]),
+                        'url': [x for x in zips if x[x.rindex('/') + 1:x.index('_')] == f and datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') == max(times[f])][0],
+                    }
+        z = common.save_http(DIR, SITE + recent[f]['url'], ignore_existing=True)
+        cur_dir = os.path.join(EXT_DIR, os.path.basename(z)[:-4])
+        common.unzip(z, cur_dir)
+        fgmj = os.path.join(cur_dir, 'job.fgmj')
+        if os.path.exists(fgmj):
+            try:
+                t0 = timeit.default_timer()
+                log_name = firestarr.do_run(fgmj)
+                t1 = timeit.default_timer()
+                if log_name is not None:
+                    simtimes[f] = t1 - t0
+                    totaltime = totaltime + simtimes[f]
+                    logging.info("Took {}s to run {}".format(simtimes[f], f))
+            except Exception as e:
+                logging.error(e)
 
 import gdal_retile as gr
 import gdal_calc
@@ -91,9 +91,9 @@ def merge_dir(dir_input):
     dir_tile = common.ensure_dir(dir_tile)
     subprocess.call('/usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile))
 
-n = len(simtimes)
-if n > 0:
-    logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
-    merge_dir('/FireGUARD/data/output/probability')
-    merge_dir('/FireGUARD/data/output/perimeter')
-
+if __name__ == "__main__":
+    n = len(simtimes)
+    if n > 0:
+        logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
+        merge_dir('/FireGUARD/data/output/probability')
+        merge_dir('/FireGUARD/data/output/perimeter')
