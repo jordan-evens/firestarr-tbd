@@ -9,7 +9,6 @@ import math
 import datetime
 import shlex
 import timeit
-import subprocess
 from osgeo import ogr
 from osgeo import osr
 import statistics
@@ -46,31 +45,6 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
         if len(result) > 1:
             logging.warning("{} {} provided - only the first one will be used".format(n, key))
     return result[0]
-
-def start_process(run_what, cwd):
-    """!
-    Start running a command using subprocess
-    @param run_what Process to run
-    @param flags Flags to run with
-    @param cwd Directory to run in
-    @return Running subprocess
-    """
-    logging.debug(run_what)
-    p = subprocess.Popen(run_what,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
-                           cwd=cwd)
-    p.args = run_what
-    return p
-
-def finish_process(process):
-    stdout, stderr = process.communicate()
-    if process.returncode != 0:
-        #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
-        if -1073741510 == process.returncode:
-            sys.exit(process.returncode)
-        raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
-    return stdout, stderr
 
 def do_run(fgmj):
     startup = {
@@ -240,7 +214,7 @@ def do_run(fgmj):
         run_what = [cmd] + shlex.split(args.replace('\\', '/'))
         logging.info("Running: " + ' '.join(run_what))
         t0 = timeit.default_timer()
-        stdout, stderr = finish_process(start_process(run_what, "/FireGUARD/FireSTARR"))
+        stdout, stderr = common.finish_process(common.start_process(run_what, "/FireGUARD/FireSTARR"))
         t1 = timeit.default_timer()
         logging.info("Took {}s to run simulations".format(t1 - t0))
         log_name = os.path.join(out_dir, "log.txt")

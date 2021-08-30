@@ -488,3 +488,28 @@ def unzip(path, to_dir, match=None):
         else:
             names = [x for x in zip_ref.namelist() if match in x]
             zip_ref.extractall(to_dir, names)
+
+def start_process(run_what, cwd):
+    """!
+    Start running a command using subprocess
+    @param run_what Process to run
+    @param flags Flags to run with
+    @param cwd Directory to run in
+    @return Running subprocess
+    """
+    logging.debug(run_what)
+    p = subprocess.Popen(run_what,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE,
+                           cwd=cwd)
+    p.args = run_what
+    return p
+
+def finish_process(process):
+    stdout, stderr = process.communicate()
+    if process.returncode != 0:
+        #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
+        if -1073741510 == process.returncode:
+            sys.exit(process.returncode)
+        raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
+    return stdout, stderr
