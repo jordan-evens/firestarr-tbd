@@ -62,6 +62,7 @@ def run_fires():
                     logging.info("Took {}s to run {}".format(simtimes[f], f))
             except Exception as e:
                 logging.error(e)
+    return simtimes, totaltime
 
 import gdal_retile as gr
 import gdal_calc
@@ -93,6 +94,7 @@ def merge_dir(dir_input):
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile), shell=True)
 
 if __name__ == "__main__":
+    simtimes, totaltime = run_fires()
     n = len(simtimes)
     if n > 0:
         logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
