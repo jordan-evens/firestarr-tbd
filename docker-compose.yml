@@ -59,6 +59,9 @@ services:
         source: ./WeatherSHIELD/gui
         target: /app/wxshield/
       - type: bind
+        source: ./FireSTARR/www
+        target: /app/firestarr/
+      - type: bind
         source: ./data
         target: /app/data
     depends_on:
