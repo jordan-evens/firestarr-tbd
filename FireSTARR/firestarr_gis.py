@@ -349,6 +349,7 @@ def project_raster(filename, output_raster=None, options=['COMPRESS=LZW', 'TILED
     input_raster = gdal.Open(filename)
     if output_raster is None:
         output_raster = filename[:-4] + '.tif'
+    common.ensure_dir(os.path.dirname(output_raster))
     warp = gdal.Warp(output_raster,
                      input_raster,
                      srcNodata=0,

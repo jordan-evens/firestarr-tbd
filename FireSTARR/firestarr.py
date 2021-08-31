@@ -55,8 +55,9 @@ def do_run(fgmj):
               }
     job_name = os.path.basename(os.path.dirname(fgmj))
     job_time = job_name[job_name.rindex('_') + 1:-4]
+    job_date = job_time[:8]
     fire_name = job_name[:job_name.index('_')]
-    out_dir = os.path.join(ROOT_DIR, fire_name, job_time)
+    out_dir = os.path.join(ROOT_DIR, job_date, fire_name, job_time)
     done_already = os.path.exists(out_dir)
     if done_already:
         print("Already done")
@@ -225,12 +226,12 @@ def do_run(fgmj):
     if len(perims) > 0:
         perim = perims[0]
         firestarr_gis.project_raster(os.path.join(out_dir, perim),
-                                     os.path.join(PERIM_DIR, fire_name + '.tif'),
+                                     os.path.join(PERIM_DIR, job_date, fire_name + '.tif'),
                                      options=['COMPRESS=LZW', 'TILED=YES'])
     probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
     if len(probs) > 0:
         prob = probs[-1]
-        firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, fire_name + '.tif'))
+        firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, fire_name + '.tif'))
     if done_already:
         return None
     return log_name

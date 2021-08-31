@@ -92,11 +92,23 @@ def merge_dir(dir_input):
     subprocess.call('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile), shell=True)
+    #retun dir_tile
+
+def merge_dirs(dir_input):
+    for d in sorted(os.listdir(dir_input)):
+        dir_in = os.path.join(dir_input, d)
+        result = merge_dir(dir_in)
+    # result should now be the results for the most current day
+    dir_out = os.path.join(dir_input, 'tiled')
+    if os.path.exists(dir_out):
+        shutil.rmtree(dir_out)
+    #shutil.move(result, dir_out)
+    shutil.move(os.path.join(dir_in, 'tiled'), dir_out)
 
 if __name__ == "__main__":
     simtimes, totaltime = run_fires()
     n = len(simtimes)
     if n > 0:
         logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
-        merge_dir('/FireGUARD/data/output/probability')
-        merge_dir('/FireGUARD/data/output/perimeter')
+        merge_dirs('/FireGUARD/data/output/probability')
+        merge_dirs('/FireGUARD/data/output/perimeter')
