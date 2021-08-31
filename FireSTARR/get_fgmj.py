@@ -39,6 +39,7 @@ def run_fires():
     times = {}
     recent = {}
     simtimes = {}
+    dates = []
     totaltime = 0
     for f in fires:
         print(f)
@@ -60,9 +61,12 @@ def run_fires():
                     simtimes[f] = t1 - t0
                     totaltime = totaltime + simtimes[f]
                     logging.info("Took {}s to run {}".format(simtimes[f], f))
+                    d = os.path.basename(os.path.dirname(log_name))[:8]
+                    if d not in dates:
+                        dates.append(d)
             except Exception as e:
                 logging.error(e)
-    return simtimes, totaltime
+    return simtimes, totaltime, dates
 
 import gdal_retile as gr
 import gdal_calc
@@ -94,21 +98,24 @@ def merge_dir(dir_input):
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile), shell=True)
     #retun dir_tile
 
-def merge_dirs(dir_input):
+def merge_dirs(dir_input, dates=None):
     for d in sorted(os.listdir(dir_input)):
-        dir_in = os.path.join(dir_input, d)
-        result = merge_dir(dir_in)
+        if dates is None or d in dates:
+            dir_in = os.path.join(dir_input, d)
+            result = merge_dir(dir_in)
     # result should now be the results for the most current day
     dir_out = os.path.join(dir_input, 'tiled')
     if os.path.exists(dir_out):
         shutil.rmtree(dir_out)
     #shutil.move(result, dir_out)
     shutil.move(os.path.join(dir_in, 'tiled'), dir_out)
+    # move and then copy from there since it shouldn't affect access for as long
+    shutil.copytree(dir_out, os.path.join(dir_in, 'tiled'))
 
 if __name__ == "__main__":
-    simtimes, totaltime = run_fires()
+    simtimes, totaltime, dates = run_fires()
     n = len(simtimes)
     if n > 0:
         logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
-        merge_dirs('/FireGUARD/data/output/probability')
-        merge_dirs('/FireGUARD/data/output/perimeter')
+        merge_dirs('/FireGUARD/data/output/probability', dates)
+        merge_dirs('/FireGUARD/data/output/perimeter', dates)
