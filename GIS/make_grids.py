@@ -257,7 +257,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
         ds = None
         outDataSet = DRIVER_SHP.Open(outputShapefile)
         outLayer = outDataSet.GetLayer()
-        ds = DRIVER_TIF.Create(outputRaster, cols, rows, 1, gdal.GDT_UInt16)
+        ds = DRIVER_TIF.Create(outputRaster, cols, rows, 1, gdal.GDT_UInt16, options=CREATION_OPTIONS)
         ds.SetGeoTransform(transform)
         ds.SetProjection(proj)
         #~ ds = gdal.Open(polywater_tif, osgeo.gdalconst.GA_Update)
