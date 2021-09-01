@@ -18,8 +18,6 @@ sys.path.append('/usr/local/bin')
 import gdal_merge as gm
 import itertools
 
-SITE = 'http://psaasbc.dss.intellifirenwt.com'
-URL = SITE + '/jobs/archive/'
 DIR = '/FireGUARD/data/fgmj/'
 EXT_DIR = os.path.abspath(os.path.join(DIR, '../extracted/fgmj'))
 common.ensure_dir(EXT_DIR)
@@ -31,8 +29,9 @@ def getPage(url):
     # parse the html using beautiful soup and return
     return BeautifulSoup(page, 'html.parser')
 
-def run_fires():
-    p = getPage(URL)
+def run_fires(site, region):
+    url = site + '/jobs/archive'
+    p = getPage(url)
     a = p.findAll('a')
     zips = [x.get('href') for x in a if x.get('href').endswith('.zip')]
     fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
@@ -41,6 +40,8 @@ def run_fires():
     simtimes = {}
     dates = []
     totaltime = 0
+    dir_download = common.ensure_dir(os.path.join(DIR, region))
+    dir_ext = common.ensure_dir(os.path.join(EXT_DIR, region))
     for f in fires:
         print(f)
         times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
@@ -48,8 +49,8 @@ def run_fires():
                         'time': max(times[f]),
                         'url': [x for x in zips if x[x.rindex('/') + 1:x.index('_')] == f and datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') == max(times[f])][0],
                     }
-        z = common.save_http(DIR, SITE + recent[f]['url'], ignore_existing=True)
-        cur_dir = os.path.join(EXT_DIR, os.path.basename(z)[:-4])
+        z = common.save_http(dir_download, site + recent[f]['url'], ignore_existing=True)
+        cur_dir = os.path.join(dir_ext, os.path.basename(z)[:-4])
         common.unzip(z, cur_dir)
         fgmj = os.path.join(cur_dir, 'job.fgmj')
         if os.path.exists(fgmj):
@@ -81,7 +82,10 @@ def merge_dir(dir_input):
     file_out = dir_input + '.tif'
     file_int = dir_input + '_int.tif'
     co = list(itertools.chain.from_iterable(map(lambda x: ['-co', x], CREATION_OPTIONS)))
-    files = [os.path.join(dir_input, x) for x in sorted(os.listdir(dir_input)) if x.endswith('.tif')]
+    files = []
+    for region in os.listdir(dir_input):
+        dir_region = os.path.join(dir_input, region)
+        files = files + [os.path.join(dir_region, x) for x in sorted(os.listdir(dir_region)) if x.endswith('.tif')]
     gm.main(['', '-n', '0', '-a_nodata', '0'] + co + ['-o', file_tmp] + files)
     #gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
     shutil.move(file_tmp, file_out)
@@ -112,8 +116,23 @@ def merge_dirs(dir_input, dates=None):
     # move and then copy from there since it shouldn't affect access for as long
     shutil.copytree(dir_out, os.path.join(dir_in, 'tiled'))
 
+def run_all_fires():
+    results = {}
+    results['bc'] = run_fires('http://psaasbc.dss.intellifirenwt.com', 'bc')
+    results['nt'] = run_fires('http://psaas-results.api.intellifirenwt.com', 'nt')
+    simtimes = {}
+    dates = []
+    totaltime = 0
+    for k in results.keys():
+        s, t, d = results[k]
+        for f in s.keys():
+            simtimes['{}_{}'.format(k, f)] = s[f]
+        dates = sorted(dates + [x for x in d if x not in dates])
+        totaltime = totaltime + t
+    return simtimes, totaltime, dates
+
 if __name__ == "__main__":
-    simtimes, totaltime, dates = run_fires()
+    simtimes, totaltime, dates = run_all_fires()
     n = len(simtimes)
     if n > 0:
         logging.info("Total of {} fires took {}s - average time is {}s".format(n, totaltime, totaltime / n))
