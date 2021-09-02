@@ -222,16 +222,17 @@ def do_run(fgmj):
         with open(log_name, 'w') as log_file:
             log_file.write(stdout.decode('utf-8'))
         outputs = sorted(os.listdir(out_dir))
+        extent = None
+        probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
+        if len(probs) > 0:
+            prob = probs[-1]
+            extent = firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
         perims = [x for x in outputs if x.endswith('tif')]
         if len(perims) > 0:
             perim = perims[0]
             firestarr_gis.project_raster(os.path.join(out_dir, perim),
                                          os.path.join(PERIM_DIR, job_date, region, fire_name + '.tif'),
-                                         options=['COMPRESS=LZW', 'TILED=YES'])
-        probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
-        if len(probs) > 0:
-            prob = probs[-1]
-            firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
+                                         outputBounds=extent)
     else:
         return None
     return log_name
