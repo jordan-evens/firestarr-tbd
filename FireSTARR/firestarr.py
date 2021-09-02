@@ -60,9 +60,7 @@ def do_run(fgmj):
     fire_name = job_name[:job_name.index('_')]
     out_dir = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
     done_already = os.path.exists(out_dir)
-    if done_already:
-        print("Already done")
-    else:
+    if not done_already:
         common.ensure_dir(out_dir)
         with open(fgmj) as f:
           data = json.load(f)
@@ -90,23 +88,22 @@ def do_run(fgmj):
             logging.fatal("Only lat/long coordinates are currently supported")
             sys.exit(-1)
         if ign['polyType'] != 'POINT':
-            logging.fatal("Only point ignition is currently supported")
             if ign['polyType'] == 'POLYGON_OUT':
                 pts = poly['polygon']['points']
                 pts = list(map(unnest_values, pts))
                 pts = [list(map(lambda v: [v['x'], v['y']], pts))]
                 lat = statistics.mean(list(map(lambda v: v[1], pts[0])))
                 long = statistics.mean(list(map(lambda v: v[0], pts[0])))
-                print(long)
+                # print(long)
                 orig_zone = 15
                 orig_long = -93
                 diff = long - orig_long
-                print(diff)
+                # print(diff)
                 ZONE_SIZE = 6
                 zone_diff = round(diff / ZONE_SIZE)
-                print(zone_diff)
+                # print(zone_diff)
                 meridian = orig_long + (zone_diff * ZONE_SIZE)
-                print(meridian)
+                # print(meridian)
                 zone = orig_zone + zone_diff
                 # print(pts)
                 p = '''{"type": "Polygon",
@@ -128,16 +125,16 @@ def do_run(fgmj):
                 z = z.replace('UTM zone 15N', 'UTM zone {}N')
                 z = z.replace('"central_meridian",-93', '"central_meridian",{}')
                 z = z.format(zone, meridian)
-                print(z)
-                print(target)
+                # print(z)
+                # print(target)
                 target.ImportFromWkt(z)
                 transform = osr.CoordinateTransformation(source, target)
                 g.Transform(transform)
-                print(g)
-                print("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
-                print("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
-                for idx, f in enumerate(g):
-                    print("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
+                #print(g)
+                # logging.debug("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
+                # logging.debug("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
+                # for idx, f in enumerate(g):
+                    # logging.debug("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
                 out_name = '{}.shp'.format(fire_name)
                 out_file = os.path.join(out_dir, out_name)
                 driver = ogr.GetDriverByName("Esri Shapefile")
@@ -158,6 +155,8 @@ def do_run(fgmj):
                     file.write(target.ExportToWkt())
                 YEAR = 2021
                 perim = firestarr_gis.rasterize_perim(out_dir, out_file, YEAR, fire_name)[1]
+            else:
+                logging.fatal("Unsupported ignition type {}".format(ign['polyType']))
             if perim is None:
                 sys.exit(-1)
         else:
@@ -197,7 +196,7 @@ def do_run(fgmj):
             sys.exit(-3)
         data = [x.split(',') for x in csv.splitlines()]
         df = pd.DataFrame(data[1:], columns=data[0])
-        print(df)
+        # print(df)
         # supposed to be really picky about inputs
         #"Scenario,Date,APCP,TMP,RH,WS,WD,FFMC,DMC,DC,ISI,BUI,FWI";
         df = df[['MEMBER', 'DAILY', 'PREC', 'TEMP', 'RH', 'WS', 'WD']]
@@ -222,18 +221,18 @@ def do_run(fgmj):
         log_name = os.path.join(out_dir, "log.txt")
         with open(log_name, 'w') as log_file:
             log_file.write(stdout.decode('utf-8'))
-    outputs = sorted(os.listdir(out_dir))
-    perims = [x for x in outputs if x.endswith('tif')]
-    if len(perims) > 0:
-        perim = perims[0]
-        firestarr_gis.project_raster(os.path.join(out_dir, perim),
-                                     os.path.join(PERIM_DIR, job_date, region, fire_name + '.tif'),
-                                     options=['COMPRESS=LZW', 'TILED=YES'])
-    probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
-    if len(probs) > 0:
-        prob = probs[-1]
-        firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
-    if done_already:
+        outputs = sorted(os.listdir(out_dir))
+        perims = [x for x in outputs if x.endswith('tif')]
+        if len(perims) > 0:
+            perim = perims[0]
+            firestarr_gis.project_raster(os.path.join(out_dir, perim),
+                                         os.path.join(PERIM_DIR, job_date, region, fire_name + '.tif'),
+                                         options=['COMPRESS=LZW', 'TILED=YES'])
+        probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
+        if len(probs) > 0:
+            prob = probs[-1]
+            firestarr_gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
+    else:
         return None
     return log_name
 

@@ -24,6 +24,7 @@ common.ensure_dir(EXT_DIR)
 CREATION_OPTIONS = ['COMPRESS=LZW', 'TILED=YES']
 
 def getPage(url):
+    logging.debug("Opening {}".format(url))
     # query the website and return the html to the variable 'page'
     page = urllib2.urlopen(url)
     # parse the html using beautiful soup and return
@@ -31,7 +32,12 @@ def getPage(url):
 
 def run_fires(site, region):
     url = site + '/jobs/archive'
-    p = getPage(url)
+    try:
+        p = getPage(url)
+    except Exception as e:
+        logging.error("Can't load {}".format(url))
+        logging.error(e)
+        return None
     a = p.findAll('a')
     zips = [x.get('href') for x in a if x.get('href').endswith('.zip')]
     fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
@@ -42,13 +48,14 @@ def run_fires(site, region):
     totaltime = 0
     dir_download = common.ensure_dir(os.path.join(DIR, region))
     dir_ext = common.ensure_dir(os.path.join(EXT_DIR, region))
+    logging.debug("Checking {} fires".format(len(fires)))
     for f in fires:
-        print(f)
         times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
         recent[f] = {
                         'time': max(times[f]),
                         'url': [x for x in zips if x[x.rindex('/') + 1:x.index('_')] == f and datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') == max(times[f])][0],
                     }
+        logging.debug('{}: {}'.format(f, recent[f]['time']))
         z = common.save_http(dir_download, site + recent[f]['url'], ignore_existing=True)
         cur_dir = os.path.join(dir_ext, os.path.basename(z)[:-4])
         common.unzip(z, cur_dir)
@@ -74,6 +81,7 @@ import gdal_calc
 import gdal
 
 def merge_dir(dir_input):
+    logging.debug("Merging {}".format(dir_input))
     # HACK: for some reason output tiles were both being called 'probability'
     import importlib
     importlib.reload(gr)
@@ -93,11 +101,11 @@ def merge_dir(dir_input):
     shutil.move(file_tmp, file_int)
     dir_tile = os.path.join(dir_input, 'tiled')
     if os.path.exists(dir_tile):
-        print('Removing {}'.format(dir_tile))
+        logging.debug('Removing {}'.format(dir_tile))
         shutil.rmtree(dir_tile)
     import subprocess
     file_cr = dir_input + '_cr.tif'
-    subprocess.call('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
+    subprocess.run('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile), shell=True)
     #retun dir_tile
@@ -124,11 +132,12 @@ def run_all_fires():
     dates = []
     totaltime = 0
     for k in results.keys():
-        s, t, d = results[k]
-        for f in s.keys():
-            simtimes['{}_{}'.format(k, f)] = s[f]
-        dates = sorted(dates + [x for x in d if x not in dates])
-        totaltime = totaltime + t
+        if results[k] is not None:
+            s, t, d = results[k]
+            for f in s.keys():
+                simtimes['{}_{}'.format(k, f)] = s[f]
+            dates = sorted(dates + [x for x in d if x not in dates])
+            totaltime = totaltime + t
     return simtimes, totaltime, dates
 
 if __name__ == "__main__":

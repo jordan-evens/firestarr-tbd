@@ -146,12 +146,12 @@ def save_http(to_dir, url, save_as=None, mode='wb', ignore_existing=False):
     @param ignore_existing Whether or not to download if file already exists
     @return Path that file was saved to
     """
-    logging.debug("Saving {}".format(url))
+    # logging.debug("Saving {}".format(url))
     if save_as is None:
         save_as = os.path.join(to_dir, os.path.basename(url))
-    print(save_as)
+    # print(save_as)
     if ignore_existing and os.path.exists(save_as):
-        logging.debug('Ignoring existing file')
+        # logging.debug('Ignoring existing file')
         return save_as
     ensure_dir(to_dir)
     # we want to keep modified times matching on both ends
@@ -204,9 +204,9 @@ def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
     folder = os.path.dirname(urlp.path)
     site = urlp.netloc
     filename = os.path.basename(urlp.path)
-    logging.debug("Saving {}".format(filename))
+    # logging.debug("Saving {}".format(filename))
     save_as = os.path.join(to_dir, filename)
-    print(save_as)
+    # print(save_as)
     if os.path.isfile(save_as):
         if ignore_existing:
             logging.debug('Ignoring existing file')
@@ -497,7 +497,7 @@ def start_process(run_what, cwd):
     @param cwd Directory to run in
     @return Running subprocess
     """
-    logging.debug(run_what)
+    # logging.debug(run_what)
     p = subprocess.Popen(run_what,
                            stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE,
