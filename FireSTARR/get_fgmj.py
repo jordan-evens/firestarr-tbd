@@ -97,7 +97,8 @@ def merge_dir(dir_input):
     gm.main(['', '-n', '0', '-a_nodata', '0'] + co + ['-o', file_tmp] + files)
     #gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
     shutil.move(file_tmp, file_out)
-    gdal_calc.Calc(A=file_out, outfile=file_tmp, calc='A*100', NoDataValue=0, type='Byte', creation_options=CREATION_OPTIONS)
+    logging.debug("Calculating...")
+    gdal_calc.Calc(A=file_out, outfile=file_tmp, calc='A*100', NoDataValue=0, type='Byte', creation_options=CREATION_OPTIONS, quiet=True)
     shutil.move(file_tmp, file_int)
     dir_tile = os.path.join(dir_input, 'tiled')
     if os.path.exists(dir_tile):
@@ -105,6 +106,7 @@ def merge_dir(dir_input):
         shutil.rmtree(dir_tile)
     import subprocess
     file_cr = dir_input + '_cr.tif'
+    logging.debug("Applying symbology...")
     subprocess.run('gdaldem color-relief {} /FireGUARD/FireSTARR/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {}'.format(file_cr, dir_tile), shell=True)
