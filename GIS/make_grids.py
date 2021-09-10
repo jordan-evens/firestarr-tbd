@@ -71,7 +71,33 @@ INTERMEDIATE_DIR = os.path.join(DATA_DIR, 'intermediate')
 DIR = os.path.join(GENERATED_DIR, 'grid')
 TILED_DIR = os.path.join(GENERATED_DIR, 'tiled')
 TMP = os.path.realpath('/FireGUARD/data/tmp')
-CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=LZW']
+#1
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=LZW']
+#2
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'PREDICTOR=2']
+#3
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'ZLEVEL=12']
+#4
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE']
+#5
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=LZW', 'PREDICTOR=2']
+#6
+#CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'ZLEVEL=1']
+#7 can't read outputs in firestarr
+# CREATION_OPTIONS = {
+    # 'fuel':     ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'ZLEVEL=12', 'NBITS=10'],
+    # 'dem':      ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'PREDICTOR=2'],
+    # 'slope':    ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'NBITS=7'],
+    # 'aspect':   ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'NBITS=9']
+# }
+#8
+CREATION_OPTIONS = {
+    'fuel':     ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'ZLEVEL=12'],
+    'dem':      ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE', 'PREDICTOR=2'],
+    'slope':    ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE'],
+    'aspect':   ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE']
+}
+
 EARTHENV = os.path.join(DATA_DIR, 'GIS/input/elevation/EarthEnv.tif')
 FUEL_RASTER = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
 
@@ -134,7 +160,7 @@ def clip_zone(fp, prefix, zone):
                    ds,
                    format='GTiff',
                    outputBounds=[MIN_EASTING, MIN_NORTHING, MAX_EASTING, MAX_NORTHING],
-                   creationOptions=CREATION_OPTIONS,
+                   creationOptions=CREATION_OPTIONS['dem'],
                    xRes=CELL_SIZE,
                    yRes=CELL_SIZE,
                    srcSRS=srcWkt,
@@ -257,7 +283,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
         ds = None
         outDataSet = DRIVER_SHP.Open(outputShapefile)
         outLayer = outDataSet.GetLayer()
-        ds = DRIVER_TIF.Create(outputRaster, cols, rows, 1, gdal.GDT_UInt16, options=CREATION_OPTIONS)
+        ds = DRIVER_TIF.Create(outputRaster, cols, rows, 1, gdal.GDT_UInt16, options=CREATION_OPTIONS['fuel'])
         ds.SetGeoTransform(transform)
         ds.SetProjection(proj)
         #~ ds = gdal.Open(polywater_tif, osgeo.gdalconst.GA_Update)
@@ -313,7 +339,7 @@ def check_base(fp, zone):
                        ds,
                        format='GTiff',
                        outputBounds=[MIN_EASTING, MIN_NORTHING, MAX_EASTING, MAX_NORTHING],
-                       creationOptions=CREATION_OPTIONS,
+                       creationOptions=CREATION_OPTIONS['fuel'],
                        xRes=CELL_SIZE,
                        yRes=CELL_SIZE,
                        srcSRS=srcWkt,
@@ -343,7 +369,7 @@ def check_nowater(base_tif, zone, cols, rows, no_data):
     if not os.path.exists(nowater_tif):
         tmp_tif = os.path.join(INT_FUEL, 'tmp_{}'.format(zone).replace('.', '_')) + '.tif'
         ds = gdal.Open(base_tif, 1)
-        dst_ds = DRIVER_TIF.CreateCopy(tmp_tif, ds, 0, options=CREATION_OPTIONS)
+        dst_ds = DRIVER_TIF.CreateCopy(tmp_tif, ds, 0, options=CREATION_OPTIONS['fuel'])
         dst_ds = None
         ds = None
         ds = gdal.Open(tmp_tif, 1)
@@ -357,7 +383,7 @@ def check_nowater(base_tif, zone, cols, rows, no_data):
         vals = None
         rb = None
         # want a copy of this before we add the water back in so we can fill from non-water
-        dst_ds = DRIVER_TIF.CreateCopy(nowater_tif, ds, 0, options=CREATION_OPTIONS)
+        dst_ds = DRIVER_TIF.CreateCopy(nowater_tif, ds, 0, options=CREATION_OPTIONS['fuel'])
         dst_ds = None
         ds = None
         os.remove(tmp_tif)
@@ -416,7 +442,7 @@ def check_filled(base_tif, nowater_tif, zone, cols, rows, no_data):
         rb_nowater = None
         ds_nowater = None
         ds = gdal.Open(base_tif, 1)
-        dst_ds = DRIVER_TIF.CreateCopy(filled_tif, ds, 0, options=CREATION_OPTIONS)
+        dst_ds = DRIVER_TIF.CreateCopy(filled_tif, ds, 0, options=CREATION_OPTIONS['fuel'])
         dst_ds = None
         ds = gdal.Open(filled_tif, 1)
         rb = ds.GetRasterBand(1)
@@ -436,7 +462,7 @@ def check_merged(filled_tif, zone, cols, rows):
     # now the nodata values should all be filled, so apply the water from the polygons
     if not os.path.exists(merged_tif):
         ds_filled = gdal.Open(filled_tif, 1)
-        dst_ds = DRIVER_TIF.CreateCopy(polywater_tif, ds_filled, 0, options=CREATION_OPTIONS)
+        dst_ds = DRIVER_TIF.CreateCopy(polywater_tif, ds_filled, 0, options=CREATION_OPTIONS['fuel'])
         dst_ds = None
         ds_filled = None
         gc.collect()
@@ -486,7 +512,7 @@ def clip_fuel(fp, zone):
     merged_tif = check_merged(filled_tif, zone, cols, rows)
     # finally, copy result to output location
     ds = gdal.Open(merged_tif, 1)
-    dst_ds = DRIVER_TIF.CreateCopy(out_tif, ds, 0, options=CREATION_OPTIONS)
+    dst_ds = DRIVER_TIF.CreateCopy(out_tif, ds, 0, options=CREATION_OPTIONS['fuel'])
     dst_ds = None
     ds = None
     # not sure why this wouldn't copy nodata value but it didn't have one
@@ -501,40 +527,42 @@ def make_zone(zone):
     if not os.path.exists(slope):
         print(slope)
         tmp_slope = slope.replace(DIR, TMP)
-        gdal.DEMProcessing(tmp_slope, dem, 'slope', creationOptions=CREATION_OPTIONS)
-        gdal.Translate(slope, tmp_slope, outputType=gdalconst.GDT_UInt16, creationOptions=CREATION_OPTIONS)
+        gdal.DEMProcessing(tmp_slope, dem, 'slope', creationOptions=CREATION_OPTIONS['slope'])
+        gdal.Translate(slope, tmp_slope, outputType=gdalconst.GDT_UInt16, creationOptions=CREATION_OPTIONS['slope'])
     aspect = dem.replace('dem_', 'aspect_')
     if not os.path.exists(aspect):
         print(aspect)
         tmp_aspect = aspect.replace(DIR, TMP)
-        gdal.DEMProcessing(tmp_aspect, dem, 'aspect', creationOptions=CREATION_OPTIONS)
-        gdal.Translate(aspect, tmp_aspect, outputType=gdalconst.GDT_UInt16, creationOptions=CREATION_OPTIONS)
+        gdal.DEMProcessing(tmp_aspect, dem, 'aspect', creationOptions=CREATION_OPTIONS['aspect'])
+        gdal.Translate(aspect, tmp_aspect, outputType=gdalconst.GDT_UInt16, creationOptions=CREATION_OPTIONS['aspect'])
     fbp = clip_fuel(FUEL_RASTER, zone)
     gc.collect()
 
 from multiprocessing import Process, Queue
 
-def makeTiles():
+def makeTiles(for_what):
     import itertools
     # HACK: this adds CREATION_OPTIONS items with a '-co' in front of each
     run_what = list(itertools.chain.from_iterable(([['python', SCRIPTS_DIR + '/gdal_retile.py']] +
-                                                    list(map(lambda x: ['-co', x], CREATION_OPTIONS)) +
+                                                    list(map(lambda x: ['-co', x], CREATION_OPTIONS[for_what])) +
                                                     [['-v', '-ps', '32000', '32000', '-overlap', '16000', '-targetDir', TILED_DIR]])))
     CWD = os.path.realpath(DIR)
     print(run_what)
     for file in os.listdir(DIR):
-        print(file)    
-        process = subprocess.Popen(run_what + [os.path.join(DIR, file)],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   cwd=CWD)
-        stdout, stderr = process.communicate()
-        if process.returncode != 0:
-            raise Exception('Error processing retile: ' + stderr.decode('utf-8'))
+        if for_what in os.path.basename(file):
+            print(file)
+            process = subprocess.Popen(run_what + [os.path.join(DIR, file)],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE,
+                                       cwd=CWD)
+            stdout, stderr = process.communicate()
+            if process.returncode != 0:
+                raise Exception('Error processing retile: ' + stderr.decode('utf-8'))
     # HACK: for some reason nodata values aren't set?
     for file in os.listdir(TILED_DIR):
-        print(file)
-        fix_nodata(os.path.join(TILED_DIR, file))
+        if for_what in os.path.basename(file):
+            print(file)
+            fix_nodata(os.path.join(TILED_DIR, file))
 
 if __name__ == "__main__":
     if not os.path.exists(INT_FUEL):
@@ -549,5 +577,7 @@ if __name__ == "__main__":
         zone += 0.5
     if not os.path.exists(TILED_DIR):
         os.makedirs(TILED_DIR)
-        makeTiles()
-
+        makeTiles('fuel')
+        makeTiles('dem')
+        makeTiles('aspect')
+        makeTiles('slope')
