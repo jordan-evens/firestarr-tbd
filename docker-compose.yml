@@ -116,22 +116,29 @@ services:
       context: .
       dockerfile: .docker/Dockerfile_firestarr
     image: gcc:10.3
+    ports:
+      - "2222:22"
     volumes:
       - type: bind
         source: ./settings.ini
         target: /FireGUARD/settings.ini
       - type: bind
+        source: /root/.ssh
+        target: /root/.ssh
+      - type: bind
         source: ./data
         target: /FireGUARD/data
       - type: bind
+        source: ./100m
+        target: /FireGUARD/100m
+      - type: bind
         source: ./FireSTARR
         target: /FireGUARD/FireSTARR
-      - type: bind
-        source: ./data/generated/tiled
-        target: /FireGUARD/100m/default
       - type: bind
         source: ./util
         target: /FireGUARD/util
     restart: on-failure
     depends_on:
       - wxshield
+    cap_add:
+        - SYS_PTRACE
