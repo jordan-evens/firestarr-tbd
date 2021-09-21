@@ -50,6 +50,8 @@ services:
     ports:
       - "8080:80"
       - "8443:443"
+    environment:
+      - WEB_DOCUMENT_INDEX=index.html
     restart: on-failure
     volumes:
       - type: bind
