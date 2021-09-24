@@ -32,6 +32,6 @@ RUN (apt-get update || echo Ignoring update errors) \
   && python -m pip install -r /FireGUARD/requirements_firestarr.txt \
   && ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"\
   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
-#COPY ./FireSTARR/ /FireGUARD/FireSTARR/
+RUN useradd -m user && yes password | passwd user
 RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /FireGUARD/FireSTARR/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f
