@@ -69,7 +69,6 @@ DOWNLOAD_DIR = os.path.join(DATA_DIR, 'download')
 GENERATED_DIR = os.path.join(DATA_DIR, 'generated')
 INTERMEDIATE_DIR = os.path.join(DATA_DIR, 'intermediate')
 DIR = os.path.join(GENERATED_DIR, 'grid')
-TILED_DIR = os.path.join(GENERATED_DIR, 'tiled')
 TMP = os.path.realpath('/FireGUARD/data/tmp')
 #1
 #CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=LZW']
@@ -540,30 +539,6 @@ def make_zone(zone):
 
 from multiprocessing import Process, Queue
 
-def makeTiles(for_what):
-    import itertools
-    # HACK: this adds CREATION_OPTIONS items with a '-co' in front of each
-    run_what = list(itertools.chain.from_iterable(([['python', SCRIPTS_DIR + '/gdal_retile.py']] +
-                                                    list(map(lambda x: ['-co', x], CREATION_OPTIONS[for_what])) +
-                                                    [['-v', '-ps', '32000', '32000', '-overlap', '16000', '-targetDir', TILED_DIR]])))
-    CWD = os.path.realpath(DIR)
-    print(run_what)
-    for file in os.listdir(DIR):
-        if for_what in os.path.basename(file):
-            print(file)
-            process = subprocess.Popen(run_what + [os.path.join(DIR, file)],
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE,
-                                       cwd=CWD)
-            stdout, stderr = process.communicate()
-            if process.returncode != 0:
-                raise Exception('Error processing retile: ' + stderr.decode('utf-8'))
-    # HACK: for some reason nodata values aren't set?
-    for file in os.listdir(TILED_DIR):
-        if for_what in os.path.basename(file):
-            print(file)
-            fix_nodata(os.path.join(TILED_DIR, file))
-
 if __name__ == "__main__":
     if not os.path.exists(INT_FUEL):
         os.makedirs(INT_FUEL)
@@ -575,9 +550,3 @@ if __name__ == "__main__":
         p.join()
         #make_zone(zone)
         zone += 0.5
-    if not os.path.exists(TILED_DIR):
-        os.makedirs(TILED_DIR)
-        makeTiles('fuel')
-        makeTiles('dem')
-        makeTiles('aspect')
-        makeTiles('slope')
