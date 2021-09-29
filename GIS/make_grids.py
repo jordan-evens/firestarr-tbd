@@ -526,7 +526,8 @@ def make_zone(zone):
     if not os.path.exists(slope):
         print(slope)
         tmp_slope = slope.replace(DIR, TMP)
-        gdal.DEMProcessing(tmp_slope, dem, 'slope', creationOptions=CREATION_OPTIONS['slope'])
+        opts = gdal.DEMProcessingOptions(slopeFormat="percent")
+        gdal.DEMProcessing(tmp_slope, dem, 'slope', options=opts, creationOptions=CREATION_OPTIONS['slope'])
         gdal.Translate(slope, tmp_slope, outputType=gdalconst.GDT_UInt16, creationOptions=CREATION_OPTIONS['slope'])
     aspect = dem.replace('dem_', 'aspect_')
     if not os.path.exists(aspect):
