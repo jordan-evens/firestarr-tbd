@@ -29,6 +29,8 @@ import sys
 sys.path.append('../util')
 import common
 
+logging.setLevel(logging.INFO)
+
 ##########################
 # https://stackoverflow.com/questions/3662361/fill-in-missing-values-with-nearest-neighbour-in-python-numpy-masked-arrays
 
@@ -505,10 +507,14 @@ if __name__ == "__main__":
     if not os.path.exists(INT_FUEL):
         os.makedirs(INT_FUEL)
     zone = ZONE_MIN
+    zones = []
     while zone <= ZONE_MAX:
-        # HACK: use a Process to hopefully get around memory issues
-        p = Process(target=make_zone, args=(zone,))
-        p.start()
-        p.join()
-        #make_zone(zone)
+        zones.append(zone)
         zone += 0.5
+    # small limit due to amount of disk access
+    num_threads = int(min(len(zones), multiprocessing.cpu_count() / 4))
+    p = Pool(num_threads)
+    results = p.map(make_zone, zones)
+    p.close()
+    p.join()
+    logging.info('Done')
