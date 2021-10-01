@@ -28,8 +28,9 @@ import subprocess
 import sys
 sys.path.append('../util')
 import common
+import logging
 
-logging.setLevel(logging.INFO)
+logging.getLogger().setLevel(logging.INFO)
 
 ##########################
 # https://stackoverflow.com/questions/3662361/fill-in-missing-values-with-nearest-neighbour-in-python-numpy-masked-arrays
@@ -105,7 +106,7 @@ def clip_zone(fp, prefix, zone):
     out_tif = os.path.join(DIR, prefix + '_{}'.format(zone).replace('.', '_')) + '.tif'
     if os.path.exists(out_tif):
         return out_tif
-    print(out_tif)
+    logging.info('Zone {}: {}'.format(zone, out_tif))
     meridian = (zone - 15.0) * 6.0 - 93.0
     wkt = 'PROJCS["NAD_1983_UTM_Zone_{}N",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",{}],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]'.format(zone, meridian)
     proj_srs = osr.SpatialReference(wkt=wkt)
@@ -154,7 +155,7 @@ def clip_zone(fp, prefix, zone):
     return out_tif
 
 def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
-    print('Adding {}'.format(for_what))
+    logging.info('Zone {}: Adding {}'.format(zone, for_what))
     INT_FUEL = os.path.join(INTERMEDIATE_DIR, 'fuel')
     polywater_tif = os.path.join(INT_FUEL, 'polywater_{}'.format(zone).replace('.', '_')) + '.tif'
     outputShapefile = os.path.join(INT_FUEL, 'projected_{}_{}'.format(for_what, zone).replace('.', '_') + '.shp')
@@ -195,7 +196,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
         vectorGeometry.AddGeometry(r)
         vectorGeometry.AssignSpatialReference(lakes_ref)
         if vectorGeometry.Intersect(rasterGeometry):
-            print('Intersects zone - clipping...')
+            logging.debug('Zone {}: Intersects zone - clipping...', zone)
             raster_path = os.path.join(INT_FUEL, 'raster_{}'.format(zone).replace('.', '_') + '.shp')
             # Remove output shapefile if it already exists
             if os.path.exists(raster_path):
@@ -217,7 +218,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
             tmpLayer = source.CreateLayer('tmp', lakes_ref, geom_type=ogr.wkbMultiPolygon)
             ogr.Layer.Clip(lakes, rasterLayer, tmpLayer)
             coordTrans = osr.CoordinateTransformation(lakes_ref, raster_ref)
-            print('Reprojecting...')
+            logging.debug('Zone {}: Reprojecting...', zone)
             # if os.path.exists(outputShapefile):
                 # DRIVER_SHP.DeleteDataSource(outputShapefile)
             outDataSet = DRIVER_SHP.CreateDataSource(outputShapefile)
@@ -262,7 +263,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
         ds.SetGeoTransform(transform)
         ds.SetProjection(proj)
         #~ ds = gdal.Open(polywater_tif, osgeo.gdalconst.GA_Update)
-        print('Rasterizing...')
+        logging.info('Zone {}: Rasterizing...'.format(zone))
         band = ds.GetRasterBand(1)
         band.SetNoDataValue(0)
         gdal.RasterizeLayer(ds, [1], outLayer, burn_values=[102], options=['ALL_TOUCHED=TRUE'])
@@ -348,7 +349,7 @@ def check_nowater(base_tif, zone, cols, rows, no_data):
         dst_ds = None
         ds = None
         ds = gdal.Open(tmp_tif, 1)
-        print('Removing water')
+        logging.info('Zone {}: Removing water..'.format(zone))
         rb = ds.GetRasterBand(1)
         vals = rb.ReadAsArray(0, 0, cols, rows)
         # get rid of water (102)
@@ -369,7 +370,7 @@ def check_filled(base_tif, nowater_tif, zone, cols, rows, no_data):
     filled_tif = os.path.join(INT_FUEL, 'filled_{}'.format(zone).replace('.', '_')) + '.tif'
     if not os.path.exists(filled_tif):
         # now fill in blanks with surrounding fuels
-        print('Filling spaces')
+        logging.info('Zone {}: Filling spaces..'.format(zone))
         # only fill area of original raster
         ds = gdal.Open(base_tif, 1)
         rb = ds.GetRasterBand(1)
@@ -436,12 +437,13 @@ def check_merged(filled_tif, zone, cols, rows):
     merged_tif = os.path.join(INT_FUEL, 'merged_{}'.format(zone).replace('.', '_')) + '.tif'
     # now the nodata values should all be filled, so apply the water from the polygons
     if not os.path.exists(merged_tif):
+        logging.info('Zone {}: {}'.format(zone, merged_tif))
         ds_filled = gdal.Open(filled_tif, 1)
         dst_ds = DRIVER_TIF.CreateCopy(polywater_tif, ds_filled, 0, options=CREATION_OPTIONS)
         dst_ds = None
         ds_filled = None
         gc.collect()
-        print('Adding water from polygons')
+        logging.info('Zone {}: Adding water from polygons'.format(zone))
         water = [checkAddLakes(zone, cols, rows, 'USA_Lakes', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDWaterbody')]
         water += [checkAddLakes(zone, cols, rows, 'USA_Other', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDArea')]
         for prov in ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']:
@@ -480,7 +482,7 @@ def clip_fuel(fp, zone):
     out_tif = os.path.join(DIR, 'fuel_{}'.format(zone).replace('.', '_')) + '.tif'
     if os.path.exists(out_tif):
         return out_tif
-    print(out_tif)
+    logging.info('Zone {}: {}'.format(zone, out_tif))
     base_tif, cols, rows, no_data = check_base(fp, zone)
     nowater_tif = check_nowater(base_tif, zone, cols, rows, no_data)
     filled_tif = check_filled(base_tif, nowater_tif, zone, cols, rows, no_data)
@@ -496,12 +498,14 @@ def clip_fuel(fp, zone):
     return out_tif
 
 def make_zone(zone):
-    print('Making zone {}'.format(zone))
+    logging.info('Zone {}: Starting'.format(zone))
     dem = clip_zone(EARTHENV, 'dem', zone)
     fbp = clip_fuel(FUEL_RASTER, zone)
+    logging.info('Zone {}: Done'.format(zone))
     gc.collect()
 
-from multiprocessing import Process, Queue
+from multiprocessing import Pool
+import multiprocessing
 
 if __name__ == "__main__":
     if not os.path.exists(INT_FUEL):
