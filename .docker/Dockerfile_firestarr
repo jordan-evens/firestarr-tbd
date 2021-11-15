@@ -33,5 +33,6 @@ RUN (apt-get update || echo Ignoring update errors) \
   && ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"\
   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
 RUN (useradd -m user || echo User already exists) && (yes password | passwd user)
+RUN yes password | passwd
 RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /FireGUARD/FireSTARR/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f
