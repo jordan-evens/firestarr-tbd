@@ -134,9 +134,6 @@ services:
         source: ./data
         target: /FireGUARD/data
       - type: bind
-        source: ./100m
-        target: /FireGUARD/100m
-      - type: bind
         source: ./FireSTARR
         target: /FireGUARD/FireSTARR
       - type: bind
