@@ -10,4 +10,4 @@ jobs:
       - name: Build the stack
         run: docker-compose up -d
       - name: Test
-        run: docker exec -it $(docker-compose ps -q firestarr) ./FireSTARR
+        run: docker exec --tty $(docker-compose ps -q firestarr) ./FireSTARR
