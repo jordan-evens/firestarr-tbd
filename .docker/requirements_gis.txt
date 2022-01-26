@@ -6,3 +6,5 @@ shapely
 geopandas
 pycrs
 scipy
+requests
+tqdm

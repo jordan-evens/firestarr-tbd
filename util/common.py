@@ -25,9 +25,15 @@ import sys
 import wgrib2
 import copy
 import zipfile
+import requests
+from tqdm import tqdm
 
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
+
+from urllib3.exceptions import InsecureRequestWarning
+# Suppress only the single warning from urllib3 needed.
+requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 ## bounds to use for clipping data
 BOUNDS = None
@@ -173,13 +179,12 @@ def save_http(to_dir, url, save_as=None, mode='wb', ignore_existing=False):
     if do_save:
         logging.info("Downloading {}".format(save_as))
         try:
-            filedata = urllib2.urlopen(req)
-            with open(save_as, mode) as f:
-                while True:
-                    tmp = filedata.read(1024 * 1024)
-                    if not tmp:
-                        break 
-                    f.write(tmp)
+            response = requests.get(url, stream=True,verify=False)
+            with tqdm.wrapattr(open(save_as, mode), "write",
+                               miniters=1, desc=url.split('/')[-1],
+                               total=int(response.headers.get('content-length', 0))) as fout:
+                for chunk in response.iter_content(chunk_size=4096):
+                    fout.write(chunk)
         except:
             try_remove(save_as)
             raise

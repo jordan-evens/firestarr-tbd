@@ -7,3 +7,5 @@ geopandas
 pycrs
 scipy
 bs4
+requests
+tqdm
