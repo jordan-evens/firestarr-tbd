@@ -21,8 +21,10 @@ nhd = r'https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/NHD/National
 def get(url, name):
     print('Downloading {}'.format(url))
     file = download(url, DOWNLOAD_DIR)
-    print('Extracting {}'.format(name))
-    unzip(file, os.path.join(EXTRACTED_DIR, name))
+    dir_out = os.path.join(EXTRACTED_DIR, name)
+    if not os.path.exists(dir_out):
+        print('Extracting {}'.format(name))
+        unzip(file, dir_out)
 
 if __name__ == '__main__':
     if not os.path.exists(EXTRACTED_DIR):

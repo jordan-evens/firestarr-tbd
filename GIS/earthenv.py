@@ -68,39 +68,39 @@ def to_download(url):
     return common.save_http(DOWNLOAD_DIR, url, ignore_existing=True)
 
 if __name__ == '__main__':
-    pool = multiprocessing.Pool(processes=4)
-    urls = []
-    define_bounds()
-    for lat in RANGE_LATITUDE:
-        for lon in RANGE_LONGITUDE:
-            urls.append(MASK.format(lat, lon))
-    print('Downloading...')
-    files = pool.map(to_download, urls)
-    if not os.path.exists(OUT_DIR):
-        os.mkdir(OUT_DIR)
-    print('Extracting...')
-    for f in files:
-        print(f)
-        tar = tarfile.open(f)
-        tar.extractall(OUT_DIR)
-        tar.close()
-    # HACK: some .bil files don't work with gdal, so convert with rasterio to start
-    import rasterio
-    files = glob.glob(os.path.join(OUT_DIR, '*.bil'))
-    common.ensure_dir(TIF_DIR)
-    for file in files:
-        print(file)
-        out_file = os.path.join(TIF_DIR, os.path.basename(file.replace('.bil', '.tif')))
-        if not os.path.exists(out_file):
-            with rasterio.open(file) as src:
-                out_meta = src.meta.copy()
-                out_meta.update({"driver": "GTiff"})
-                array = src.read(1)
-                with rasterio.open(out_file,
-                                    "w", **out_meta, compress='DEFLATE',
-                                    tiled=True, blockxsize=256, blockysize=256) as dest1:
-                    dest1.write(array.astype(rasterio.uint16), 1)
     if not os.path.exists(EARTHENV):
+        pool = multiprocessing.Pool(processes=4)
+        urls = []
+        define_bounds()
+        for lat in RANGE_LATITUDE:
+            for lon in RANGE_LONGITUDE:
+                urls.append(MASK.format(lat, lon))
+        print('Downloading...')
+        files = pool.map(to_download, urls)
+        if not os.path.exists(OUT_DIR):
+            os.mkdir(OUT_DIR)
+        print('Extracting...')
+        for f in files:
+            print(f)
+            tar = tarfile.open(f)
+            tar.extractall(OUT_DIR)
+            tar.close()
+        # HACK: some .bil files don't work with gdal, so convert with rasterio to start
+        import rasterio
+        files = glob.glob(os.path.join(OUT_DIR, '*.bil'))
+        common.ensure_dir(TIF_DIR)
+        for file in files:
+            print(file)
+            out_file = os.path.join(TIF_DIR, os.path.basename(file.replace('.bil', '.tif')))
+            if not os.path.exists(out_file):
+                with rasterio.open(file) as src:
+                    out_meta = src.meta.copy()
+                    out_meta.update({"driver": "GTiff"})
+                    array = src.read(1)
+                    with rasterio.open(out_file,
+                                        "w", **out_meta, compress='DEFLATE',
+                                        tiled=True, blockxsize=256, blockysize=256) as dest1:
+                        dest1.write(array.astype(rasterio.uint16), 1)
         if not os.path.exists(GIS_ELEVATION):
             os.makedirs(GIS_ELEVATION)
         print('Mosaicing...')

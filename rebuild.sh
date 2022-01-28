@@ -6,12 +6,15 @@ chmod +x WeatherSHIELD/update.sh
 chmod -R +r WeatherSHIELD/gui
 docker-compose stop
 docker-compose rm -f
-docker-compose up --build -d
+docker-compose build --parallel
+docker-compose up -d
 docker-compose exec -e PGPASSWORD=docker db psql FireGUARD --username=docker -p 5432 --host=localhost -f /FireGUARD/postgre.sql
 cp setup/lib/longrange_200001010000.csv data/wx/longrange/
 docker-compose exec wxcli python load_previous.py historic
 # needs to run once to have historic data
 docker-compose exec wxcli python reanalysis1.py
+# needs to run once to make firestarr grids
+docker-compose exec gis ./init.sh
 
 #############  utility commands that are useful
 
