@@ -14,7 +14,7 @@ docker-compose exec wxcli python load_previous.py historic
 # needs to run once to have historic data
 docker-compose exec wxcli python reanalysis1.py
 # needs to run once to make firestarr grids
-docker-compose exec gis ./init.sh
+docker-compose run --rm gis ./init.sh
 
 #############  utility commands that are useful
 
