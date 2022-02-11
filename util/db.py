@@ -300,7 +300,6 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
             stmt_insert = make_insert_statement(table, data.reset_index().columns, False)
             # don't delete and insert without failure
             trans_insert_data(cnxn, data, stmt_insert)
-            cnxn.commit()
         except KeyboardInterrupt as e:
             raise e
         except:
