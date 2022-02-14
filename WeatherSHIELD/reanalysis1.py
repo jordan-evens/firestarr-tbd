@@ -119,7 +119,7 @@ def get_year(year):
                           only_use_python_datetimes=True)
     valid = get_valid_locs(lats, lons)
     # every day is the first key?
-    index = ['model', 'member', 'year', 'fortime', 'latitude', 'longitude']
+    index = ['model', 'Member', 'year', 'fortime', 'latitude', 'longitude']
     stations = []
     # HACK: determine length of each period in the data
     period = datetime.datetime.strptime(prate.variables['time'].delta_t, '0000-00-00 %H:%M:%S')
@@ -193,14 +193,14 @@ def get_year(year):
                         ]
             df = pandas.DataFrame(
                     map(calc_values, valid),
-                    columns=['latitude', 'longitude', 'tmp', 'rh', 'ws', 'wd', 'apcp', 'apcp_0800'])
+                    columns=['latitude', 'longitude', 'TMP', 'RH', 'WS', 'WD', 'APCP', 'APCP_0800'])
             df['model'] = MODEL_NAME
             # use time from 18z
             df['fortime'] = jd[t]
             df['year'] = jd[t].year
             # HACK: for some reason Latitude's type is object, so fix that
             df['latitude'] = df['latitude'].astype(float)
-            df['member'] = 0
+            df['Member'] = 0
             df = df.set_index(index)
             stations.append(df)
     all = pandas.concat(stations)

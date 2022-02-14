@@ -316,7 +316,7 @@ def insert_weather(schema, final_table, df, modelFK='generated'):
             # logging.debug("Fixing column " + str(i))
             if 'int64' in str(all_wx[i].dtype):
                 all_wx[i] = all_wx[i].astype(int)
-        all_wx = all_wx[['locationmodelid', 'fortime', 'member', 'tmp', 'rh', 'ws', 'wd', 'apcp']]
+        all_wx = all_wx[['locationmodelid', 'fortime', 'Member', 'TMP', 'RH', 'WS', 'WD', 'APCP']]
         buffer = io.StringIO()
         all_wx.to_csv(buffer, index=False, header=False)
         buffer.seek(0)
