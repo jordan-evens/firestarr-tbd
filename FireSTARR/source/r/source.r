@@ -1,3 +1,6 @@
+library(data.table)
+library(raster)
+library(rasterVis)
 # colours <- list(
 # "1"=list(r=255, g=0, b=0),
 # "2"=list(r=255, g=255, b=255),
@@ -76,5 +79,58 @@ for (i in 1:255)
   results <- rbind(results, c(Value=i, Red=v$r, Green=v$g, Blue=v$b))
 }
 
+to_hex <- function(r, g, b)
+{
+  return(rgb(r, g, b, maxColorValue=255))
+}
+hex <- list()
+for (i in 1:(length(colours)))
+{
+  v <- colours[[as.character(i)]]
+  hex[as.character(i)] <- to_hex(v$r, v$g, v$b)
+}
+# hex <- sapply(colours,
+#               function(v) {
+#                 print(v)
+#                 return(to_hex(v$r, v$g, v$b))
+#               })
+hex <- unlist(hex)
+hex <- c(to_hex(0, 0, 0), hex)
+names(hex) <- 0:255
 results <- as.data.table(results)
 write.table(results, file="source.clr", col.names=FALSE, row.names=FALSE, sep=" ")
+
+imgs <- list.files("../../results/test13", pattern="^source.tif$", full.names=TRUE, recursive=TRUE)
+imgs <- imgs[grep("C2", imgs)]
+rasters <- lapply(imgs, function(img) { return(trim(raster(img)))})
+e <- extent(rasters[[1]])
+for (r in rasters)
+{
+  e <- extent(extend(r, e))
+}
+pdf(paste0('out.pdf'), width=11, height=8.5)
+par(mfrow=c(3, 4), mar=c(2,2,2,2))
+for (i in 1:length(rasters))
+{
+  img <- imgs[[i]]
+  title <- basename(dirname(img))
+  r <- rasters[[i]]
+  # set largest extent between all rasters
+  r <- extend(r, e)
+  # HACK: have to filter to values in the raster so it picks right colours
+  # col <- hex[1 + unique(r)]
+  # col <- hex[unique(r)]
+  # col <- hex[1:max(unique(r))]
+  col <- hex[as.character(unique(r))]
+  # plot(r, col=col, main=title)
+  # plot(ratify(r), col=hex, main=title)
+  # colortable(r) <- hex
+  # plot(r, main=title)
+  # print(levelplot(ratify(r), col.regions=col, att='ID'))
+  r <- ratify(r)
+  lvls <-levels(r)[[1]]
+  lvls$ID <- unique(r)
+  levels(r) <- lvls
+  print(levelplot(r, col.regions=col, att='ID', main=title))
+}
+dev.off()
