@@ -100,7 +100,8 @@ names(hex) <- 0:255
 results <- as.data.table(results)
 write.table(results, file="source.clr", col.names=FALSE, row.names=FALSE, sep=" ")
 
-imgs <- list.files("../../results/test13", pattern="^source.tif$", full.names=TRUE, recursive=TRUE)
+DIR <- "../../results/testhull2"
+imgs <- list.files(DIR, pattern="^source.tif$", full.names=TRUE, recursive=TRUE)
 imgs <- imgs[grep("C2", imgs)]
 rasters <- lapply(imgs, function(img) { return(trim(raster(img)))})
 e <- extent(rasters[[1]])
@@ -108,7 +109,7 @@ for (r in rasters)
 {
   e <- extent(extend(r, e))
 }
-pdf(paste0('out.pdf'), width=11, height=8.5)
+pdf(paste0(basename(DIR), '.pdf'), width=11, height=8.5)
 par(mfrow=c(3, 4), mar=c(2,2,2,2))
 for (i in 1:length(rasters))
 {
