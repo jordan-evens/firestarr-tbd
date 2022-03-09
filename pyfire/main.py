@@ -37,26 +37,21 @@ canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx
 
 canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
 
-lblFFMC = tk.Label(text="FFMC")
-inputFFMC = tk.Entry()
-inputFFMC.insert(0, "90")
-lblFFMC.pack()
-inputFFMC.pack()
-lblDMC = tk.Label(text="DMC")
-inputDMC = tk.Entry()
-inputDMC.insert(0, "40")
-lblDMC.pack()
-inputDMC.pack()
-lblDC = tk.Label(text="DC")
-inputDC = tk.Entry()
-inputDC.insert(0, "300")
-lblDC.pack()
-inputDC.pack()
-lblAPCP = tk.Label(text="APCP")
-inputAPCP = tk.Entry()
-inputAPCP.insert(0, "0")
-lblAPCP.pack()
-inputAPCP.pack()
+
+def add_entry(name, value):
+    label = tk.Label(text=name)
+    entry = tk.Entry()
+    entry.insert(0, str(value))
+    label.pack(side="left")
+    entry.pack(side="left")
+    return label, entry
+
+
+lblFFMC, inputFFMC = add_entry("FFMC", 90)
+lblDMC, inputDMC = add_entry("DMC", 40)
+lblDC, inputDC = add_entry("DC", 300)
+lblAPCP, inputAPCP = add_entry("APCP", 0)
+
 btnRun = tk.Button(text="Run")
 btnRun.pack()
 
