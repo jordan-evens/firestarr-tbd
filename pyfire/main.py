@@ -205,9 +205,7 @@ def do_draw():
         ) as dst:
             dst.write(out_img)
         with rio.open(file_out) as src_plot:
-            cmap = plt.get_cmap('Oranges').copy()
-            cmap.set_over('k', alpha=0.5)
-            show(src_plot, ax=ax, cmap=cmap)
+            show(src_plot, ax=ax, cmap='Oranges', alpha=0.3)
             show(src_plot, ax=ax, cmap='gist_gray', contour=True)
 
     plt.close()
