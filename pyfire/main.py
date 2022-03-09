@@ -37,11 +37,26 @@ canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx
 
 canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
 
-label = tk.Label(text="FFMC")
+lblFFMC = tk.Label(text="FFMC")
 inputFFMC = tk.Entry()
 inputFFMC.insert(0, "90")
-label.pack()
+lblFFMC.pack()
 inputFFMC.pack()
+lblDMC = tk.Label(text="DMC")
+inputDMC = tk.Entry()
+inputDMC.insert(0, "40")
+lblDMC.pack()
+inputDMC.pack()
+lblDC = tk.Label(text="DC")
+inputDC = tk.Entry()
+inputDC.insert(0, "300")
+lblDC.pack()
+inputDC.pack()
+lblAPCP = tk.Label(text="APCP")
+inputAPCP = tk.Entry()
+inputAPCP.insert(0, "0")
+lblAPCP.pack()
+inputAPCP.pack()
 btnRun = tk.Button(text="Run")
 btnRun.pack()
 
@@ -55,10 +70,11 @@ btnRun.bind("<Button-1>", handle_click)
 def do_it():
     dir_out = 'Data/output.release'
     ffmc = int(inputFFMC.get())
-    dmc = 40
-    dc = 300
-    args = './{} 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 0 --no-intensity -v -v'.format(
-        dir_out, ffmc, dmc, dc)
+    dmc = int(inputDMC.get())
+    dc = int(inputDC.get())
+    apcp_0800 = int(inputAPCP.get())
+    args = './{} 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
+        dir_out, ffmc, dmc, dc, apcp_0800)
     cmd = [
         'wsl',
         'bash',
