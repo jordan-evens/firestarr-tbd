@@ -30,6 +30,7 @@ root = tk.Tk()
 frmMap = tk.Frame()
 frmLocation = tk.Frame()
 frmFWI = tk.Frame()
+frmSettings = tk.Frame()
 frmFile = tk.Frame()
 fig = Figure(figsize=(5, 4), dpi=100)
 
@@ -74,6 +75,9 @@ lblFile.pack(side=tk.LEFT)
 optFile.pack(side=tk.LEFT)
 frmFile.pack()
 
+lblConfidence, inputConfidence, varConfidence = add_entry(frmSettings, "Confidence Level", 0.1, upper=1, lower=0.01, increment=0.01)
+frmSettings.pack()
+
 btnRun = tk.Button(text="Run")
 btnRun.pack(side="bottom")
 
@@ -95,8 +99,9 @@ def do_run():
     apcp_0800 = float(varAPCP.get())
     lat = float(varLat.get())
     lon = float(varLon.get())
-    args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
-        DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800)
+    confidence = float(varConfidence.get())
+    args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
+        DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
     cmd = [
         'wsl',
         'bash',
