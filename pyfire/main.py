@@ -25,7 +25,8 @@ import matplotlib.pyplot as plt
 ax = None
 root = tk.Tk()
 frmMap = tk.Frame()
-frmInputs = tk.Frame()
+frmLocation = tk.Frame()
+frmFWI = tk.Frame()
 fig = Figure(figsize=(5, 4), dpi=100)
 
 canvas1 = FigureCanvasTkAgg(fig, master=frmMap)
@@ -42,22 +43,25 @@ canvas1._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 frmMap.pack(fill=tk.BOTH, expand=1)
 
 
-def add_entry(name, value, upper, lower=0):
-    label = tk.Label(frmInputs, text=name)
-    entry = tk.Spinbox(frmInputs, from_=lower, to=upper)
-    entry.delete(0)
-    entry.insert(0, str(value))
+def add_entry(master, name, value, upper, lower=0, increment=1):
+    var = tk.StringVar()
+    var.set(str(value))
+    label = tk.Label(master, text=name)
+    entry = tk.Spinbox(master, from_=lower, to=upper, textvariable=var, increment=increment)
     label.pack(side="left")
     entry.pack(side="left")
-    return label, entry
+    return label, entry, var
 
+lblLat, inputLat, varLat = add_entry(frmLocation, "Latitude", 52.01, upper=90, lower=-90, increment=0.001)
+lblLon, inputLon, varLon = add_entry(frmLocation, "Longitude", -89.024, upper=180, lower=-180, increment=0.001)
+frmLocation.pack()
 
-lblFFMC, inputFFMC = add_entry("FFMC", 90, upper=101)
-lblDMC, inputDMC = add_entry("DMC", 40, upper=1000)
-lblDC, inputDC = add_entry("DC", 300, upper=10000)
-lblAPCP, inputAPCP = add_entry("APCP", 0, upper=1000)
+lblFFMC, inputFFMC, varFFMC = add_entry(frmFWI, "FFMC", 90, upper=101, increment=0.1)
+lblDMC, inputDMC, varDMC = add_entry(frmFWI, "DMC", 40, upper=1000)
+lblDC, inputDC, varDC = add_entry(frmFWI, "DC", 300, upper=10000)
+lblAPCP, inputAPCP, varAPCP = add_entry(frmFWI, "APCP", 0, upper=1000, increment=0.1)
 
-frmInputs.pack()
+frmFWI.pack()
 btnRun = tk.Button(text="Run")
 btnRun.pack(side="bottom")
 
@@ -74,12 +78,14 @@ def do_it():
     global ax
     global fig
     dir_out = 'Data/output.release'
-    ffmc = float(inputFFMC.get())
-    dmc = float(inputDMC.get())
-    dc = float(inputDC.get())
-    apcp_0800 = float(inputAPCP.get())
-    args = './{} 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
-        dir_out, ffmc, dmc, dc, apcp_0800)
+    ffmc = float(varFFMC.get())
+    dmc = float(varDMC.get())
+    dc = float(varDC.get())
+    apcp_0800 = float(varAPCP.get())
+    lat = float(varLat.get())
+    lon = float(varLon.get())
+    args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
+        dir_out, lat, lon, ffmc, dmc, dc, apcp_0800)
     cmd = [
         'wsl',
         'bash',
