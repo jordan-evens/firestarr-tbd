@@ -64,10 +64,10 @@ btnRun.bind("<Button-1>", handle_click)
 
 def do_it():
     dir_out = 'Data/output.release'
-    ffmc = int(inputFFMC.get())
-    dmc = int(inputDMC.get())
-    dc = int(inputDC.get())
-    apcp_0800 = int(inputAPCP.get())
+    ffmc = float(inputFFMC.get())
+    dmc = float(inputDMC.get())
+    dc = float(inputDC.get())
+    apcp_0800 = float(inputAPCP.get())
     args = './{} 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
         dir_out, ffmc, dmc, dc, apcp_0800)
     cmd = [
