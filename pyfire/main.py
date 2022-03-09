@@ -38,19 +38,20 @@ canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx
 canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
 
 
-def add_entry(name, value):
+def add_entry(name, value, upper, lower=0):
     label = tk.Label(text=name)
-    entry = tk.Entry()
+    entry = tk.Spinbox(root, from_=lower, to=upper)
+    entry.delete(0)
     entry.insert(0, str(value))
     label.pack(side="left")
     entry.pack(side="left")
     return label, entry
 
 
-lblFFMC, inputFFMC = add_entry("FFMC", 90)
-lblDMC, inputDMC = add_entry("DMC", 40)
-lblDC, inputDC = add_entry("DC", 300)
-lblAPCP, inputAPCP = add_entry("APCP", 0)
+lblFFMC, inputFFMC = add_entry("FFMC", 90, upper=101)
+lblDMC, inputDMC = add_entry("DMC", 40, upper=1000)
+lblDC, inputDC = add_entry("DC", 300, upper=10000)
+lblAPCP, inputAPCP = add_entry("APCP", 0, upper=1000)
 
 btnRun = tk.Button(text="Run")
 btnRun.pack()
