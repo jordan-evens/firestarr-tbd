@@ -147,38 +147,49 @@ def do_draw():
     ax = fig.add_subplot(111)
     fig.subplots_adjust(bottom=0, right=1, top=1, left=0, wspace=0, hspace=0)
 
-    with rasterio.open('../data/generated/grid/dem_15_5.tif') as src:
-        # crop the second raster using the
-        # previously computed shapes
-        out_img, out_transform = mask(
-            dataset=src,
-            shapes=GEOMS,
-            crop=True,
-        )
-        file_out = 'dem.tif'
-        if os.path.exists(file_out):
-            os.remove(file_out)
-        # save the result
-        # (don't forget to set the appropriate metadata)
-        with rasterio.open(
-                file_out,
-                'w',
-                driver='GTiff',
-                crs=src.crs,
-                height=out_img.shape[1],
-                width=out_img.shape[2],
-                count=src.count,
-                dtype=out_img.dtype,
-                transform=out_transform,
-                nodata=src.nodata
-        ) as dst:
-            dst.write(out_img)
-        with rio.open(file_out) as src_plot:
-            show(src_plot, ax=ax, cmap='gist_gray')
-
     # the first one is your raster on the right
     # and the second one your red raster
     with rasterio.open(fp) as src:
+        proj4 = src.crs.to_proj4()
+        print(proj4)
+        central_meridian = None
+        zone = None
+        for kv in proj4.split():
+            if kv.startswith('+lon_0='):
+                central_meridian = float(kv[kv.find('=') + 1:])
+                # meridian of -93 is zone 15
+                zone = 15.0 + (central_meridian + 93.0) / 6.0
+            elif kv.startswith('+zone='):
+                zone = float(kv[kv.find('=') + 1:])
+        file_dem = '../data/generated/grid/dem_{}.tif'.format("{}".format(zone).replace('.', '_'))
+        with rasterio.open(file_dem) as src_dem:
+            # crop the second raster using the
+            # previously computed shapes
+            out_img, out_transform = mask(
+                dataset=src_dem,
+                shapes=GEOMS,
+                crop=True,
+            )
+            file_out = 'dem.tif'
+            if os.path.exists(file_out):
+                os.remove(file_out)
+            # save the result
+            # (don't forget to set the appropriate metadata)
+            with rasterio.open(
+                    file_out,
+                    'w',
+                    driver='GTiff',
+                    crs=src_dem.crs,
+                    height=out_img.shape[1],
+                    width=out_img.shape[2],
+                    count=src_dem.count,
+                    dtype=out_img.dtype,
+                    transform=out_transform,
+                    nodata=src_dem.nodata
+            ) as dst:
+                dst.write(out_img)
+            with rio.open(file_out) as src_plot:
+                show(src_plot, ax=ax, cmap='gist_gray')
         # crop the second raster using the
         # previously computed shapes
         out_img, out_transform = mask(
