@@ -23,7 +23,8 @@ import shutil
 import glob
 
 DIR_OUT = 'Data/output.pyfire'
-
+FILES = None
+GEOMS = None
 ax = None
 root = tk.Tk()
 frmMap = tk.Frame()
@@ -105,30 +106,25 @@ def do_run():
     ]
     subprocess.run(cmd)
 
-
 def update_menu():
+    global FILES
+    global GEOMS
     dir = r'../FireSTARR/{}'.format(DIR_OUT)
-    files = glob.glob("{}/*.tif".format(dir))
-    print(files)
+    FILES = glob.glob("{}/*.tif".format(dir))
+    print(FILES)
     menu = optFile["menu"]
     menu.delete(0, "end")
-    for f in files:
+    for f in FILES:
         menu.add_command(label=f,
                          command=lambda value=f: varFile.set(value))
-    if 0 < len(files):
-        varFile.set(files[-1])
+    if 0 < len(FILES):
+        GEOMS = find_bounds()
+        varFile.set(FILES[-1])
+    else:
+        GEOMS = None
 
-def do_draw():
-    global ax
-    global fig
-
-    fp = varFile.get()
-    if fp is None:
-        return
-
-    # the first one is your raster on the right
-    # and the second one your red raster
-    with rasterio.open(fp) as src:
+def find_bounds():
+    with rasterio.open(FILES[-1]) as src:
         src_affine = src.meta.get("transform")
 
         # Read the first band of the "mask" raster
@@ -143,12 +139,25 @@ def do_draw():
             # not containing "nodata"
             if raster_value == 1:
                 geoms.append(geometry)
+        return geoms
 
+def do_draw():
+    global ax
+    global fig
+    global GEOMS
+
+    fp = varFile.get()
+    if fp is None:
+        return
+
+    # the first one is your raster on the right
+    # and the second one your red raster
+    with rasterio.open(fp) as src:
         # crop the second raster using the
         # previously computed shapes
         out_img, out_transform = mask(
             dataset=src,
-            shapes=geoms,
+            shapes=GEOMS,
             crop=True,
         )
         file_out = 'result.tif'
