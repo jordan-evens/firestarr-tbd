@@ -125,20 +125,11 @@ def update_menu():
 
 def find_bounds():
     with rasterio.open(FILES[-1]) as src:
-        src_affine = src.meta.get("transform")
-
-        # Read the first band of the "mask" raster
-        band = src.read(1)
-        # Use the same value on each pixel with data
-        # in order to speedup the vectorization
-        band[np.where(band != src.nodata)] = 1
-
-        geoms = []
-        for geometry, raster_value in features.shapes(band, transform=src_affine):
-            # get the shape of the part of the raster
-            # not containing "nodata"
-            if raster_value == 1:
-                geoms.append(geometry)
+        b = src.bounds
+        geoms = [{
+            'type': 'Polygon',
+            'coordinates': [[(b.left, b.top), (b.right, b.top), (b.right, b.bottom), (b.left, b.bottom)]]
+        }]
         return geoms
 
 def do_draw():
@@ -149,6 +140,41 @@ def do_draw():
     fp = varFile.get()
     if fp is None:
         return
+
+    fig.clf()
+    if ax is not None:
+        ax.cla()
+    ax = fig.add_subplot(111)
+    fig.subplots_adjust(bottom=0, right=1, top=1, left=0, wspace=0, hspace=0)
+
+    with rasterio.open('../data/generated/grid/dem_15_5.tif') as src:
+        # crop the second raster using the
+        # previously computed shapes
+        out_img, out_transform = mask(
+            dataset=src,
+            shapes=GEOMS,
+            crop=True,
+        )
+        file_out = 'dem.tif'
+        if os.path.exists(file_out):
+            os.remove(file_out)
+        # save the result
+        # (don't forget to set the appropriate metadata)
+        with rasterio.open(
+                file_out,
+                'w',
+                driver='GTiff',
+                crs=src.crs,
+                height=out_img.shape[1],
+                width=out_img.shape[2],
+                count=src.count,
+                dtype=out_img.dtype,
+                transform=out_transform,
+                nodata=src.nodata
+        ) as dst:
+            dst.write(out_img)
+        with rio.open(file_out) as src_plot:
+            show(src_plot, ax=ax, cmap='gist_gray')
 
     # the first one is your raster on the right
     # and the second one your red raster
@@ -169,6 +195,7 @@ def do_draw():
                 file_out,
                 'w',
                 driver='GTiff',
+                crs=src.crs,
                 height=out_img.shape[1],
                 width=out_img.shape[2],
                 count=src.count,
@@ -177,20 +204,19 @@ def do_draw():
                 nodata=src.nodata
         ) as dst:
             dst.write(out_img)
-        fig.clf()
-        if ax is not None:
-            ax.cla()
-        ax = fig.add_subplot(111)
-        fig.subplots_adjust(bottom=0, right=1, top=1, left=0, wspace=0, hspace=0)
         with rio.open(file_out) as src_plot:
-            show(src_plot, ax=ax, cmap='Oranges')
-        plt.close()
-        ax.set(title="", xticks=[], yticks=[])
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["left"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        canvas1.draw()
+            cmap = plt.get_cmap('Oranges').copy()
+            cmap.set_over('k', alpha=0.5)
+            show(src_plot, ax=ax, cmap=cmap)
+            show(src_plot, ax=ax, cmap='gist_gray', contour=True)
+
+    plt.close()
+    ax.set(title="", xticks=[], yticks=[])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+    ax.spines["bottom"].set_visible(False)
+    canvas1.draw()
 
 def on_pick_file(self, name='', index='', mode=''):
     do_draw()
