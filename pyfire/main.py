@@ -1,7 +1,5 @@
 import os
 
-fp = r'../FireSTARR/{}/probability_252_2017-09-09.tif'.format(dir_out)
-
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 import numpy as np
 import rasterio
@@ -21,12 +19,17 @@ from matplotlib.backends.backend_tkagg import (
 from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
+import shutil
+import glob
+
+DIR_OUT = 'Data/output.pyfire'
 
 ax = None
 root = tk.Tk()
 frmMap = tk.Frame()
 frmLocation = tk.Frame()
 frmFWI = tk.Frame()
+frmFile = tk.Frame()
 fig = Figure(figsize=(5, 4), dpi=100)
 
 canvas1 = FigureCanvasTkAgg(fig, master=frmMap)
@@ -62,22 +65,29 @@ lblDC, inputDC, varDC = add_entry(frmFWI, "DC", 300, upper=10000)
 lblAPCP, inputAPCP, varAPCP = add_entry(frmFWI, "APCP", 0, upper=1000, increment=0.1)
 
 frmFWI.pack()
+
+varFile = tk.StringVar()
+lblFile = tk.Label(frmFile, text="File")
+optFile = tk.OptionMenu(frmFile, varFile, None)
+lblFile.pack(side=tk.LEFT)
+optFile.pack(side=tk.LEFT)
+frmFile.pack()
+
 btnRun = tk.Button(text="Run")
 btnRun.pack(side="bottom")
 
 
 def handle_click(event):
     print("Running...")
-    do_it()
+    do_run()
+    update_menu()
 
 
 btnRun.bind("<Button-1>", handle_click)
 
-
-def do_it():
-    global ax
-    global fig
-    dir_out = 'Data/output.release'
+def do_run():
+    if os.path.exists(DIR_OUT):
+        shutil.rmtree(DIR_OUT)
     ffmc = float(varFFMC.get())
     dmc = float(varDMC.get())
     dc = float(varDC.get())
@@ -85,7 +95,7 @@ def do_it():
     lat = float(varLat.get())
     lon = float(varLon.get())
     args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --no-intensity -v -v'.format(
-        dir_out, lat, lon, ffmc, dmc, dc, apcp_0800)
+        DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800)
     cmd = [
         'wsl',
         'bash',
@@ -94,6 +104,27 @@ def do_it():
             args)
     ]
     subprocess.run(cmd)
+
+
+def update_menu():
+    dir = r'../FireSTARR/{}'.format(DIR_OUT)
+    files = glob.glob("{}/*.tif".format(dir))
+    print(files)
+    menu = optFile["menu"]
+    menu.delete(0, "end")
+    for f in files:
+        menu.add_command(label=f,
+                         command=lambda value=f: varFile.set(value))
+    if 0 < len(files):
+        varFile.set(files[-1])
+
+def do_draw():
+    global ax
+    global fig
+
+    fp = varFile.get()
+    if fp is None:
+        return
 
     # the first one is your raster on the right
     # and the second one your red raster
@@ -152,5 +183,9 @@ def do_it():
         ax.spines["bottom"].set_visible(False)
         canvas1.draw()
 
+def on_pick_file(self, name='', index='', mode=''):
+    do_draw()
 
+varFile.trace("w", on_pick_file)
+update_menu()
 root.mainloop()
