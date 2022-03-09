@@ -7,12 +7,12 @@ import numpy as np
 import rasterio
 from rasterio import features
 from rasterio.mask import mask
+import rasterio as rio
+from rasterio.plot import show
 
 import subprocess
 
-
 import tkinter as tk
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from matplotlib.backends.backend_tkagg import (
@@ -22,6 +22,7 @@ from matplotlib.backend_bases import key_press_handler
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
+ax = None
 root = tk.Tk()
 frmMap = tk.Frame()
 frmInputs = tk.Frame()
@@ -39,6 +40,7 @@ canvas1.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0
 canvas1._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
 frmMap.pack(fill=tk.BOTH, expand=1)
+
 
 def add_entry(name, value, upper, lower=0):
     label = tk.Label(frmInputs, text=name)
@@ -64,9 +66,13 @@ def handle_click(event):
     print("Running...")
     do_it()
 
+
 btnRun.bind("<Button-1>", handle_click)
 
+
 def do_it():
+    global ax
+    global fig
     dir_out = 'Data/output.release'
     ffmc = float(inputFFMC.get())
     dmc = float(inputDMC.get())
@@ -114,27 +120,24 @@ def do_it():
         # save the result
         # (don't forget to set the appropriate metadata)
         with rasterio.open(
-            file_out,
-            'w',
-            driver='GTiff',
-            height=out_img.shape[1],
-            width=out_img.shape[2],
-            count=src.count,
-            dtype=out_img.dtype,
-            transform=out_transform,
-            nodata=src.nodata
+                file_out,
+                'w',
+                driver='GTiff',
+                height=out_img.shape[1],
+                width=out_img.shape[2],
+                count=src.count,
+                dtype=out_img.dtype,
+                transform=out_transform,
+                nodata=src.nodata
         ) as dst:
             dst.write(out_img)
-
-        import rasterio as rio
-        from rasterio.plot import show
+        fig.clf()
+        if ax is not None:
+            ax.cla()
         ax = fig.add_subplot(111)
         fig.subplots_adjust(bottom=0, right=1, top=1, left=0, wspace=0, hspace=0)
-
-        #    fig.tight_layout(pad=0)
-
         with rio.open(file_out) as src_plot:
-            show(src_plot, ax=ax, cmap='gist_gray')
+            show(src_plot, ax=ax, cmap='Oranges')
         plt.close()
         ax.set(title="", xticks=[], yticks=[])
         ax.spines["top"].set_visible(False)
@@ -142,5 +145,6 @@ def do_it():
         ax.spines["left"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
         canvas1.draw()
+
 
 root.mainloop()
