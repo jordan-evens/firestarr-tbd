@@ -23,24 +23,26 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 
 root = tk.Tk()
-
+frmMap = tk.Frame()
+frmInputs = tk.Frame()
 fig = Figure(figsize=(5, 4), dpi=100)
 
-canvas1 = FigureCanvasTkAgg(fig, master=root)
+canvas1 = FigureCanvasTkAgg(fig, master=frmMap)
 canvas1.draw()
 
-toolbar = NavigationToolbar2Tk(canvas1,root)
+toolbar = NavigationToolbar2Tk(canvas1, frmMap)
 toolbar.update()
-toolbar.pack(side=tkinter.TOP, fill=tkinter.X, padx=8)
+toolbar.pack(side=tk.TOP, fill=tk.X, padx=8)
 
-canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
+canvas1.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
-canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
+canvas1._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
+frmMap.pack(fill=tk.BOTH, expand=1)
 
 def add_entry(name, value, upper, lower=0):
-    label = tk.Label(text=name)
-    entry = tk.Spinbox(root, from_=lower, to=upper)
+    label = tk.Label(frmInputs, text=name)
+    entry = tk.Spinbox(frmInputs, from_=lower, to=upper)
     entry.delete(0)
     entry.insert(0, str(value))
     label.pack(side="left")
@@ -53,8 +55,9 @@ lblDMC, inputDMC = add_entry("DMC", 40, upper=1000)
 lblDC, inputDC = add_entry("DC", 300, upper=10000)
 lblAPCP, inputAPCP = add_entry("APCP", 0, upper=1000)
 
+frmInputs.pack()
 btnRun = tk.Button(text="Run")
-btnRun.pack()
+btnRun.pack(side="bottom")
 
 
 def handle_click(event):
