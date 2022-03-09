@@ -1,23 +1,6 @@
 import os
 
-import rasterio
-from rasterio.plot import show
-
-fp = r'../FireSTARR/data/output.release/probability_252_2017-09-09.tif'
-CMD = [
-    'wsl',
-   'bash',
-    '-c',
-   'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec firestarr cmake-build-release/FireSTARR ./Data/output.release 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc 90 --dmc 40 --dc 300 --apcp_0800 0 --no-intensity -v -v'
-]
-# This is a sample Python script.
-
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    pass
+fp = r'../FireSTARR/{}/probability_252_2017-09-09.tif'.format(dir_out)
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 import numpy as np
@@ -50,10 +33,15 @@ toolbar = NavigationToolbar2Tk(canvas1,root)
 toolbar.update()
 toolbar.pack(side=tkinter.TOP, fill=tkinter.X, padx=8)
 
-canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=10, pady=5)
+canvas1.get_tk_widget().pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
 
-canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=10, pady=5)
+canvas1._tkcanvas.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=0, pady=0)
 
+label = tk.Label(text="FFMC")
+inputFFMC = tk.Entry()
+inputFFMC.insert(0, "90")
+label.pack()
+inputFFMC.pack()
 btnRun = tk.Button(text="Run")
 btnRun.pack()
 
@@ -64,9 +52,21 @@ def handle_click(event):
 
 btnRun.bind("<Button-1>", handle_click)
 
-
 def do_it():
-    subprocess.run(CMD)
+    dir_out = 'Data/output.release'
+    ffmc = int(inputFFMC.get())
+    dmc = 40
+    dc = 300
+    args = './{} 2017-08-27 52.01 -89.024 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 0 --no-intensity -v -v'.format(
+        dir_out, ffmc, dmc, dc)
+    cmd = [
+        'wsl',
+        'bash',
+        '-c',
+        'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec firestarr cmake-build-release/FireSTARR {}'.format(
+            args)
+    ]
+    subprocess.run(cmd)
 
     # the first one is your raster on the right
     # and the second one your red raster
