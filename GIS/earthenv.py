@@ -76,7 +76,17 @@ if __name__ == '__main__':
             for lon in RANGE_LONGITUDE:
                 urls.append(MASK.format(lat, lon))
         print('Downloading...')
-        files = pool.map(to_download, urls)
+        retries = 0
+        while retries < 5:
+            try:
+                files = pool.map(to_download, urls)
+                break
+            except:
+                print('Downloading failed')
+                retries = retries + 1
+        if 5 == retries:
+            print('Too many retries')
+            sys.exit(-1)
         if not os.path.exists(OUT_DIR):
             os.mkdir(OUT_DIR)
         print('Extracting...')

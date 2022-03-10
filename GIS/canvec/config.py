@@ -7,7 +7,7 @@ from io import StringIO
 import re
 
 # File listing values to use for various options
-ROOT = r'/FireGUARD/GIS'
+ROOT = r'/appl/GIS'
 CONFIG_FILE = os.path.join(ROOT, "canvec", "config.ini")
 
 def read_config(file_name):

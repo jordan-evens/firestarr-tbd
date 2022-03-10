@@ -21,8 +21,6 @@ import shutil
 import certifi
 import ssl
 import sys
-#import pywgrib2_s as wgrib2
-import wgrib2
 import copy
 import zipfile
 import requests
@@ -80,30 +78,12 @@ def read_config(force=False):
     if force or CONFIG is None:
         CONFIG = configparser.SafeConfigParser()
         # set default values and then read to overwrite with whatever is in config
-        CONFIG.add_section('FireGUARD')
-        # NOTE: should use if this is required to work while proxy isn't already authenticated
-        # CONFIG.set('Proxy', 'address', '<user>:<password>@ipv4:port')
-        CONFIG.set('FireGUARD', 'proxy', '')
-        CONFIG.set('FireGUARD', 'email', '<SUPPORT_EMAIL@DOMAIN.COM>')
-        CONFIG.set('FireGUARD', 'active_offer', 'For accessibility accommodations, alternate formats, questions, or feedback, please contact')
-        CONFIG.set('FireGUARD', 'fire_root', '')
-        CONFIG.set('FireGUARD', 'output_default', '')
-        CONFIG.set('FireGUARD', 'perim_archive_root', '')
-        CONFIG.set('FireGUARD', 'perim_root', '')
+        CONFIG.add_section('TBD')
         # default to all of canada
-        CONFIG.set('FireGUARD', 'latitude_min', '41')
-        CONFIG.set('FireGUARD', 'latitude_max', '84')
-        CONFIG.set('FireGUARD', 'longitude_min', '-141')
-        CONFIG.set('FireGUARD', 'longitude_max', '-52')
-        CONFIG.set('FireGUARD', 'dfoss_connection', '')
-        CONFIG.set('FireGUARD', 'url_agency_wx', '')
-        CONFIG.set('FireGUARD', 'url_agency_wx_longrange', 'http://www.affes.mnr.gov.on.ca/extranet/Bulletin_Boards/WXProducts/')
-        CONFIG.set('FireGUARD', 'fpa_locations_grid', 'longrange.csv')
-        CONFIG.set('FireGUARD', 'reanalysis_server', 'ftp://ftp.cdc.noaa.gov/Datasets/ncep.reanalysis/')
-        CONFIG.set('FireGUARD', 'reanalysis_server_user', '')
-        CONFIG.set('FireGUARD', 'reanalysis_server_password', '')
-        CONFIG.set('FireGUARD', 'naefs_server', 'https://nomads.ncep.noaa.gov/cgi-bin/')
-        CONFIG.set('FireGUARD', 'hpfx_server', 'http://hpfx.collab.science.gc.ca/')
+        CONFIG.set('TBD', 'latitude_min', '41')
+        CONFIG.set('TBD', 'latitude_max', '84')
+        CONFIG.set('TBD', 'longitude_min', '-141')
+        CONFIG.set('TBD', 'longitude_max', '-52')
         try:
             with open(SETTINGS_FILE) as configfile:
                 CONFIG.readfp(configfile)
@@ -113,12 +93,12 @@ def read_config(force=False):
                 CONFIG.write(configfile)
         BOUNDS = {
             'latitude': {
-                'min': int(CONFIG.get('FireGUARD', 'latitude_min')),
-                'max': int(CONFIG.get('FireGUARD', 'latitude_max'))
+                'min': int(CONFIG.get('TBD', 'latitude_min')),
+                'max': int(CONFIG.get('TBD', 'latitude_max'))
             },
             'longitude': {
-                'min': int(CONFIG.get('FireGUARD', 'longitude_min')),
-                'max': int(CONFIG.get('FireGUARD', 'longitude_max'))
+                'min': int(CONFIG.get('TBD', 'longitude_min')),
+                'max': int(CONFIG.get('TBD', 'longitude_max'))
             }
         }
 
@@ -434,15 +414,14 @@ def try_remove(file):
         pass
 
 
-def download(get_what, suppress_exceptions=True):
+def download(url, suppress_exceptions=True):
     """!
-    Download URL using specified proxy
-    @param get_what Array of proxy and URL to use
+    Download URL
+    @param url URL to download
     @param suppress_exceptions Whether or not return exception instead of raising it
     @return Contents of URL, or exception
     """
     try:
-        url = get_what
         # HACK: check this to make sure url completion has worked properly
         assert('{}' not in url)
         response = urllib2.urlopen(url)
@@ -459,14 +438,12 @@ def download(get_what, suppress_exceptions=True):
 
 def download_many(urls, fct=download):
     """!
-    Download multiple URLs using current proxy settings
+    Download multiple URLs
     @param urls List of multiple URLs to download
     @param processes Number of processes to use for downloading
     @return List of paths that files have been saved to
     """
-    get_what = list(urls)
-    # HACK: use current proxy so we don't do check for proxy and delay this
-    results = list(map(fct, get_what))
+    results = list(map(fct, list(urls)))
     for i, result in enumerate(results):
         if isinstance(result, dict):
             # HACK: recreate error by trying to open it again

@@ -1,13 +1,10 @@
-# About FireGUARD
+# About TBD
 
 ## Overview
 
-FireGUARD (Fire Growth under Uncertainty for Appropriate Response Decision Support) is designed to support wildland fire response decicion-making. FireGUARD contains four core elements:
+TBD (Threshold Based Distributions) is designed to support wildland fire response decicion-making. TBD is the based on the fire growth algorithm (FireSTARR) originally in the FireGUARD suite of programs.
 
-1. generation of weather forecast scenarios
-2. generation of a burn probability map from replicated simulation of fire growth, smouldering, and natural extinction under the weather scenarios and stochastic fire behaviour scenarios
-3. assessment of 'risk' (i.e., likelihood-weighted impacts) by multiplying the spatial burn probability by a spatial rating of potential socio-economic impact, and
-4. (in progress for future implementation) estimation of the cost of response alternatives
+It focuses on the generation of burn probabilities from replicated simulation of fire growth, smouldering, and natural extinction under the weather and stochastic fire behaviour scenarios.
 
 ## Additional License Condition
 
@@ -20,18 +17,3 @@ FireGUARD is published at the following locations:
 - [Weather forecast model](https://doi.org/10.3390/fire3020016)
 - Burn probability model (In progress)
 - [Impact and likelihood-weighted impact model](https://doi.org/10.1071/WF18189)
-
-
-## Documentation
-
-FireGUARD is the overall suite of products for creating probabilistic fire growth outputs.
-
-Subcomponents include:
-
-[FireSTARR](FireSTARR/)
-
-[GIS](GIS/)
-
-[WeatherSHIELD](WeatherSHIELD/)
-
-<!-- @diafile DataFlow.dia -->

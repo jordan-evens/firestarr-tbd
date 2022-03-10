@@ -11,7 +11,7 @@ from common import unzip
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
 
-DATA_DIR = os.path.realpath('/FireGUARD/data')
+DATA_DIR = os.path.realpath('/appl/data')
 EXTRACTED_DIR = os.path.join(DATA_DIR, 'extracted')
 DOWNLOAD_DIR = os.path.join(DATA_DIR, 'download')
 canada = r'http://www12.statcan.gc.ca/census-recensement/2011/geo/bound-limit/files-fichiers/lcsd000a19a_e.zip'

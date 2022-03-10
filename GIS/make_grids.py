@@ -66,13 +66,13 @@ def fill(data, invalid=None):
 ###########################
 
 CELL_SIZE = 100
-DATA_DIR = os.path.realpath('/FireGUARD/data')
+DATA_DIR = os.path.realpath('/appl/data')
 EXTRACTED_DIR = os.path.join(DATA_DIR, 'extracted')
 DOWNLOAD_DIR = os.path.join(DATA_DIR, 'download')
 GENERATED_DIR = os.path.join(DATA_DIR, 'generated')
 INTERMEDIATE_DIR = os.path.join(DATA_DIR, 'intermediate')
 DIR = os.path.join(GENERATED_DIR, 'grid')
-TMP = os.path.realpath('/FireGUARD/data/tmp')
+TMP = os.path.realpath('/appl/data/tmp')
 CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=DEFLATE']
 EARTHENV = os.path.join(DATA_DIR, 'GIS/input/elevation/EarthEnv.tif')
 FUEL_RASTER = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
@@ -444,10 +444,10 @@ def check_merged(filled_tif, zone, cols, rows):
         ds_filled = None
         gc.collect()
         logging.info('Zone {}: Adding water from polygons'.format(zone))
-        water = [checkAddLakes(zone, cols, rows, 'USA_Lakes', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDWaterbody')]
-        water += [checkAddLakes(zone, cols, rows, 'USA_Other', r'/FireGUARD/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDArea')]
+        water = [checkAddLakes(zone, cols, rows, 'USA_Lakes', r'/appl/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDWaterbody')]
+        water += [checkAddLakes(zone, cols, rows, 'USA_Other', r'/appl/data/extracted/nhd/NHD_H_National_GDB.gdb', r'NHDArea')]
         for prov in ['AB', 'BC', 'MB', 'NB', 'NL', 'NS', 'NT', 'NU', 'ON', 'PE', 'QC', 'SK', 'YT']:
-            path_gdb = r'/FireGUARD/data/extracted/canvec/canvec_50K_{}_Hydro.gdb'.format(prov)
+            path_gdb = r'/appl/data/extracted/canvec/canvec_50K_{}_Hydro.gdb'.format(prov)
             water += [checkAddLakes(zone, cols, rows, prov, path_gdb, 'waterbody_2')]
         # should have a list of rasters that were made
         water = [x for x in water if x is not None]

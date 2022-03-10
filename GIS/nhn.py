@@ -12,7 +12,7 @@ import time
 
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
-DATA_DIR = os.path.realpath('/FireGUARD/data')
+DATA_DIR = os.path.realpath('/appl/data')
 EXTRACTED_DIR = os.path.join(DATA_DIR, 'extracted')
 DOWNLOAD_DIR = os.path.join(DATA_DIR, 'download')
 INTERMEDIATE_DIR = os.path.join(DATA_DIR, 'intermediate')
@@ -97,10 +97,10 @@ DRIVER_SHP = ogr.GetDriverByName('ESRI Shapefile')
 index = DRIVER_SHP.Open(INDEX_FILE)
 indexLayer = index.GetLayer()
 
-xLeft = float(common.CONFIG.get('FireGUARD','longitude_min'))
-xRight = float(common.CONFIG.get('FireGUARD','longitude_max'))
-yBottom = float(common.CONFIG.get('FireGUARD','latitude_min'))
-yTop = float(common.CONFIG.get('FireGUARD','latitude_max'))
+xLeft = float(common.CONFIG.get('TBD','longitude_min'))
+xRight = float(common.CONFIG.get('TBD','longitude_max'))
+yBottom = float(common.CONFIG.get('TBD','latitude_min'))
+yTop = float(common.CONFIG.get('TBD','latitude_max'))
 
 srs = ogr.osr.SpatialReference()
 srs.ImportFromEPSG(4269)
