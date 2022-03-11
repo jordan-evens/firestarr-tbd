@@ -1,7 +1,6 @@
 #############  setup commands
 git pull
-mkdir -p data/generated/tiled
-mkdir -p data/wx/longrange
+mkdir -p data/generated/grid
 chmod +x GIS/init.sh
 
 docker-compose stop
