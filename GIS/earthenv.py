@@ -29,7 +29,7 @@ import gdal_merge as gm
 
 
 DATA_DIR = os.path.realpath('../data')
-GIS = os.path.join(DATA_DIR, 'GIS')
+GIS = os.path.join(DATA_DIR, 'gis')
 OUT_DIR = os.path.join(DATA_DIR, 'extracted/earthenv')
 TIF_DIR = os.path.join(GIS, 'earthenv')
 INPUT = os.path.join(GIS, "input")

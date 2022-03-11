@@ -3,9 +3,9 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd ${SCRIPT_DIR}
 
-cd ../TBD
+cd ../tbd
 doxygen tbd.conf
-cd ../GIS
+cd ../gis
 doxygen gis.conf
 cd ../documentation
 doxygen main.conf

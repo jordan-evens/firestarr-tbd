@@ -18,8 +18,8 @@ services:
         source: ./data
         target: /appl/data
       - type: bind
-        source: ./GIS
-        target: /appl/GIS
+        source: ./gis
+        target: /appl/gis
       - type: bind
         source: ./util
         target: /appl/util
@@ -47,8 +47,8 @@ services:
         source: ./data/generated/grid
         target: /appl/100m/default
       - type: bind
-        source: ./TBD
-        target: /appl/TBD
+        source: ./tbd
+        target: /appl/tbd
       - type: bind
         source: ./util
         target: /appl/util

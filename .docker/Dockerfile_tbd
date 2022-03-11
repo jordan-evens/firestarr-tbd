@@ -2,7 +2,7 @@
 FROM gcc:10.3
 WORKDIR /appl/
 COPY .docker/requirements_tbd.txt requirements_tbd.txt
-WORKDIR /appl/TBD/
+WORKDIR /appl/tbd/
 RUN (apt-get update || echo Ignoring update errors) \
   && apt-get install -y software-properties-common \
   && echo Adding ppa \
@@ -40,5 +40,5 @@ RUN (apt-get update || echo Ignoring update errors) \
   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
 RUN (useradd -m user || echo User already exists) && (yes password | passwd user)
 RUN yes password | passwd
-RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/TBD/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f

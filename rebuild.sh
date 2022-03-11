@@ -1,7 +1,7 @@
 #############  setup commands
 git pull
 mkdir -p data/generated/grid
-chmod +x GIS/init.sh
+chmod +x gis/init.sh
 
 docker-compose stop
 docker-compose rm -f
@@ -18,4 +18,4 @@ docker-compose run --rm gis ./init.sh
 # docker-compose run --rm tbd /bin/bash
 
 #############  test tbd
-# docker-compose run --rm tbd ./TBD ./Data/output 2017-08-27 52.01 -89.024 12:15 -v --wx Data/output/wx.csv --ffmc 90 --dmc 40 --dc 300 --apcp_0800 0
+# docker-compose run --rm tbd ./tbd ./data/output 2017-08-27 52.01 -89.024 12:15 -v --wx data/output/wx.csv --ffmc 90 --dmc 40 --dc 300 --apcp_0800 0

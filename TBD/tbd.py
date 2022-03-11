@@ -207,7 +207,7 @@ def do_run(fgmj):
         for col in ['FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI']:
             df[col] = 0
         df.to_csv('wx.csv', index=False)
-        cmd = "./TBD"
+        cmd = "./tbd"
         args = "{} {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
         if perim is not None:
             args = args + " --perim {}".format(perim)
@@ -215,7 +215,7 @@ def do_run(fgmj):
         run_what = [cmd] + shlex.split(args.replace('\\', '/'))
         logging.info("Running: " + ' '.join(run_what))
         t0 = timeit.default_timer()
-        stdout, stderr = common.finish_process(common.start_process(run_what, "/appl/TBD"))
+        stdout, stderr = common.finish_process(common.start_process(run_what, "/appl/tbd"))
         t1 = timeit.default_timer()
         logging.info("Took {}s to run simulations".format(t1 - t0))
         log_name = os.path.join(out_dir, "log.txt")

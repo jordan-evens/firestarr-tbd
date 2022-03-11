@@ -106,7 +106,7 @@ def do_run():
         'wsl',
         'bash',
         '-c',
-        'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec tbd cmake-build-release/TBD {}'.format(
+        'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec tbd cmake-build-release/tbd {}'.format(
             args)
     ]
     subprocess.run(cmd)
@@ -114,7 +114,7 @@ def do_run():
 def update_menu():
     global FILES
     global GEOMS
-    dir = r'../TBD/{}'.format(DIR_OUT)
+    dir = r'../tbd/{}'.format(DIR_OUT)
     FILES = glob.glob("{}/*.tif".format(dir))
     print(FILES)
     menu = optFile["menu"]

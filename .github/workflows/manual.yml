@@ -34,7 +34,7 @@ jobs:
         # Path to Doxyfile
         doxyfile-path: "tbd.conf"
         # Working directory
-        working-directory: "TBD"
+        working-directory: "tbd"
         
     - name: Doxygen GIS
       uses: mattnotmitt/doxygen-action@v1.3.1
@@ -42,7 +42,7 @@ jobs:
         # Path to Doxyfile
         doxyfile-path: "gis.conf"
         # Working directory
-        working-directory: "GIS"
+        working-directory: "gis"
         
     - name: Doxygen Main
       uses: mattnotmitt/doxygen-action@v1.3.1

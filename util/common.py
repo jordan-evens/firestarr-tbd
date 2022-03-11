@@ -78,12 +78,12 @@ def read_config(force=False):
     if force or CONFIG is None:
         CONFIG = configparser.SafeConfigParser()
         # set default values and then read to overwrite with whatever is in config
-        CONFIG.add_section('TBD')
+        CONFIG.add_section('tbd')
         # default to all of canada
-        CONFIG.set('TBD', 'latitude_min', '41')
-        CONFIG.set('TBD', 'latitude_max', '84')
-        CONFIG.set('TBD', 'longitude_min', '-141')
-        CONFIG.set('TBD', 'longitude_max', '-52')
+        CONFIG.set('tbd', 'latitude_min', '41')
+        CONFIG.set('tbd', 'latitude_max', '84')
+        CONFIG.set('tbd', 'longitude_min', '-141')
+        CONFIG.set('tbd', 'longitude_max', '-52')
         try:
             with open(SETTINGS_FILE) as configfile:
                 CONFIG.readfp(configfile)
@@ -93,12 +93,12 @@ def read_config(force=False):
                 CONFIG.write(configfile)
         BOUNDS = {
             'latitude': {
-                'min': int(CONFIG.get('TBD', 'latitude_min')),
-                'max': int(CONFIG.get('TBD', 'latitude_max'))
+                'min': int(CONFIG.get('tbd', 'latitude_min')),
+                'max': int(CONFIG.get('tbd', 'latitude_max'))
             },
             'longitude': {
-                'min': int(CONFIG.get('TBD', 'longitude_min')),
-                'max': int(CONFIG.get('TBD', 'longitude_max'))
+                'min': int(CONFIG.get('tbd', 'longitude_min')),
+                'max': int(CONFIG.get('tbd', 'longitude_max'))
             }
         }
 
