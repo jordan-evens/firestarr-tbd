@@ -1,14 +1,22 @@
 #############  setup commands
 git pull
-mkdir -p data/generated/grid
 chmod +x gis/init.sh
 
 docker-compose stop
 docker-compose rm -f
-docker-compose build --parallel
+docker-compose build
 docker-compose up -d
-# needs to run once to make tbd grids
-docker-compose run --rm gis ./init.sh
+
+
+# If you want to run the grid creation manually then comment this out and uncomment the ./init.sh call
+if [ ! -f "data/generated/grid/grids.tar" ]
+then
+  cd data/generated/grid/
+  wget -c --no-check-certificate https://cromulentcreations.ca/tbd/grids.tar
+  tar xvf grids.tar
+fi
+# needs to run once to make grids
+# docker-compose run --rm gis ./init.sh
 
 
 #############  gis python container
