@@ -1,5 +1,8 @@
 import os
-
+import requests
+import json
+import datetime
+import dateutil
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 import numpy as np
 import rasterio
@@ -7,7 +10,7 @@ from rasterio import features
 from rasterio.mask import mask
 import rasterio as rio
 from rasterio.plot import show
-
+import pandas as pd
 import subprocess
 
 import tkinter as tk
@@ -22,12 +25,14 @@ import matplotlib.pyplot as plt
 import shutil
 import glob
 
-DIR_OUT = 'Data/output.pyfire'
+DIR_OUT = 'data/output.pyfire'
 FILES = None
 GEOMS = None
 ax = None
 root = tk.Tk()
-frmMap = tk.Frame()
+frmTop = tk.Frame()
+frmMap = tk.Frame(frmTop)
+frmHist = tk.Frame(frmTop)
 frmLocation = tk.Frame()
 frmFWI = tk.Frame()
 frmSettings = tk.Frame()
@@ -39,14 +44,20 @@ canvas1.draw()
 
 toolbar = NavigationToolbar2Tk(canvas1, frmMap)
 toolbar.update()
-toolbar.pack(side=tk.TOP, fill=tk.X, padx=8)
+toolbar.pack(side=tk.TOP, fill=tk.BOTH, padx=8)
 
 canvas1.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
 canvas1._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
-frmMap.pack(fill=tk.BOTH, expand=1)
-
+frmMap.grid(row=0, column=0, sticky='nsew')
+f = Figure(figsize=(5, 4), dpi=100)
+canvas2 = FigureCanvasTkAgg(f, master=frmHist)
+canvas2.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=1, padx=0, pady=0)
+frmHist.grid(row=0, column=1, sticky='ns')
+frmTop.columnconfigure(tuple([0]), weight=1)
+frmTop.rowconfigure(tuple([0]), weight=1)
+frmTop.pack(fill=tk.BOTH, expand=1)
 
 def add_entry(master, name, value, upper, lower=0, increment=1):
     var = tk.StringVar()
@@ -115,7 +126,7 @@ def update_menu():
     global FILES
     global GEOMS
     dir = r'../tbd/{}'.format(DIR_OUT)
-    FILES = glob.glob("{}/*.tif".format(dir))
+    FILES = glob.glob("{}/probability_*.tif".format(dir))
     print(FILES)
     menu = optFile["menu"]
     menu.delete(0, "end")
@@ -231,6 +242,13 @@ def do_draw():
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
     canvas1.draw()
+    p = f.gca()
+    sizes = pd.read_csv(fp.replace('probability', 'sizes').replace('.tif', '.csv'), names=['size'])
+    print(sizes)
+    p.hist(list(sizes['size']), 20, log=True)
+    p.set_xlabel('Fire Size (ha)', fontsize=15)
+    p.set_ylabel('Frequency (log)', fontsize=15)
+    canvas2.draw()
 
 def on_pick_file(self, name='', index='', mode=''):
     do_draw()
