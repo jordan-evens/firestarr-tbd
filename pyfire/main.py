@@ -102,8 +102,10 @@ def handle_click(event):
 btnRun.bind("<Button-1>", handle_click)
 
 def do_run():
-    if os.path.exists(DIR_OUT):
-        shutil.rmtree(DIR_OUT)
+    dir = r'../tbd/{}'.format(DIR_OUT)
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    os.makedirs(dir)
     ffmc = float(varFFMC.get())
     dmc = float(varDMC.get())
     dc = float(varDC.get())
