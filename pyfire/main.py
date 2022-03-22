@@ -113,8 +113,38 @@ def do_run():
     lat = float(varLat.get())
     lon = float(varLon.get())
     confidence = float(varConfidence.get())
-    args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
-        DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
+    url = 'http://localhost:3501/api/preprocessing/weather/forecast?lat={}&lon={}&model=rdps&format=json&duration=48&timezone=America%2FYellowknife&startDate=2022-01-13&provider=hss'.format(
+        lat, lon)
+    txt = requests.get(url).text
+    data = json.loads(txt)
+    print(data)
+    start = dateutil.parser.parse(data['start'])
+    start_date = start.strftime('%Y-%m-%d')
+    start_time = start.strftime('%H:%M')
+    wx_file = dir + '/wx.csv'
+    data = data['data']
+    # HACK: do some stuff to make weather more fire relevant for now
+    K_TO_C = 273.15 - 45
+    rows = []
+    for h in data:
+        print(h)
+        row = [-1, datetime.timedelta(hours=h['hour']) + start]
+        if 'ACC_PRECIPITATION' in h.keys():
+            row.append(h['ACC_PRECIPITATION'])
+        else:
+            row.append(0)
+        row = row + [round(h['TEMPERATURE_TGL_2'] - K_TO_C, 1), int(h['RELATIVE_HUMIDITY_TGL_2'] / 2), round(h['WIND_SPEED_TGL_10'], 1), int(h['WIND_DIRECTION_TGL_10'])]
+        row = row + [0, 0, 0, 0, 0, 0]
+        rows.append(row)
+    df = pd.DataFrame(rows, columns=['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD', 'FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI'])
+    # just do noon EDT for now
+    df = df[18 == df['Date'].apply(lambda x: x.hour)]
+    df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    df.to_csv(wx_file, index=False)
+    args = './{} {} {} {} {} --wx {} --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
+        DIR_OUT, start_date, lat, lon, start_time, wx_file, ffmc, dmc, dc, apcp_0800, confidence)
+    # args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
+    #     DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
     cmd = [
         'wsl',
         'bash',
