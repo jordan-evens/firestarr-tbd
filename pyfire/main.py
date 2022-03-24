@@ -134,9 +134,8 @@ def do_run():
         else:
             row.append(0)
         row = row + [round(h['TEMPERATURE_TGL_2'] - K_TO_C, 1), int(h['RELATIVE_HUMIDITY_TGL_2'] / 2), round(h['WIND_SPEED_TGL_10'], 1), int(h['WIND_DIRECTION_TGL_10'])]
-        row = row + [0, 0, 0, 0, 0, 0]
         rows.append(row)
-    df = pd.DataFrame(rows, columns=['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD', 'FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI'])
+    df = pd.DataFrame(rows, columns=['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD'])
     # just do noon EDT for now
     df = df[18 == df['Date'].apply(lambda x: x.hour)]
     df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
