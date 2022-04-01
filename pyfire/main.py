@@ -140,9 +140,9 @@ def do_run():
     df = df[18 == df['Date'].apply(lambda x: x.hour)]
     df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
     df.to_csv(wx_file, index=False)
-    args = './{} {} {} {} {} --wx {} --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
+    args = './{} {} {} {} {} --wx {} --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {} --no-intensity -v -v'.format(
         DIR_OUT, start_date, lat, lon, start_time, wx_file, ffmc, dmc, dc, apcp_0800, confidence)
-    # args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
+    # args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {} --no-intensity -v -v'.format(
     #     DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
     cmd = [
         'wsl',
