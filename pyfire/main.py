@@ -121,7 +121,6 @@ def do_run():
     start = dateutil.parser.parse(data['start'])
     start_date = start.strftime('%Y-%m-%d')
     start_time = start.strftime('%H:%M')
-    wx_file = dir + '/wx.csv'
     data = data['data']
     # HACK: do some stuff to make weather more fire relevant for now
     K_TO_C = 273.15 - 45
@@ -137,13 +136,13 @@ def do_run():
         rows.append(row)
     df = pd.DataFrame(rows, columns=['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD'])
     # just do noon EDT for now
-    df = df[18 == df['Date'].apply(lambda x: x.hour)]
+    df = df[12 == df['Date'].apply(lambda x: x.hour)]
     df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    wx_file = dir + '/wx.csv'
     df.to_csv(wx_file, index=False)
-    args = './{} {} {} {} {} --wx {} --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {} --no-intensity -v -v'.format(
-        DIR_OUT, start_date, lat, lon, start_time, wx_file, ffmc, dmc, dc, apcp_0800, confidence)
-    # args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {} --no-intensity -v -v'.format(
-    #     DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
+    output_date_offsets = '{' + ','.join(map(str, list(range(1, len(df) + 1)))) + '}'
+    args = f'./{DIR_OUT} {start_date} {lat} {lon} {start_time} --wx {wx_file} --ffmc {ffmc} --dmc {dmc} --dc {dc} --apcp_0800 {apcp_0800} --confidence {confidence} --no-intensity -v -v --output_date_offsets "{output_date_offsets}"'
+    print(args)
     cmd = [
         'wsl',
         'bash',
