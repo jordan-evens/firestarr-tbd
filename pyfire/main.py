@@ -148,7 +148,8 @@ def do_run():
     df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
     wx_file = dir + '/wx.csv'
     df.to_csv(wx_file, index=False)
-    output_date_offsets = '{' + ','.join(map(str, list(range(1, len(df) + 1)))) + '}'
+    # run until the day before the end of the weather stream for now
+    output_date_offsets = '{' + ','.join(map(str, list(range(1, len(df))))) + '}'
     args = f'./{DIR_OUT} {start_date} {lat} {lon} {start_time} --wx {wx_file} --ffmc {ffmc} --dmc {dmc} --dc {dc} --apcp_0800 {apcp_0800} --confidence {confidence} --no-intensity -v -v --output_date_offsets "{output_date_offsets}"'
     print(args)
     cmd = [
