@@ -159,6 +159,7 @@ def do_run():
         'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec tbd cmake-build-release/tbd {}'.format(
             args)
     ]
+    print(' '.join(cmd))
     subprocess.run(cmd)
 
 def update_menu():
