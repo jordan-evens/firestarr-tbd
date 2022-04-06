@@ -12,9 +12,10 @@ import rasterio as rio
 from rasterio.plot import show
 import pandas as pd
 import subprocess
-
+from timezonefinder import TimezoneFinder
 import tkinter as tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import urllib.parse
 
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -25,6 +26,7 @@ import matplotlib.pyplot as plt
 import shutil
 import glob
 
+tf = TimezoneFinder()
 DIR_OUT = 'data/output.pyfire'
 FILES = None
 GEOMS = None
@@ -113,8 +115,14 @@ def do_run():
     lat = float(varLat.get())
     lon = float(varLon.get())
     confidence = float(varConfidence.get())
-    url = 'http://localhost:3501/api/preprocessing/weather/forecast?lat={}&lon={}&model=rdps&format=json&duration=48&timezone=America%2FYellowknife&startDate=2022-01-13&provider=hss'.format(
-        lat, lon)
+    # tz = 'America%2FYellowknife'
+    # tz = 'America%2FToronto'
+    tz = '-5'
+    # tz = tf.certain_timezone_at(lat=lat, lng=lon)
+    # print(tz)
+    start_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    url = 'http://localhost:3501/api/preprocessing/weather/forecast?lat={}&lon={}&model=rdps&format=json&duration=48&timezone={}&startDate={}&provider=hss'.format(
+        lat, lon, urllib.parse.quote_plus(tz), start_date)
     txt = requests.get(url).text
     data = json.loads(txt)
     print(data)
