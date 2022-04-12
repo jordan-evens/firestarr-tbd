@@ -11,8 +11,7 @@ RUN (apt-get update || echo Ignoring update errors) \
   && (apt-get update || echo Ignoring update errors) \
   && echo Updated \
   && apt-get install -y gcc make git curl zip unzip tar \
-    libtiff-dev libgeotiff-dev g++ cmake sqlite3 libsqlite3-dev libpq-dev \
-    unixodbc-dev odbc-postgresql python3-pip \
+    libtiff-dev libgeotiff-dev g++ cmake python3-pip \
     libgdal-dev util-linux cron rsync openssh-server gdal-bin libgdal-dev gdb valgrind \
   && apt-get install -y flex bison libdwarf-dev libelf-dev libnuma-dev libpython3-dev libunwind-dev libnewt-dev libdwarf++0 libelf++0 libdw-dev libbfb0-dev \
   && cd /appl/ \
