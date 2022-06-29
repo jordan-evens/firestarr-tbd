@@ -53,17 +53,21 @@ def do_run(fgmj):
                 'dc':            {'value': 15.0},
                 'precipitation': {'value': 0.0},
               }
+    with open(fgmj) as f:
+      data = json.load(f)
+    wx_stream = data['project']['stations']['stations'][0]['station']['streams'][0]
+    # startup = wx_stream['condition']['startingCodes']
+    wx_file = wx_stream['condition']['filename']
     region = os.path.basename(os.path.dirname(os.path.dirname(fgmj)))
     job_name = os.path.basename(os.path.dirname(fgmj))
-    job_time = job_name[job_name.rindex('_') + 1:-4]
+    job_time = job_name[job_name.rindex('_') + 1:]
     job_date = job_time[:8]
-    fire_name = job_name[:job_name.index('_')]
+    scenario_name = data['project']['scenarios']['scenarios'][0]['name']
+    fire_name = scenario_name[:scenario_name.index(' ')]
     out_dir = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
     done_already = os.path.exists(out_dir)
     if not done_already:
         common.ensure_dir(out_dir)
-        with open(fgmj) as f:
-          data = json.load(f)
         MSG_DEFAULT_STARTUP = 'using default startup indices'
         project = data['project']
         stn = try_read_first(project['stations'], 'stations', MSG_DEFAULT_STARTUP)
@@ -187,28 +191,22 @@ def do_run(fgmj):
         if start_date != datetime.date.today():
             date_offset = (start_date - datetime.date.today()).days
             logging.warning("Simulation does not start today - date offset set to {}".format(date_offset))
-        url = r"http://wxshield:80/wxshield/getWx.php?model=geps&lat={}&long={}&dateOffset={}&tz={}&mode=daily".format(lat, long, date_offset, tz)
-        logging.debug(url)
-        try:
-            csv = common.download(url).decode("utf-8")
-        except:
-            logging.fatal("Unable to download weather")
-            sys.exit(-3)
-        data = [x.split(',') for x in csv.splitlines()]
+        with open(os.path.join(os.path.dirname(fgmj), wx_file)) as f:
+            csv = f.readlines()
+        data = [x.replace(' ', '').replace('\n', '').split(',') for x in csv]
         df = pd.DataFrame(data[1:], columns=data[0])
-        # print(df)
-        # supposed to be really picky about inputs
-        #"Scenario,Date,APCP,TMP,RH,WS,WD,FFMC,DMC,DC,ISI,BUI,FWI";
-        df = df[['MEMBER', 'DAILY', 'PREC', 'TEMP', 'RH', 'WS', 'WD']]
-        df.columns = ['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD']
-        # for some reason scenario numbers are negative right now?
-        df['Scenario'] = df['Scenario'].apply(lambda x: -1 - int(x))
-        df['Date'] = df['Date'].apply(lambda x: x + " 13:00:00")
-        for col in ['FFMC', 'DMC', 'DC', 'ISI', 'BUI', 'FWI']:
-            df[col] = 0
-        df.to_csv('wx.csv', index=False)
+        df = df.astype({'HOUR': 'int32', 'TEMP': 'float', 'RH': 'int32', 'WD': 'int32', 'WS': 'float', 'PRECIP': 'float'})
+        df['DATE'] = df.apply(lambda x: pd.to_datetime(x['HOURLY']), axis=1)
+        df['FOR_DATE'] = df.apply(lambda x: x['DATE'] if x['HOUR'] <= 12 else datetime.timedelta(days=1) + x['DATE'], axis=1)
+        df['PREC'] = df.groupby(['FOR_DATE'])['PRECIP'].transform('sum')
+        daily = df[df['HOUR'] == 12][['DATE', 'PREC', 'TEMP', 'RH', 'WS', 'WD']]
+        daily.columns = ['Date', 'APCP', 'TMP', 'RH', 'WS', 'WD']
+        daily['Scenario'] = -1
+        daily = daily[['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD']]
+        daily['Date'] = daily['Date'].apply(lambda x: str(x + datetime.timedelta(hours=13)))
+        daily.to_csv('wx.csv', index=False)
         cmd = "./tbd"
-        args = "{} {} {} {} {}:{:02d} -v --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+        args = "{} {} {} {} {}:{:02d} -v --output_date_offsets \"{{1, 2, 3}}\" --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
         if perim is not None:
             args = args + " --perim {}".format(perim)
         # run generated command for parsing data
@@ -223,11 +221,11 @@ def do_run(fgmj):
             log_file.write(stdout.decode('utf-8'))
         outputs = sorted(os.listdir(out_dir))
         extent = None
-        probs = [x for x in outputs if x.endswith('asc') and x.startswith('wxshield')]
+        probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
         if len(probs) > 0:
             prob = probs[-1]
             extent = gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
-        perims = [x for x in outputs if x.endswith('tif')]
+        perims = [x for x in outputs if x.endswith('tif') and not (x.startswith('probability') or x.startswith('intensity'))]
         if len(perims) > 0:
             perim = perims[0]
             gis.project_raster(os.path.join(out_dir, perim),

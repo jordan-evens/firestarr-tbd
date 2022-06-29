@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(sys.executable))
 sys.path.append('/usr/local/bin')
 import gdal_merge as gm
 import itertools
+import json
 
 DIR = '/appl/data/fgmj/'
 EXT_DIR = os.path.abspath(os.path.join(DIR, '../extracted/fgmj'))
@@ -31,7 +32,9 @@ def getPage(url):
     return BeautifulSoup(page, 'html.parser')
 
 def run_fires(site, region):
-    url = site + '/jobs/archive'
+    site = 'https://cfsdip.intellifirenwt.com'
+    region = 'canada'
+    url = site + '/jobs/'
     try:
         p = getPage(url)
     except Exception as e:
@@ -39,8 +42,8 @@ def run_fires(site, region):
         logging.error(e)
         return None
     a = p.findAll('a')
-    zips = [x.get('href') for x in a if x.get('href').endswith('.zip')]
-    fires = sorted(set([x[x.rindex('/') + 1:x.index('_')] for x in zips]))
+    dirs = [x.get('href') for x in a if x.get('href').startswith('/jobs/job_')]
+    jobs = sorted(set([x[x.rindex('/') + 1:] for x in dirs]))
     times = {}
     recent = {}
     simtimes = {}
@@ -48,32 +51,40 @@ def run_fires(site, region):
     totaltime = 0
     dir_download = common.ensure_dir(os.path.join(DIR, region))
     dir_ext = common.ensure_dir(os.path.join(EXT_DIR, region))
-    logging.debug("Checking {} fires".format(len(fires)))
-    for f in fires:
-        times[f] = [datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') for x in zips if x[x.rindex('/') + 1:x.index('_')] == f]
-        recent[f] = {
-                        'time': max(times[f]),
-                        'url': [x for x in zips if x[x.rindex('/') + 1:x.index('_')] == f and datetime.datetime.strptime(x[x.rindex('_') + 1:x.rindex('.')], '%Y%m%d%H%M%S%f') == max(times[f])][0],
-                    }
-        logging.debug('{}: {}'.format(f, recent[f]['time']))
-        z = common.save_http(dir_download, site + recent[f]['url'], ignore_existing=True)
-        cur_dir = os.path.join(dir_ext, os.path.basename(z)[:-4])
-        common.unzip(z, cur_dir)
-        fgmj = os.path.join(cur_dir, 'job.fgmj')
+    logging.debug("Checking {} jobs".format(len(jobs)))
+    by_fire = {}
+    for j in jobs:
+        # job_p = getPage(url + j + "/Inputs")
+        cur_dir = os.path.join(dir_download, j)
+        fgmj = common.save_http(cur_dir, url + j + "/job.fgmj", ignore_existing=True)
         if os.path.exists(fgmj):
-            try:
-                t0 = timeit.default_timer()
-                log_name = tbd.do_run(fgmj)
-                t1 = timeit.default_timer()
-                if log_name is not None:
-                    simtimes[f] = t1 - t0
-                    totaltime = totaltime + simtimes[f]
-                    logging.info("Took {}s to run {}".format(simtimes[f], f))
-                    d = os.path.basename(os.path.dirname(log_name))[:8]
-                    if d not in dates:
-                        dates.append(d)
-            except Exception as e:
-                logging.error(e)
+            with open(fgmj) as f:
+                data = json.load(f)
+            scenario_name = data['project']['scenarios']['scenarios'][0]['name']
+            fire_name = scenario_name[:scenario_name.index(' ')]
+            if not fire_name in by_fire:
+                by_fire[fire_name] = []
+            by_fire[fire_name] = by_fire[fire_name] + [fgmj]
+    for fire_name in by_fire.keys():
+        fgmj = sorted(by_fire[fire_name])[-1]
+        cur_dir = os.path.dirname(fgmj)
+        with open(fgmj) as f:
+            data = json.load(f)
+        wx_file = data['project']['stations']['stations'][0]['station']['streams'][0]['condition']['filename']
+        wx = common.save_http(os.path.join(cur_dir, os.path.dirname(wx_file)), url + j + "/" + wx_file, ignore_existing=True)
+        try:
+            t0 = timeit.default_timer()
+            log_name = tbd.do_run(fgmj)
+            t1 = timeit.default_timer()
+            if log_name is not None:
+                simtimes[j] = t1 - t0
+                totaltime = totaltime + simtimes[j]
+                logging.info("Took {}s to run {}".format(simtimes[j], j))
+                d = os.path.basename(os.path.dirname(log_name))[:8]
+                if d not in dates:
+                    dates.append(d)
+        except Exception as e:
+            logging.error(e)
     return simtimes, totaltime, dates
 
 import gdal_retile as gr
@@ -128,8 +139,7 @@ def merge_dirs(dir_input, dates=None):
 
 def run_all_fires():
     results = {}
-    results['bc'] = run_fires('http://psaasbc.dss.intellifirenwt.com', 'bc')
-    results['nt'] = run_fires('http://psaas-results.api.intellifirenwt.com', 'nt')
+    results['canada'] = run_fires('https://cfsdip.intellifirenwt.com', 'canada')
     simtimes = {}
     dates = []
     totaltime = 0
