@@ -53,18 +53,20 @@ def run_fires(site, region):
     dir_ext = common.ensure_dir(os.path.join(EXT_DIR, region))
     logging.debug("Checking {} jobs".format(len(jobs)))
     by_fire = {}
+    today = str(datetime.datetime.today()).replace('-', '')[:8]
     for j in jobs:
-        # job_p = getPage(url + j + "/Inputs")
-        cur_dir = os.path.join(dir_download, j)
-        fgmj = common.save_http(cur_dir, url + j + "/job.fgmj", ignore_existing=True)
-        if os.path.exists(fgmj):
-            with open(fgmj) as f:
-                data = json.load(f)
-            scenario_name = data['project']['scenarios']['scenarios'][0]['name']
-            fire_name = scenario_name[:scenario_name.index(' ')]
-            if not fire_name in by_fire:
-                by_fire[fire_name] = []
-            by_fire[fire_name] = by_fire[fire_name] + [fgmj]
+        if j.startswith("job_" + today):
+            # job_p = getPage(url + j + "/Inputs")
+            cur_dir = os.path.join(dir_download, j)
+            fgmj = common.save_http(cur_dir, url + j + "/job.fgmj", ignore_existing=True)
+            if os.path.exists(fgmj):
+                with open(fgmj) as f:
+                    data = json.load(f)
+                scenario_name = data['project']['scenarios']['scenarios'][0]['name']
+                fire_name = scenario_name[:scenario_name.index(' ')]
+                if not fire_name in by_fire:
+                    by_fire[fire_name] = []
+                by_fire[fire_name] = by_fire[fire_name] + [fgmj]
     for fire_name in by_fire.keys():
         fgmj = sorted(by_fire[fire_name])[-1]
         cur_dir = os.path.dirname(fgmj)
