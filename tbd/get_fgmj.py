@@ -54,6 +54,7 @@ def run_fires(site, region):
     logging.debug("Checking {} jobs".format(len(jobs)))
     by_fire = {}
     today = str(datetime.datetime.today()).replace('-', '')[:8]
+    dates = [today]
     for j in jobs:
         if j.startswith("job_" + today):
             # job_p = getPage(url + j + "/Inputs")
