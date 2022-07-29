@@ -121,7 +121,7 @@ def merge_dir(dir_input):
     import subprocess
     file_cr = dir_input + '_cr.tif'
     logging.debug("Applying symbology...")
-    subprocess.run('gdaldem color-relief {} /appl/TBD/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
+    subprocess.run('gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}'.format(file_cr, dir_tile, os.cpu_count()), shell=True)
     #retun dir_tile
