@@ -123,7 +123,9 @@ def merge_dir(dir_input):
     logging.debug("Applying symbology...")
     subprocess.run('gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES'.format(file_int, file_cr), shell=True)
     dir_tile = common.ensure_dir(dir_tile)
+    logging.debug('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}'.format(file_cr, dir_tile, os.cpu_count()))
     subprocess.run('python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}'.format(file_cr, dir_tile, os.cpu_count()), shell=True)
+    logging.debug("Made tiles...")
     #retun dir_tile
 
 def merge_dirs(dir_input, dates=None):
