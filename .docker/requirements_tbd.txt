@@ -8,4 +8,5 @@ pycrs
 scipy
 bs4
 requests
+timezonefinder
 tqdm

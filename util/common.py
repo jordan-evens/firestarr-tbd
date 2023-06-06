@@ -32,6 +32,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 from urllib3.exceptions import InsecureRequestWarning
 # Suppress only the single warning from urllib3 needed.
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+# pretend to be something else so servers don't block requests
+HEADERS = {
+    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+}
+# HEADERS = {'User-Agent': 'WeatherSHIELD/0.93'}
 
 ## bounds to use for clipping data
 BOUNDS = None
@@ -44,6 +49,13 @@ CONFIG = None
 ## @cond Doxygen_Suppress
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 ## @endcond
+
+from osgeo import gdal
+gdal.UseExceptions()
+gdal.PushErrorHandler('CPLQuietErrorHandler')
+gdal.SetConfigOption('CPL_LOG', '/dev/null')
+gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+
 
 def ensure_dir(dir):
     """!
@@ -62,6 +74,8 @@ def ensure_dir(dir):
         sys.exit(-1)
     return dir
 
+DIR_OUT = '/home/bfdata'
+DIR_DEFAULT_DOWNLOAD = ensure_dir(f'{DIR_OUT}/download/')
 
 def to_utc(d):
     return pd.to_datetime(d, utc=True, infer_datetime_format=True)
@@ -122,7 +136,73 @@ def fix_timezone_offset(d):
     return (d + localdelta).replace(tzinfo=None)
 
 
-def save_http(to_dir, url, save_as=None, mode='wb', ignore_existing=False):
+def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified=True):
+    """!
+    Save file at given URL into given directory using an HTTP connection
+    @param to_dir Directory to save into
+    @param url URL to download from
+    @param save_as File to save as, or None to use URL file name
+    @param mode Mode to write to file with
+    @param ignore_existing Whether or not to download if file already exists
+    @return Path that file was saved to
+    """
+    if save_as is None:
+        logging.debug(f'Opening {url}')
+        response = requests.get(url,
+                                verify=False,
+                                headers=HEADERS)
+        return response.content
+    # logging.debug("Saving {}".format(url))
+    if ignore_existing and os.path.exists(save_as):
+        # logging.debug('Ignoring existing file')
+        return save_as
+    to_dir = os.path.dirname(save_as)
+    ensure_dir(to_dir)
+    # we want to keep modified times matching on both ends
+    do_save = True
+    # req = urllib2.Request(url, headers=HEADERS)
+    # response = urllib2.urlopen(req,
+    #                            stream=True,
+    #                            verify=False)
+    modlocal = None
+    try:
+        logging.debug(f'Opening {url}')
+        response = requests.get(url,
+                                stream=True,
+                                verify=False,
+                                headers=HEADERS)
+        if check_modified and 'last-modified' in response.headers.keys():
+            mod = response.headers['last-modified']
+            modtime = dateutil.parser.parse(mod)
+            modlocal = fix_timezone_offset(modtime)
+            # if file exists then compare mod times
+            if os.path.isfile(save_as):
+                filetime = os.path.getmtime(save_as)
+                filedatetime = datetime.datetime.fromtimestamp(filetime)
+                do_save = modlocal != filedatetime
+        # NOTE: need to check file size too? Or should it not matter because we
+        #       only change the timestamp after it's fully written
+        if do_save:
+            with tqdm.wrapattr(open(save_as, mode), "write",
+                            miniters=1,
+                            desc=url.split('?')[0] if '?' in url else url,
+                            total=int(response.headers.get('content-length', 0))) as fout:
+                for chunk in response.iter_content(chunk_size=4096):
+                    fout.write(chunk)
+            # logging.debug(f'Downloaded {save_as}')
+            if modlocal is not None:
+                tt = modlocal.timetuple()
+                usetime = time.mktime(tt)
+                os.utime(save_as, (usetime, usetime))
+    except Exception as e:
+        if os.path.exists(save_as):
+            try_remove(save_as)
+        raise e
+    return save_as
+
+
+
+def save_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified=True):
     """!
     Save file at given URL into given directory using an HTTP connection
     @param to_dir Directory to save into
@@ -134,45 +214,8 @@ def save_http(to_dir, url, save_as=None, mode='wb', ignore_existing=False):
     """
     # logging.debug("Saving {}".format(url))
     if save_as is None:
-        save_as = os.path.join(to_dir, os.path.basename(url))
-    # print(save_as)
-    if ignore_existing and os.path.exists(save_as):
-        # logging.debug('Ignoring existing file')
-        return save_as
-    ensure_dir(to_dir)
-    # we want to keep modified times matching on both ends
-    do_save = True
-    req = urllib2.Request(url, headers={'User-Agent': 'WeatherSHIELD/0.93'})
-    response = urllib2.urlopen(req)
-    modlocal = None
-    if 'last-modified' in response.headers.keys():
-        mod = response.headers['last-modified']
-        modtime = dateutil.parser.parse(mod)
-        modlocal = fix_timezone_offset(modtime)
-        # if file exists then compare mod times
-        if os.path.isfile(save_as):
-            filetime = os.path.getmtime(save_as)
-            filedatetime = datetime.datetime.fromtimestamp(filetime)
-            do_save = modlocal != filedatetime
-    # NOTE: need to check file size too? Or should it not matter because we
-    #       only change the timestamp after it's fully written
-    if do_save:
-        logging.info("Downloading {}".format(save_as))
-        try:
-            response = requests.get(url, stream=True,verify=False)
-            with tqdm.wrapattr(open(save_as, mode), "write",
-                               miniters=1, desc=url.split('/')[-1],
-                               total=int(response.headers.get('content-length', 0))) as fout:
-                for chunk in response.iter_content(chunk_size=4096):
-                    fout.write(chunk)
-        except:
-            try_remove(save_as)
-            raise
-        if modlocal is not None:
-            tt = modlocal.timetuple()
-            usetime = time.mktime(tt)
-            os.utime(save_as, (usetime, usetime))
-    return save_as
+        save_as = os.path.join(DIR_DEFAULT_DOWNLOAD, os.path.basename(url))
+    return get_http(url, save_as, mode, ignore_existing, check_modified)
 
 
 def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
@@ -234,13 +277,13 @@ def try_save(fct, url, max_save_retries=5):
     while (True):
         try:
             return fct(url)
-        except urllib.error.URLError as ex:
+        except ConnectionError as ex:
             logging.warning(ex)
             # no point in retrying if URL doesn't exist
-            if 403 == ex.code:
+            if 403 == ex.errno:
                 logging.error(ex.reason)
                 raise ex
-            if 404 == ex.code or save_tries >= max_save_retries:
+            if 404 == ex.errno or save_tries >= max_save_retries:
                 raise ex
             logging.warning("Retrying save for {}".format(url))
             save_tries += 1
@@ -293,7 +336,7 @@ def calc_wd(u, v):
 
 def kelvin_to_celcius(t):
     """!
-    Convert temperature in Kelvin to Celcius 
+    Convert temperature in Kelvin to Celcius
     @param t Temperature (Celcius)
     @return Temperature (Kelvin)
     """
@@ -385,7 +428,7 @@ def read_grib(mask, apcp=True):
     """!
     Read grib data for desired time and field
     @param mask File mask for path to source grib2 file to read
-    @return DataFrame with data read from file    
+    @return DataFrame with data read from file
     """
     lib = wgrib2.open()
     matches = wgrib2.match(lib, mask.format('TMP'))
@@ -471,6 +514,7 @@ def unzip(path, to_dir, match=None):
             names = [x for x in zip_ref.namelist() if match in x]
             zip_ref.extractall(to_dir, names)
 
+
 def start_process(run_what, cwd):
     """!
     Start running a command using subprocess
@@ -487,11 +531,12 @@ def start_process(run_what, cwd):
     p.args = run_what
     return p
 
+
 def finish_process(process):
     stdout, stderr = process.communicate()
     if process.returncode != 0:
         #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
         if -1073741510 == process.returncode:
             sys.exit(process.returncode)
-        raise Exception('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
+        raise RuntimeError('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
     return stdout, stderr

@@ -8,6 +8,7 @@ import os
 
 from osgeo import gdal, ogr, osr
 import numpy as np
+import geopandas as gpd
 
 from common import ensure_dir
 
@@ -72,60 +73,65 @@ def Project(src, outputShapefile, outSpatialRef):
     @param outSpatialRef Spatial reference to project into
     @return None
     """
-    # https://pcjericks.github.io/py-gdalogr-cookbook/projection.html
-    # input SpatialReference
-    # get the input layer
-    inDataSet = ogr.GetDriverByName('ESRI Shapefile').Open(src)
-    inLayer = inDataSet.GetLayer()
-    # create the CoordinateTransformation
-    inSpatialRef = GetSpatialReference(src)
-    #~ print(inSpatialRef.ExportToWkt())
-    #~ print(outSpatialRef.ExportToWkt())
-    coordTrans = osr.CoordinateTransformation(inSpatialRef, outSpatialRef)
-    # create the output layer
-    Delete(outputShapefile)
-    outDataSet = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(outputShapefile)
-    outLayer = outDataSet.CreateLayer(inLayer.GetName(), outSpatialRef, geom_type=ogr.wkbMultiPolygon)
-    # add fields
-    inLayerDefn = inLayer.GetLayerDefn()
-    for i in range(0, inLayerDefn.GetFieldCount()):
-        fieldDefn = inLayerDefn.GetFieldDefn(i)
-        if 'shape' not in fieldDefn.GetName().lower():
-            outLayer.CreateField(fieldDefn)
-    # get the output layer's feature definition
-    outLayerDefn = outLayer.GetLayerDefn()
-    # loop through the input features
-    inFeature = inLayer.GetNextFeature()
-    while inFeature:
-        # get the input geometry
-        geom = inFeature.GetGeometryRef()
-        # reproject the geometry
-        geom.Transform(coordTrans)
-        # create a new feature
-        outFeature = ogr.Feature(outLayerDefn)
-        # set the geometry and attribute
-        outFeature.SetGeometry(geom)
-        for i in range(0, outLayerDefn.GetFieldCount()):
-            outFeature.SetField(outLayerDefn.GetFieldDefn(i).GetNameRef(), inFeature.GetField(i))
-        # add the feature to the shapefile
-        outLayer.CreateFeature(outFeature)
-        # dereference the features and get the next input feature
-        del outFeature
-        inFeature = inLayer.GetNextFeature()
-    # Save and close the shapefiles
-    del coordTrans
-    del inSpatialRef
-    del inLayer
-    del inDataSet
-    del inFeature
-    del outLayerDefn
-    del inLayerDefn
-    del outLayer
-    del outDataSet
-    # create projection file for output
-    prj = os.path.splitext(outputShapefile)[0] + ".prj"
-    with open (prj, 'w') as file:
-        file.write(outSpatialRef.ExportToWkt())
+    df = gpd.read_file(src)
+    df_out = df.to_crs(outSpatialRef.ExportToWkt())
+    # df_out = df.to_crs(proj_srs.ExportToWkt())
+    # df_out = df.to_crs(wkt)
+    df_out.to_file(outputShapefile)
+    # # https://pcjericks.github.io/py-gdalogr-cookbook/projection.html
+    # # input SpatialReference
+    # # get the input layer
+    # inDataSet = ogr.GetDriverByName('ESRI Shapefile').Open(src)
+    # inLayer = inDataSet.GetLayer()
+    # # create the CoordinateTransformation
+    # inSpatialRef = GetSpatialReference(src)
+    # #~ print(inSpatialRef.ExportToWkt())
+    # #~ print(outSpatialRef.ExportToWkt())
+    # coordTrans = osr.CoordinateTransformation(inSpatialRef, outSpatialRef)
+    # # create the output layer
+    # Delete(outputShapefile)
+    # outDataSet = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(outputShapefile)
+    # outLayer = outDataSet.CreateLayer(inLayer.GetName(), outSpatialRef, geom_type=ogr.wkbMultiPolygon)
+    # # add fields
+    # inLayerDefn = inLayer.GetLayerDefn()
+    # for i in range(0, inLayerDefn.GetFieldCount()):
+    #     fieldDefn = inLayerDefn.GetFieldDefn(i)
+    #     if 'shape' not in fieldDefn.GetName().lower():
+    #         outLayer.CreateField(fieldDefn)
+    # # get the output layer's feature definition
+    # outLayerDefn = outLayer.GetLayerDefn()
+    # # loop through the input features
+    # inFeature = inLayer.GetNextFeature()
+    # while inFeature:
+    #     # get the input geometry
+    #     geom = inFeature.GetGeometryRef()
+    #     # reproject the geometry
+    #     geom.Transform(coordTrans)
+    #     # create a new feature
+    #     outFeature = ogr.Feature(outLayerDefn)
+    #     # set the geometry and attribute
+    #     outFeature.SetGeometry(geom)
+    #     for i in range(0, outLayerDefn.GetFieldCount()):
+    #         outFeature.SetField(outLayerDefn.GetFieldDefn(i).GetNameRef(), inFeature.GetField(i))
+    #     # add the feature to the shapefile
+    #     outLayer.CreateFeature(outFeature)
+    #     # dereference the features and get the next input feature
+    #     del outFeature
+    #     inFeature = inLayer.GetNextFeature()
+    # # Save and close the shapefiles
+    # del coordTrans
+    # del inSpatialRef
+    # del inLayer
+    # del inDataSet
+    # del inFeature
+    # del outLayerDefn
+    # del inLayerDefn
+    # del outLayer
+    # del outDataSet
+    # # create projection file for output
+    # prj = os.path.splitext(outputShapefile)[0] + ".prj"
+    # with open (prj, 'w') as file:
+    #     file.write(outSpatialRef.ExportToWkt())
 
 class Extent(object):
     """Represents the extent of a shapefile"""
@@ -175,11 +181,12 @@ def Rasterize(shp, raster, reference):
     @param reference Reference raster to use for extents and alignment
     @return None
     """
-    # https://gis.stackexchange.com/questions/222394/how-to-convert-file-shp-to-tif-using-ogr-or-python-or-gdal/222395
-    gdalformat = 'GTiff'
-    datatype = gdal.GDT_Byte
-    burnVal = 1 # value for the output image pixels
+    from osgeo import gdal
+
+    # Define NoData value of new raster
+    nodata = 0
     # Get projection info from reference image
+    # reference = '/appl/100m/default/fuel_17_0.tif'
     ref_raster = gdal.Open(reference, gdal.GA_ReadOnly)
     gt = ref_raster.GetGeoTransform()
     pixelSizeX = gt[1]
@@ -187,14 +194,35 @@ def Rasterize(shp, raster, reference):
     if pixelSizeX != pixelSizeY:
         print("Raster must have square pixels")
         sys.exit(-2)
+
+    # # https://gis.stackexchange.com/questions/222394/how-to-convert-file-shp-to-tif-using-ogr-or-python-or-gdal/222395
+    gdalformat = 'GTiff'
+    # datatype = gdal.GDT_Byte
+    datatype = gdal.GDT_UInt16
+    burnVal = 1 # value for the output image pixels
+
+    # src_ds = gdal.OpenEx(shp)
+    # gdal.Rasterize(raster,
+    #                src_ds,
+    #                format=gdalformat,
+    #                outputType=datatype,
+    #                creationOptions=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'],
+    #                noData=nodata,
+    #                initValues=nodata,
+    #                xRes=pixelSizeX,
+    #                yRes=-pixelSizeY,
+    #                allTouched=True,
+    #                burnValues=burnVal)
+
     # Open Shapefile
     shapefile = ogr.Open(shp)
     shapefile_layer = shapefile.GetLayer()
+
     # Rasterise
     #~ print("Rasterising shapefile...")
     output = gdal.GetDriverByName(gdalformat).Create(raster, ref_raster.RasterXSize, ref_raster.RasterYSize, 1, datatype, options=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'])
     output.SetProjection(ref_raster.GetProjectionRef())
-    output.SetGeoTransform(ref_raster.GetGeoTransform()) 
+    output.SetGeoTransform(ref_raster.GetGeoTransform())
     # Write data to band 1
     band = output.GetRasterBand(1)
     band.SetNoDataValue(0)
@@ -204,6 +232,7 @@ def Rasterize(shp, raster, reference):
     del output
     del ref_raster
     del shapefile
+    # del src_ds
     # create projection file for output
     prj = os.path.splitext(raster)[0] + ".prj"
     with open (prj, 'w') as file:
@@ -316,7 +345,9 @@ def rasterize_perim(run_output, perim, year, name, raster=None):
     Project(perim, prj, ref_NAD83)
     del ref_NAD83
     r = find_best_raster(Extent(prj).XCenter, year)
-    prj_utm = os.path.join(run_output, os.path.basename(perim).replace('.shp', os.path.basename(r)[9:14] + '.shp'))
+    # prj_utm = os.path.join(run_output, os.path.basename(perim).replace('.shp', os.path.basename(r)[9:14] + '.shp'))
+    zone_string = '_'.join(os.path.basename(r).split('_')[1:]).split('.')[0]
+    prj_utm = os.path.join(run_output, os.path.basename(perim).replace('.shp', f'_UTM{zone_string}.shp'))
     Delete(prj_utm)
     zone = GetSpatialReference(r)
     Project(perim, prj_utm, zone)

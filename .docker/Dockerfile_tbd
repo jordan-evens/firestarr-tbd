@@ -12,7 +12,8 @@ RUN (apt-get update || echo Ignoring update errors) \
   && echo Updated \
   && apt-get install -y gcc make git curl zip unzip tar \
     libtiff-dev libgeotiff-dev g++ cmake python3-pip \
-    libgdal-dev util-linux cron rsync openssh-server gdal-bin libgdal-dev gdb valgrind \
+    libgdal-dev util-linux cron rsync openssh-server gdal-bin \
+    libgdal-dev gdb valgrind time \
   && apt-get install -y flex bison libdwarf-dev libelf-dev libnuma-dev libpython3-dev libunwind-dev libnewt-dev libdwarf++0 libelf++0 libdw-dev libbfb0-dev \
   && cd /appl/ \
   && wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/tools/perf/v5.10.0/perf-5.10.0.tar.gz \
@@ -39,6 +40,8 @@ RUN (apt-get update || echo Ignoring update errors) \
   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
 RUN (useradd -m user || echo User already exists) && (yes password | passwd user)
 RUN yes password | passwd
+RUN yes password | chsh --shell /bin/bash user
+RUN echo cd /appl/tbd >> /home/user/.bashrc
 RUN sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab
 RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f

@@ -77,7 +77,7 @@ CREATION_OPTIONS = ['TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256', 'COMPRESS=D
 CREATION_OPTIONS_FUEL = CREATION_OPTIONS + []
 CREATION_OPTIONS_DEM = CREATION_OPTIONS + []
 EARTHENV = os.path.join(DATA_DIR, 'GIS/input/elevation/EarthEnv.tif')
-FUEL_RASTER = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
+FUEL_RASTER = os.path.join(DATA_DIR, r'GIS/input/fbp/fbp100m.tif')
 
 INT_FUEL = os.path.join(INTERMEDIATE_DIR, 'fuel')
 DRIVER_SHP = ogr.GetDriverByName('ESRI Shapefile')
@@ -472,13 +472,15 @@ def fix_nodata(out_tif):
     rb = ds.GetRasterBand(1)
     # HACK: for some reason no_data is a double??
     #~ if no_data is None:
-    no_data = int(-math.pow(2, 15) - 1)
+    # no_data = int(-math.pow(2, 15) - 1)
+    # HACK: this was being set to a negative number for an unsigned int
+    no_data = int(math.pow(2, 16) - 1)
     rb.SetNoDataValue(no_data)
     rb.FlushCache()
     rb = None
     ds = None
 
-def clip_fuel(fp, zone):
+def clip_fuel(fp, zone, fix_water=False):
     # fp = os.path.join(EXTRACTED_DIR, r'fbp/fuel_layer/FBP_FuelLayer.tif')
     # zone = 14.5
     out_tif = os.path.join(DIR, 'fuel_{}'.format(zone).replace('.', '_')) + '.tif'
@@ -486,11 +488,14 @@ def clip_fuel(fp, zone):
         return out_tif
     logging.info('Zone {}: {}'.format(zone, out_tif))
     base_tif, cols, rows, no_data = check_base(fp, zone)
-    nowater_tif = check_nowater(base_tif, zone, cols, rows, no_data)
-    filled_tif = check_filled(base_tif, nowater_tif, zone, cols, rows, no_data)
-    merged_tif = check_merged(filled_tif, zone, cols, rows)
+    fbp_tif = base_tif
+    if fix_water:
+        nowater_tif = check_nowater(base_tif, zone, cols, rows, no_data)
+        filled_tif = check_filled(base_tif, nowater_tif, zone, cols, rows, no_data)
+        merged_tif = check_merged(filled_tif, zone, cols, rows)
+        fbp_tif = merged_tif
     # finally, copy result to output location
-    ds = gdal.Open(merged_tif, 1)
+    ds = gdal.Open(fbp_tif, 1)
     dst_ds = DRIVER_TIF.CreateCopy(out_tif, ds, 0, options=CREATION_OPTIONS_FUEL)
     dst_ds = None
     ds = None

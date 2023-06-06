@@ -52,6 +52,9 @@ services:
       - type: bind
         source: ./util
         target: /appl/util
+      - type: bind
+        source: ../bfdata
+        target: /home/bfdata
     restart: on-failure
     cap_add:
         - SYS_PTRACE
