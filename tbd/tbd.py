@@ -363,7 +363,8 @@ def run_fire_from_folder(dir_in):
         logging.info("Startup coordinates are {}, {}".format(lat, long))
         hour = start_time.hour
         minute = start_time.minute
-        tz = (start_time.tz._minutes) / 60.0
+        tz = start_time.tz.utcoffset(start_time).total_seconds() / 60.0 / 60.0
+        # HACK: I think there might be issues with forecasts being at the half hour?
         if math.floor(tz) != tz:
             logging.fatal("Currently not set up to deal with partial hour timezones")
             sys.exit(-1)
