@@ -9,7 +9,6 @@ services:
     build:
       context: .
       dockerfile: .docker/Dockerfile_gis
-    image: thinkwhere/gdal-python
     volumes:
       - type: bind
         source: ./settings.ini
@@ -30,7 +29,6 @@ services:
       dockerfile: .docker/Dockerfile_tbd
     security_opt:
       - seccomp:unconfined
-    image: gcc:10.3
     ports:
       - "2222:22"
     volumes:

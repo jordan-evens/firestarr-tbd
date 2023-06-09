@@ -1,0 +1,440 @@
+# import libraries
+import urllib.request as urllib2
+from bs4 import BeautifulSoup
+import pandas as pd
+import os
+import datetime
+import sys
+
+sys.path.append("../util")
+import common
+from common import ensure_dir
+import model_data
+import tbd
+import timeit
+import logging
+import shutil
+import shlex
+import sys
+import numpy as np
+
+sys.path.append(os.path.dirname(sys.executable))
+sys.path.append("/usr/local/bin")
+import gdal_merge as gm
+import itertools
+import json
+
+sys.path.append('./cffdrs-ng')
+
+
+DIR = "/appl/data/fgmj/"
+EXT_DIR = os.path.abspath(os.path.join(DIR, "../extracted/fgmj"))
+ensure_dir(EXT_DIR)
+CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
+CRS_WGS = 4326
+
+def getPage(url):
+    logging.debug("Opening {}".format(url))
+    # query the website and return the html to the variable 'page'
+    page = urllib2.urlopen(url)
+    # parse the html using beautiful soup and return
+    return BeautifulSoup(page, "html.parser")
+
+
+def run_fires(dir_cur, region):
+    dir_region = os.path.join(dir_cur, region, "fires")
+    jobs = os.listdir(dir_region)
+    times = {}
+    recent = {}
+    simtimes = {}
+    dates = []
+    totaltime = 0
+    logging.debug("Checking {} jobs".format(len(jobs)))
+    by_fire = {}
+    today = str(datetime.datetime.today()).replace("-", "")[:8]
+    # dates = [today]
+    for j in jobs:
+        scenario = os.path.join(dir_region, j, "firestarr.json")
+        if os.path.exists(scenario):
+            with open(scenario) as f:
+                data = json.load(f)
+            fire_name = data["fire_name"]
+            if not fire_name in by_fire:
+                by_fire[fire_name] = []
+            by_fire[fire_name] = by_fire[fire_name] + [scenario]
+    for fire_name in by_fire.keys():
+        scenario = sorted(by_fire[fire_name])[-1]
+        cur_dir = os.path.dirname(scenario)
+        try:
+            t0 = timeit.default_timer()
+            log_name = tbd.run_fire_from_folder(cur_dir)
+            t1 = timeit.default_timer()
+            if log_name is not None:
+                simtimes[j] = t1 - t0
+                totaltime = totaltime + simtimes[j]
+                logging.info("Took {}s to run {}".format(simtimes[j], j))
+                d = os.path.basename(os.path.dirname(log_name))[:8]
+                if d not in dates:
+                    dates.append(d)
+        except Exception as e:
+            logging.error(e)
+    return simtimes, totaltime, dates
+
+
+# def run_fires(site, region):
+#     site = 'https://cfsdip.intellifirenwt.com'
+#     region = 'canada'
+#     url = site + '/jobs/'
+#     try:
+#         p = getPage(url)
+#     except Exception as e:
+#         logging.error("Can't load {}".format(url))
+#         logging.error(e)
+#         return None
+#     a = p.findAll('a')
+#     dirs = [x.get('href') for x in a if x.get('href').startswith('/jobs/job_')]
+#     jobs = sorted(set([x[x.rindex('/') + 1:] for x in dirs]))
+#     times = {}
+#     recent = {}
+#     simtimes = {}
+#     dates = []
+#     totaltime = 0
+#     dir_download = ensure_dir(os.path.join(DIR, region))
+#     dir_ext = ensure_dir(os.path.join(EXT_DIR, region))
+#     logging.debug("Checking {} jobs".format(len(jobs)))
+#     by_fire = {}
+#     today = str(datetime.datetime.today()).replace('-', '')[:8]
+#     dates = [today]
+#     for j in jobs:
+#         if j.startswith("job_" + today):
+#             # job_p = getPage(url + j + "/Inputs")
+#             cur_dir = os.path.join(dir_download, j)
+#             fgmj = common.save_http(cur_dir, url + j + "/job.fgmj", ignore_existing=True)
+#             if os.path.exists(fgmj):
+#                 with open(fgmj) as f:
+#                     data = json.load(f)
+#                 scenario_name = data['project']['scenarios']['scenarios'][0]['name']
+#                 fire_name = scenario_name[:scenario_name.index(' ')]
+#                 if not fire_name in by_fire:
+#                     by_fire[fire_name] = []
+#                 by_fire[fire_name] = by_fire[fire_name] + [fgmj]
+#     for fire_name in by_fire.keys():
+#         fgmj = sorted(by_fire[fire_name])[-1]
+#         cur_dir = os.path.dirname(fgmj)
+#         with open(fgmj) as f:
+#             data = json.load(f)
+#         wx_file = data['project']['stations']['stations'][0]['station']['streams'][0]['condition']['filename']
+#         wx = common.save_http(os.path.join(cur_dir, os.path.dirname(wx_file)), url + j + "/" + wx_file, ignore_existing=True)
+#         try:
+#             t0 = timeit.default_timer()
+#             log_name = tbd.do_run(fgmj)
+#             t1 = timeit.default_timer()
+#             if log_name is not None:
+#                 simtimes[j] = t1 - t0
+#                 totaltime = totaltime + simtimes[j]
+#                 logging.info("Took {}s to run {}".format(simtimes[j], j))
+#                 d = os.path.basename(os.path.dirname(log_name))[:8]
+#                 if d not in dates:
+#                     dates.append(d)
+#         except Exception as e:
+#             logging.error(e)
+#     return simtimes, totaltime, dates
+
+import gdal_retile as gr
+import gdal_calc
+import gdal
+
+
+def merge_dir(dir_input):
+    logging.debug("Merging {}".format(dir_input))
+    # HACK: for some reason output tiles were both being called 'probability'
+    import importlib
+
+    importlib.reload(gr)
+    TILE_SIZE = str(1024)
+    file_tmp = dir_input + "_tmp.tif"
+    file_out = dir_input + ".tif"
+    file_int = dir_input + "_int.tif"
+    co = list(
+        itertools.chain.from_iterable(map(lambda x: ["-co", x], CREATION_OPTIONS))
+    )
+    files = []
+    for region in os.listdir(dir_input):
+        dir_region = os.path.join(dir_input, region)
+        files = files + [
+            os.path.join(dir_region, x)
+            for x in sorted(os.listdir(dir_region))
+            if x.endswith(".tif")
+        ]
+    gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
+    # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
+    shutil.move(file_tmp, file_out)
+    logging.debug("Calculating...")
+    gdal_calc.Calc(
+        A=file_out,
+        outfile=file_tmp,
+        calc="A*100",
+        NoDataValue=0,
+        type="Byte",
+        creation_options=CREATION_OPTIONS,
+        quiet=True,
+    )
+    shutil.move(file_tmp, file_int)
+    dir_tile = os.path.join(dir_input, "tiled")
+    if os.path.exists(dir_tile):
+        logging.debug("Removing {}".format(dir_tile))
+        shutil.rmtree(dir_tile)
+    import subprocess
+
+    file_cr = dir_input + "_cr.tif"
+    logging.debug("Applying symbology...")
+    subprocess.run(
+        "gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES".format(
+            file_int, file_cr
+        ),
+        shell=True,
+    )
+    dir_tile = ensure_dir(dir_tile)
+    logging.debug(
+        "python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}".format(
+            file_cr, dir_tile, os.cpu_count()
+        )
+    )
+    subprocess.run(
+        "python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}".format(
+            file_cr, dir_tile, os.cpu_count()
+        ),
+        shell=True,
+    )
+    logging.debug("Made tiles...")
+    # retun dir_tile
+
+
+def merge_dirs(dir_input, dates=None):
+    for d in sorted(os.listdir(dir_input)):
+        if dates is None or d in dates:
+            dir_in = os.path.join(dir_input, d)
+            result = merge_dir(dir_in)
+    # result should now be the results for the most current day
+    dir_out = os.path.join(dir_input, "tiled")
+    if os.path.exists(dir_out):
+        shutil.rmtree(dir_out)
+    # shutil.move(result, dir_out)
+    shutil.move(os.path.join(dir_in, "tiled"), dir_out)
+    # move and then copy from there since it shouldn't affect access for as long
+    shutil.copytree(dir_out, os.path.join(dir_in, "tiled"))
+
+
+
+
+def run_all_fires():
+    DIR_ROOT = "/home/bfdata"
+    run_start = datetime.datetime.now()
+    run_id = run_start.strftime("%Y%m%d%H%M")
+    dir_out = ensure_dir(os.path.join(DIR_ROOT, run_id))
+    df_fires, fires_shp = model_data.get_fires(dir_out)
+    df_fires['area_calc'] = df_fires.area
+    df_fires_wgs = df_fires.to_crs(CRS_WGS)
+    today = run_start.date()
+    yesterday = today - datetime.timedelta(days=1)
+    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
+    import pyproj
+    # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
+    proj = pyproj.CRS('EPSG:3347')
+    df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
+    # df_fires_wgs = df_fires_wgs.sort_values(['area'])
+    df_fires_wgs = df_fires_wgs.sort_values(['area_calc'])
+    # results = {r: run_fires(dir_cur, r) for r in os.listdir(os.path.join(dir_cur))}
+    results = {}
+    times = {}
+    recent = {}
+    simtimes = {}
+    dates = []
+    totaltime = 0
+    import timezonefinder
+    tf = timezonefinder.TimezoneFinder()
+    # next_fire = df_fires_wgs.iloc[0]
+    for fireid, next_fire in df_fires_wgs.iterrows():
+        # log_name = os.path.join(fire.curdir, "log_service.txt")
+        # run_fire(next_fire, dir_out, tf, run_start, df_fires_wgs, df_wx_cwfis_wgs)
+        # def run_fire(next_fire, dir_out, tf, run_start, df_fires_wgs, df_wx_cwfis_wgs):
+        print(next_fire)
+        fire_name = next_fire.guess_id
+        if fire_name is np.nan:
+            fire_name = next_fire.id
+        # get rid of spaces in name if they exist
+        fire_name = fire_name.replace(' ', '_')
+        dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
+        logging.debug(f'Saving {fire_name} to {dir_fire}')
+        pt_centroid = next_fire.geometry.centroid
+        lat = pt_centroid.y
+        long = pt_centroid.x
+        tzone = tf.timezone_at(lng=long, lat=lat)
+        import pytz
+        timezone = pytz.timezone(tzone)
+        utcoffset = timezone.utcoffset(run_start)
+        utcoffset_hours = utcoffset.total_seconds() / 60 / 60
+        # HACK: America/Inuvik is giving an offset of 0 when applied directly, but says -6 otherwise
+
+        shp_fire = os.path.join(dir_fire, 'perim.shp')
+        import geopandas as gpd
+        df_fire = gpd.GeoDataFrame([next_fire], crs=df_fires_wgs.crs)
+        df_fire.to_file(shp_fire)
+        df_wx = df_wx_cwfis_wgs.iloc[:]
+        df_wx['dist'] = df_wx.distance(pt_centroid)
+        # figure out startup indices yesterday
+        df_wx_actual = df_wx[df_wx['dist'] == min(df_wx['dist'])]
+        # df_wx_spotwx = model_data.get_wx_spotwx(lat, long)
+        df_wx_spotwx = model_data.get_wx_ensembles(lat, long)
+        df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
+        df_wx_fire = df_wx_filled.rename(columns={
+            'datetime': 'TIMESTAMP',
+            'precip': 'PREC'
+        })
+        df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
+        df_wx_fire['YR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].year, axis=1)
+        df_wx_fire['MON'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].month, axis=1)
+        df_wx_fire['DAY'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].day, axis=1)
+        df_wx_fire['HR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].hour, axis=1)
+        cols = df_wx_fire.columns
+        import NG_FWI
+        ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][['ffmc', 'dmc', 'dc']]
+        # HACK: just get something for now
+        have_noon = [x.date() for x in df_wx_fire[df_wx_fire['HR'] == 12]['TIMESTAMP']]
+        df_wx_fire = df_wx_fire[[x.date() in have_noon for x in df_wx_fire['TIMESTAMP']]]
+        # noon = datetime.datetime.fromordinal(today.toordinal()) + datetime.timedelta(hours=12)
+        # df_wx_fire = df_wx_fire[df_wx_fire['TIMESTAMP'] >= noon].reset_index()[cols]
+        df_fwi = NG_FWI.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old)
+        # COLUMN_SYNONYMS = {'WIND': 'WS', 'RAIN': 'PREC', 'YEAR': 'YR', 'HOUR': 'HR'}
+        df_wx = df_fwi.rename(columns={
+            "TIMESTAMP": "Date",
+            "ID": "Scenario",
+            "RAIN": "APCP",
+            "TEMP": "TMP",
+            "WIND": "WS"})
+        df_wx = df_wx[
+            [
+                "Scenario",
+                "Date",
+                "APCP",
+                "TMP",
+                "RH",
+                "WS",
+                "WD",
+                "FFMC",
+                "DMC",
+                "DC",
+                "ISI",
+                "BUI",
+                "FWI",
+            ]
+        ]
+        # # HACK: really getting dumb now, but pad out the data so we're not crashing in firestarr for now
+        #
+        df_wx.round(2).to_csv(os.path.join(dir_fire, "wx.csv"), index=False, quoting=False)
+        # start_time = run_start.astimezone(timezone)
+        start_time = min(df_wx['Date']).tz_localize(timezone)
+        # HACK: don't start right at midnight because the hour before is missing
+        if (6 > start_time.hour):
+            start_time = start_time.replace(hour=6, minute=0, second=0)
+        # WANT_DATES = [1, 2, 3, 7, 14]
+        WANT_DATES = [1, 2, 3]
+        max_days = (df_wx['Date'].max() - df_wx['Date'].min()).days
+        offsets = [x for x in WANT_DATES if x < max_days]
+        data = {
+            "wx": "wx.csv",
+            "job_date": run_start.strftime("%Y%m%d"),
+            "job_time": run_start.strftime("%H%M"),
+            "start_time": start_time.isoformat(),
+            "lat": lat,
+            "long": long,
+            "perim": os.path.basename(shp_fire),
+            # "agency": fire.config.agency,
+            # "fireid": fire.fireid,
+            "dir_out": os.path.join(dir_fire, 'firestarr'),
+            "fire_name": fire_name,
+            "offsets": offsets,
+        }
+        with open(os.path.join(dir_fire, "firestarr.json"), "w") as f:
+            json.dump(data, f)
+        # cmd = f"sshpass -p password ssh -l user -p 22 tbd 'cd /appl/tbd && python tbd.py \"{fire.curdir}\"'"
+        # # run generated command for parsing data
+        # # run_what = [cmd] + shlex.split(args.replace('\\', '/'))
+        # run_what = shlex.split(cmd)
+        # print("Running: " + " ".join(run_what))
+        import tbd
+        try:
+            t0 = timeit.default_timer()
+            log_out = tbd.run_fire_from_folder(dir_fire)
+            t1 = timeit.default_timer()
+            t = t1 - t0
+            print("Took {}s to run simulations".format(t))
+            results[fire_name] = {
+                'duration': t,
+            }
+            totaltime = totaltime + t
+        except RuntimeError as e:
+            logging.warning(e)
+            results[fire_name] = None
+            # raise e
+    # dir_cur = os.path.join(DIR_ROOT, os.listdir(DIR_ROOT)[-1], "outputs")
+    # results = {r: run_fires(dir_cur, r) for r in os.listdir(os.path.join(dir_cur))}
+    # simtimes = {}
+    # dates = []
+    # totaltime = 0
+    # for k in results.keys():
+    #     if results[k] is not None:
+    #         s, t, d = results[k]
+    #         for f in s.keys():
+    #             simtimes["{}_{}".format(k, f)] = s[f]
+    #         dates = sorted(dates + [x for x in d if x not in dates])
+    #         totaltime = totaltime + t
+    # return simtimes, totaltime, dates
+    return results
+
+
+# this was okay when using the other container
+# def run_all_fires():
+#     DIR_ROOT = '/home/bfdata'
+#     dir_cur = os.path.join(DIR_ROOT, os.listdir(DIR_ROOT)[-1], 'outputs')
+#     results = {r: run_fires(dir_cur, r) for r in os.listdir(os.path.join(dir_cur))}
+#     simtimes = {}
+#     dates = []
+#     totaltime = 0
+#     for k in results.keys():
+#         if results[k] is not None:
+#             s, t, d = results[k]
+#             for f in s.keys():
+#                 simtimes['{}_{}'.format(k, f)] = s[f]
+#             dates = sorted(dates + [x for x in d if x not in dates])
+#             totaltime = totaltime + t
+#     return simtimes, totaltime, dates
+
+
+# def run_all_fires():
+#     results = {}
+#     results['canada'] = run_fires('https://cfsdip.intellifirenwt.com', 'canada')
+#     simtimes = {}
+#     dates = []
+#     totaltime = 0
+#     for k in results.keys():
+#         if results[k] is not None:
+#             s, t, d = results[k]
+#             for f in s.keys():
+#                 simtimes['{}_{}'.format(k, f)] = s[f]
+#             dates = sorted(dates + [x for x in d if x not in dates])
+#             totaltime = totaltime + t
+#     return simtimes, totaltime, dates
+
+if __name__ == "__main__":
+    run_all_fires()
+    # simtimes, totaltime, dates = run_all_fires()
+    # n = len(simtimes)
+    # if n > 0:
+    #     logging.info(
+    #         "Total of {} fires took {}s - average time is {}s".format(
+    #             n, totaltime, totaltime / n
+    #         )
+    #     )
+    #     merge_dirs("/appl/data/output/probability", dates)
+    #     merge_dirs("/appl/data/output/perimeter", dates)

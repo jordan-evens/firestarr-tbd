@@ -1,47 +1,77 @@
 # syntax=docker/dockerfile:1
-FROM gcc:10.3
-WORKDIR /appl/
-COPY .docker/requirements_tbd.txt requirements_tbd.txt
-WORKDIR /appl/tbd/
+FROM gcc:12.3 AS gcc_with_libs
 RUN (apt-get update || echo Ignoring update errors) \
   && apt-get install -y software-properties-common \
   && echo Adding ppa \
-  && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable || echo Ignoring add error) \
+  && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable \
+    || echo Ignoring add error) \
   && echo Added ppa \
   && (apt-get update || echo Ignoring update errors) \
   && echo Updated \
   && apt-get install -y gcc make git curl zip unzip tar \
-    libtiff-dev libgeotiff-dev g++ cmake python3-pip \
+    libtiff-dev libgeotiff-dev g++ \
     libgdal-dev util-linux cron rsync openssh-server gdal-bin \
     libgdal-dev gdb valgrind time \
-  && apt-get install -y flex bison libdwarf-dev libelf-dev libnuma-dev libpython3-dev libunwind-dev libnewt-dev libdwarf++0 libelf++0 libdw-dev libbfb0-dev \
-  && cd /appl/ \
-  && wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/tools/perf/v5.10.0/perf-5.10.0.tar.gz \
-  && tar -xvf perf-5.10.0.tar.gz \
-  && cd perf-5.10.0/tools/perf \
-  && make install \
-  && cp perf /usr/local/bin \
-  && apt-get clean && rm -rf /var/lib/apt/lists/* \
-  && rm -rf \
-      /usr/share/man/* \
-      /usr/includes/* \
-      /var/cache/apk/* \
-      /root/.npm/* \
-      /usr/lib/node_modules/npm/man/* \
-      /usr/lib/node_modules/npm/doc/* \
-      /usr/lib/node_modules/npm/html/* \
-      /usr/lib/node_modules/npm/scripts/* \
-  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
-  && python -m pip install pip==21.0.1 \
+    flex bison libdwarf-dev libelf-dev libnuma-dev \
+    libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+    libdw-dev libbfb0-dev \
   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
-  && export C_INCLUDE_PATH=/usr/include/gdal \
-  && python -m pip install -r /appl/requirements_tbd.txt \
+  && export C_INCLUDE_PATH=/usr/include/gdal
+
+FROM gcc_with_libs AS cmake
+ENV cmake_version 3.24.2
+ENV cmake_dir https://github.com/Kitware/CMake/releases/download
+RUN cd ~ \
+  && wget --no-check-certificate ${cmake_dir}/v${cmake_version}/cmake-${cmake_version}.tar.gz \
+  && tar -zxvf cmake-${cmake_version}.tar.gz \
+  && cd cmake-${cmake_version} \
+  && ./bootstrap \
+  && make \
+  && make install
+
+FROM gcc_with_libs AS perf
+ENV perf_version 6.3.0
+ENV perf_server https://mirrors.edge.kernel.org
+ENV perf_dir ${perf_server}/pub/linux/kernel/tools/perf
+ENV perf_url ${perf_dir}/v${perf_version}/perf-${perf_version}.tar.gz
+RUN cd ~ \
+  && wget --no-check-certificate ${perf_url} \
+  && tar -xvf perf-${perf_version}.tar.gz \
+  && cd perf-${perf_version}/tools/perf \
+  && make install \
+  && cp perf /usr/local/bin
+
+FROM cmake AS python_gcc
+RUN apt-get install -y python3-pip libpython3-dev \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+  && python -m pip install --upgrade pip \
   && ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"\
   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
-RUN (useradd -m user || echo User already exists) && (yes password | passwd user)
-RUN yes password | passwd
-RUN yes password | chsh --shell /bin/bash user
-RUN echo cd /appl/tbd >> /home/user/.bashrc
-RUN sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab
-RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+
+FROM python_gcc as nodocs
+RUN apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/* \
+    /usr/includes/* \
+    /var/cache/apk/* \
+    /root/.npm/* \
+    /usr/lib/node_modules/npm/man/* \
+    /usr/lib/node_modules/npm/doc/* \
+    /usr/lib/node_modules/npm/html/* \
+    /usr/lib/node_modules/npm/scripts/*
+
+FROM nodocs AS tbd_dev
+WORKDIR /appl/
+COPY .docker/requirements_tbd.txt requirements_tbd.txt
+WORKDIR /appl/tbd/
+COPY --from=perf /usr/local/bin/perf /usr/local/bin/
+RUN (useradd -m user || echo User already exists) \
+  && (yes password | passwd user) \
+  && yes password | passwd \
+  && yes password | chsh --shell /bin/bash user \
+  && echo cd /appl/tbd >> /home/user/.bashrc \
+  && sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab \
+  && python -m pip install -r /appl/requirements_tbd.txt \
+  && echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f

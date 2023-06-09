@@ -197,8 +197,8 @@ def Rasterize(shp, raster, reference):
 
     # # https://gis.stackexchange.com/questions/222394/how-to-convert-file-shp-to-tif-using-ogr-or-python-or-gdal/222395
     gdalformat = 'GTiff'
-    # datatype = gdal.GDT_Byte
-    datatype = gdal.GDT_UInt16
+    datatype = gdal.GDT_Byte
+    # datatype = gdal.GDT_UInt16
     burnVal = 1 # value for the output image pixels
 
     # src_ds = gdal.OpenEx(shp)
@@ -220,7 +220,13 @@ def Rasterize(shp, raster, reference):
 
     # Rasterise
     #~ print("Rasterising shapefile...")
-    output = gdal.GetDriverByName(gdalformat).Create(raster, ref_raster.RasterXSize, ref_raster.RasterYSize, 1, datatype, options=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'])
+    output = gdal.GetDriverByName(gdalformat).Create(
+        raster,
+        ref_raster.RasterXSize,
+        ref_raster.RasterYSize,
+        1,
+        datatype,
+        options=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'])
     output.SetProjection(ref_raster.GetProjectionRef())
     output.SetGeoTransform(ref_raster.GetGeoTransform())
     # Write data to band 1
