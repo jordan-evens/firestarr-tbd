@@ -108,7 +108,7 @@ def query_geoserver(table_name, f_out, features=None, filter=None):
 #     return fires
 
 
-def get_fires(dir_out):
+def get_fires_m3(dir_out):
     f_out = f'{dir_out}/m3_polygons_current.json'
     features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
     table_name = 'public:m3_polygons_current'
@@ -117,9 +117,10 @@ def get_fires(dir_out):
     filter = f'"maxdate">=\'{today}\''
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)
-    fires_shp = f_out.replace('.json', '.shp')
-    gdf.to_file(fires_shp)
-    return gdf, fires_shp
+    return gdf, f_json
+    # fires_shp = f_out.replace('.json', '.shp')
+    # gdf.to_file(fires_shp)
+    # return gdf, fires_shp
 
 
 def get_wx_cwfis(dir_out, dates):

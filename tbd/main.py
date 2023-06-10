@@ -17,21 +17,37 @@ import shutil
 import shlex
 import sys
 import numpy as np
+import geopandas as gpd
 
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append("/usr/local/bin")
-import gdal_merge as gm
+import osgeo
+import osgeo.utils
+import osgeo.utils.gdal_merge as gm
+import osgeo.utils.gdal_retile as gr
+import osgeo.utils.gdal_calc as gdal_calc
 import itertools
 import json
+import pytz
+import pyproj
+import timezonefinder
+
 
 sys.path.append('./cffdrs-ng')
+import NG_FWI
+
+import tbd
 
 
 DIR = "/appl/data/fgmj/"
 EXT_DIR = os.path.abspath(os.path.join(DIR, "../extracted/fgmj"))
 ensure_dir(EXT_DIR)
 CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
-CRS_WGS = 4326
+# CRS_NAD83 = 4269
+# CRS_NAD83_CSRS = 4617
+# want a projection that's NAD83 based, project, and units are degrees
+# CRS = "ESRI:102002"
+CRS = 4269
 
 def getPage(url):
     logging.debug("Opening {}".format(url))
@@ -41,44 +57,44 @@ def getPage(url):
     return BeautifulSoup(page, "html.parser")
 
 
-def run_fires(dir_cur, region):
-    dir_region = os.path.join(dir_cur, region, "fires")
-    jobs = os.listdir(dir_region)
-    times = {}
-    recent = {}
-    simtimes = {}
-    dates = []
-    totaltime = 0
-    logging.debug("Checking {} jobs".format(len(jobs)))
-    by_fire = {}
-    today = str(datetime.datetime.today()).replace("-", "")[:8]
-    # dates = [today]
-    for j in jobs:
-        scenario = os.path.join(dir_region, j, "firestarr.json")
-        if os.path.exists(scenario):
-            with open(scenario) as f:
-                data = json.load(f)
-            fire_name = data["fire_name"]
-            if not fire_name in by_fire:
-                by_fire[fire_name] = []
-            by_fire[fire_name] = by_fire[fire_name] + [scenario]
-    for fire_name in by_fire.keys():
-        scenario = sorted(by_fire[fire_name])[-1]
-        cur_dir = os.path.dirname(scenario)
-        try:
-            t0 = timeit.default_timer()
-            log_name = tbd.run_fire_from_folder(cur_dir)
-            t1 = timeit.default_timer()
-            if log_name is not None:
-                simtimes[j] = t1 - t0
-                totaltime = totaltime + simtimes[j]
-                logging.info("Took {}s to run {}".format(simtimes[j], j))
-                d = os.path.basename(os.path.dirname(log_name))[:8]
-                if d not in dates:
-                    dates.append(d)
-        except Exception as e:
-            logging.error(e)
-    return simtimes, totaltime, dates
+# def run_fires(dir_cur, region):
+#     dir_region = os.path.join(dir_cur, region, "fires")
+#     jobs = os.listdir(dir_region)
+#     times = {}
+#     recent = {}
+#     simtimes = {}
+#     dates = []
+#     totaltime = 0
+#     logging.debug("Checking {} jobs".format(len(jobs)))
+#     by_fire = {}
+#     today = str(datetime.datetime.today()).replace("-", "")[:8]
+#     # dates = [today]
+#     for j in jobs:
+#         scenario = os.path.join(dir_region, j, "firestarr.json")
+#         if os.path.exists(scenario):
+#             with open(scenario) as f:
+#                 data = json.load(f)
+#             fire_name = data["fire_name"]
+#             if not fire_name in by_fire:
+#                 by_fire[fire_name] = []
+#             by_fire[fire_name] = by_fire[fire_name] + [scenario]
+#     for fire_name in by_fire.keys():
+#         scenario = sorted(by_fire[fire_name])[-1]
+#         cur_dir = os.path.dirname(scenario)
+#         try:
+#             t0 = timeit.default_timer()
+#             log_name = tbd.run_fire_from_folder(cur_dir)
+#             t1 = timeit.default_timer()
+#             if log_name is not None:
+#                 simtimes[j] = t1 - t0
+#                 totaltime = totaltime + simtimes[j]
+#                 logging.info("Took {}s to run {}".format(simtimes[j], j))
+#                 d = os.path.basename(os.path.dirname(log_name))[:8]
+#                 if d not in dates:
+#                     dates.append(d)
+#         except Exception as e:
+#             logging.error(e)
+#     return simtimes, totaltime, dates
 
 
 # def run_fires(site, region):
@@ -139,10 +155,6 @@ def run_fires(dir_cur, region):
 #         except Exception as e:
 #             logging.error(e)
 #     return simtimes, totaltime, dates
-
-import gdal_retile as gr
-import gdal_calc
-import gdal
 
 
 def merge_dir(dir_input):
@@ -225,25 +237,50 @@ def merge_dirs(dir_input, dates=None):
     shutil.copytree(dir_out, os.path.join(dir_in, "tiled"))
 
 
+def get_fires_m3(dir_out):
+    df_fires, fires_json = model_data.get_fires_m3(dir_out)
+    df_fires['guess_id'] = df_fires['guess_id'].replace(np.nan, None)
+    df_fires['fire_name'] = df_fires.apply(lambda x: (x['guess_id'] or x['id']).replace(' ', '_'), axis=1)
+    return df_fires
 
 
-def run_all_fires():
+def get_fires_folder(dir_fires, crs='EPSG:3347'):
+    proj = pyproj.CRS(crs)
+    df_fires = None
+    for root, dirs, files in os.walk(dir_fires):
+        for f in [x for x in files if x.lower().endswith(".shp")]:
+            file_shp = os.path.join(root, f)
+            df_fire = gpd.read_file(file_shp).to_crs(proj)
+            df_fires = pd.concat([df_fires, df_fire])
+    df_fires['fire_name'] = df_fires['FIRENUMB']
+    return df_fires
+
+
+# dir_fires = "/home/bfdata/affes/20230609_0750_Perimeters"
+def run_all_fires(dir_fires=None):
     DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
     run_id = run_start.strftime("%Y%m%d%H%M")
     dir_out = ensure_dir(os.path.join(DIR_ROOT, run_id))
-    df_fires, fires_shp = model_data.get_fires(dir_out)
-    df_fires['area_calc'] = df_fires.area
-    df_fires_wgs = df_fires.to_crs(CRS_WGS)
     today = run_start.date()
     yesterday = today - datetime.timedelta(days=1)
-    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
-    import pyproj
     # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
-    proj = pyproj.CRS('EPSG:3347')
+    crs = 'EPSG:3347'
+    proj = pyproj.CRS(crs)
+    if dir_fires is None:
+        df_fires = get_fires_m3(dir_out)
+    else:
+        df_fires = get_fires_folder(dir_fires, crs)
+    df_fires = df_fires.to_crs(crs)
+    # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
+    centroids = df_fires.centroid.to_crs(CRS)
+    df_fires['lon'] = centroids.x
+    df_fires['lat'] = centroids.y
+    df_fires['area_calc'] = df_fires.area
+    # df_fires = df_fires.to_crs(CRS)
+    df_fires = df_fires.sort_values(['area_calc'])
+    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
     df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
-    # df_fires_wgs = df_fires_wgs.sort_values(['area'])
-    df_fires_wgs = df_fires_wgs.sort_values(['area_calc'])
     # results = {r: run_fires(dir_cur, r) for r in os.listdir(os.path.join(dir_cur))}
     results = {}
     times = {}
@@ -251,41 +288,34 @@ def run_all_fires():
     simtimes = {}
     dates = []
     totaltime = 0
-    import timezonefinder
     tf = timezonefinder.TimezoneFinder()
-    # next_fire = df_fires_wgs.iloc[0]
-    for fireid, next_fire in df_fires_wgs.iterrows():
+    # next_fire = df_fires.iloc[0]
+    for fireid, next_fire in df_fires.iterrows():
         # log_name = os.path.join(fire.curdir, "log_service.txt")
-        # run_fire(next_fire, dir_out, tf, run_start, df_fires_wgs, df_wx_cwfis_wgs)
-        # def run_fire(next_fire, dir_out, tf, run_start, df_fires_wgs, df_wx_cwfis_wgs):
+        # run_fire(next_fire, dir_out, tf, run_start, df_fires, df_wx_cwfis_wgs)
+        # def run_fire(next_fire, dir_out, tf, run_start, df_fires, df_wx_cwfis_wgs):
         print(next_fire)
-        fire_name = next_fire.guess_id
-        if fire_name is np.nan:
-            fire_name = next_fire.id
-        # get rid of spaces in name if they exist
-        fire_name = fire_name.replace(' ', '_')
+        fire_name = next_fire['fire_name']
         dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
         logging.debug(f'Saving {fire_name} to {dir_fire}')
-        pt_centroid = next_fire.geometry.centroid
-        lat = pt_centroid.y
-        long = pt_centroid.x
-        tzone = tf.timezone_at(lng=long, lat=lat)
-        import pytz
+        lat = next_fire['lat']
+        lon = next_fire['lon']
+        # we can use this directly because it's a projected coordinate
+        pt_centroid = df_fires.centroid.iloc[fireid]
+        tzone = tf.timezone_at(lng=lon, lat=lat)
         timezone = pytz.timezone(tzone)
+        # HACK: America/Inuvik is giving an offset of 0 when applied directly, but says -6 otherwise
         utcoffset = timezone.utcoffset(run_start)
         utcoffset_hours = utcoffset.total_seconds() / 60 / 60
-        # HACK: America/Inuvik is giving an offset of 0 when applied directly, but says -6 otherwise
-
-        shp_fire = os.path.join(dir_fire, 'perim.shp')
-        import geopandas as gpd
-        df_fire = gpd.GeoDataFrame([next_fire], crs=df_fires_wgs.crs)
-        df_fire.to_file(shp_fire)
+        df_fire = gpd.GeoDataFrame([next_fire], crs=df_fires.crs)
+        file_fire = os.path.join(dir_fire, '{}_NAD1983.geojson'.format(fire_name))
+        df_fire.to_file(file_fire)
         df_wx = df_wx_cwfis_wgs.iloc[:]
         df_wx['dist'] = df_wx.distance(pt_centroid)
         # figure out startup indices yesterday
         df_wx_actual = df_wx[df_wx['dist'] == min(df_wx['dist'])]
-        # df_wx_spotwx = model_data.get_wx_spotwx(lat, long)
-        df_wx_spotwx = model_data.get_wx_ensembles(lat, long)
+        # df_wx_spotwx = model_data.get_wx_spotwx(lat, lon)
+        df_wx_spotwx = model_data.get_wx_ensembles(lat, lon)
         df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
         df_wx_fire = df_wx_filled.rename(columns={
             'datetime': 'TIMESTAMP',
@@ -296,8 +326,7 @@ def run_all_fires():
         df_wx_fire['MON'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].month, axis=1)
         df_wx_fire['DAY'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].day, axis=1)
         df_wx_fire['HR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].hour, axis=1)
-        cols = df_wx_fire.columns
-        import NG_FWI
+        # cols = df_wx_fire.columns
         ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][['ffmc', 'dmc', 'dc']]
         # HACK: just get something for now
         have_noon = [x.date() for x in df_wx_fire[df_wx_fire['HR'] == 12]['TIMESTAMP']]
@@ -329,16 +358,14 @@ def run_all_fires():
                 "FWI",
             ]
         ]
-        # # HACK: really getting dumb now, but pad out the data so we're not crashing in firestarr for now
-        #
         df_wx.round(2).to_csv(os.path.join(dir_fire, "wx.csv"), index=False, quoting=False)
         # start_time = run_start.astimezone(timezone)
         start_time = min(df_wx['Date']).tz_localize(timezone)
         # HACK: don't start right at midnight because the hour before is missing
         if (6 > start_time.hour):
             start_time = start_time.replace(hour=6, minute=0, second=0)
-        # WANT_DATES = [1, 2, 3, 7, 14]
-        WANT_DATES = [1, 2, 3]
+        WANT_DATES = [1, 2, 3, 7, 14]
+        # WANT_DATES = [1, 2, 3]
         max_days = (df_wx['Date'].max() - df_wx['Date'].min()).days
         offsets = [x for x in WANT_DATES if x < max_days]
         data = {
@@ -347,8 +374,8 @@ def run_all_fires():
             "job_time": run_start.strftime("%H%M"),
             "start_time": start_time.isoformat(),
             "lat": lat,
-            "long": long,
-            "perim": os.path.basename(shp_fire),
+            "lon": lon,
+            "perim": os.path.basename(file_fire),
             # "agency": fire.config.agency,
             # "fireid": fire.fireid,
             "dir_out": os.path.join(dir_fire, 'firestarr'),
@@ -362,7 +389,6 @@ def run_all_fires():
         # # run_what = [cmd] + shlex.split(args.replace('\\', '/'))
         # run_what = shlex.split(cmd)
         # print("Running: " + " ".join(run_what))
-        import tbd
         try:
             t0 = timeit.default_timer()
             log_out = tbd.run_fire_from_folder(dir_fire)
@@ -427,7 +453,7 @@ def run_all_fires():
 #     return simtimes, totaltime, dates
 
 if __name__ == "__main__":
-    run_all_fires()
+    run_all_fires(sys.argv[1])
     # simtimes, totaltime, dates = run_all_fires()
     # n = len(simtimes)
     # if n > 0:

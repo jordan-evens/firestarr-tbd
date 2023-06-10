@@ -131,15 +131,24 @@ if not os.path.exists(TMP):
     os.makedirs(TMP)
 
 
+def wkt_from_zone(zone):
+    meridian = (zone - 15.0) * 6.0 - 93.0
+    # try this format because that's what the polygon rasterize process is generating, and they need to match
+    wkt = 'PROJCS["NAD_1983_UTM_Zone_{}N",GEOGCS["NAD83",DATUM["North_American_Datum_1983",SPHEROID["GRS 1980",6378137,298.257222101,AUTHORITY["EPSG","7019"]],AUTHORITY["EPSG","6269"]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",{}],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH]]'.format(
+        zone, meridian
+    )
+    # wkt = 'PROJCS["NAD_1983_UTM_Zone_{}N",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",{}],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]'.format(
+    #     zone, meridian
+    # )
+    return wkt, meridian
+
+
 def clip_zone(fp, prefix, zone):
     out_tif = os.path.join(DIR, prefix + "_{}".format(zone).replace(".", "_")) + ".tif"
     if os.path.exists(out_tif):
         return out_tif
     logging.info("Zone {}: {}".format(zone, out_tif))
-    meridian = (zone - 15.0) * 6.0 - 93.0
-    wkt = 'PROJCS["NAD_1983_UTM_Zone_{}N",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",{}],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]'.format(
-        zone, meridian
-    )
+    wkt, meridian = wkt_from_zone(zone)
     proj_srs = osr.SpatialReference(wkt=wkt)
     toProj = Proj(proj_srs.ExportToProj4())
     lat = (meridian, meridian)
@@ -179,7 +188,8 @@ def clip_zone(fp, prefix, zone):
     )
     ds = None
     # fix_nodata(out_tif)
-    # fix_nodata(out_tif, no_data)
+    # HACK: firestarr expects a nodata value, even if we don't have any nodata in the raster
+    fix_nodata(out_tif, no_data)
     gc.collect()
     return out_tif
 
@@ -339,10 +349,7 @@ def checkAddLakes(zone, cols, rows, for_what, path_gdb, layer):
 def check_base(fp, zone):
     base_tif = os.path.join(INT_FUEL, "base_{}".format(zone).replace(".", "_")) + ".tif"
     if not os.path.exists(base_tif):
-        meridian = (zone - 15.0) * 6.0 - 93.0
-        wkt = 'PROJCS["NAD_1983_UTM_Zone_{}N",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",{}],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]'.format(
-            zone, meridian
-        )
+        wkt, meridian = wkt_from_zone(zone)
         proj_srs = osr.SpatialReference(wkt=wkt)
         toProj = Proj(proj_srs.ExportToProj4())
         lat = (meridian, meridian)
@@ -580,10 +587,26 @@ def check_merged(filled_tif, zone, cols, rows):
     return merged_tif
 
 
-def fix_nodata(out_tif, no_data):
+def fix_nodata(out_tif, no_data=None):
     # HACK: make sure nodata value is set because C code expects it even if nothing is nodata
     ds = gdal.Open(out_tif, 1)
     rb = ds.GetRasterBand(1)
+    # always want a nodata value, so if one doesn't exist then make it
+    if no_data is None:
+        data_type = rb.DataType
+        if gdal.GDT_UInt16 == data_type:
+            no_data = int(math.pow(2, 16) - 1)
+        elif gdal.GDT_Int16 == data_type:
+            no_data = int(-math.pow(2, 15) - 1)
+        else:
+            raise RuntimeError(f'Unexpected data type when fixing no_data value: {data_type}')
+        # HACK: if neither min or max is this value, then it must not be used?
+        rb_min = rb.GetMinimum()
+        rb_max = rb.GetMaximum()
+        if not rb_min or not rb_max:
+            (rb_min, rb_max) = rb.ComputeRasterMinMax(True)
+        if no_data in [rb_min, rb_max]:
+            raise RuntimeError(f"Could not set raster nodata value to {no_data} because it is already used")
     rb.SetNoDataValue(no_data)
     rb.FlushCache()
     rb = None

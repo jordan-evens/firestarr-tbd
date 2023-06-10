@@ -47,15 +47,8 @@ SETTINGS_FILE = r'../settings.ini'
 CONFIG = None
 
 ## @cond Doxygen_Suppress
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 ## @endcond
-
-from osgeo import gdal
-gdal.UseExceptions()
-gdal.PushErrorHandler('CPLQuietErrorHandler')
-gdal.SetConfigOption('CPL_LOG', '/dev/null')
-gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-
 
 def ensure_dir(dir):
     """!

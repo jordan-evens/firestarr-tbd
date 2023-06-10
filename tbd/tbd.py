@@ -91,7 +91,7 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #         perim = None
 #         poly = ign['polygon']
 #         if poly['units'] != 'LAT_LON':
-#             logging.fatal("Only lat/long coordinates are currently supported")
+#             logging.fatal("Only lat/lon coordinates are currently supported")
 #             sys.exit(-1)
 #         if ign['polyType'] != 'POINT':
 #             if ign['polyType'] == 'POLYGON_OUT':
@@ -99,11 +99,11 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #                 pts = list(map(unnest_values, pts))
 #                 pts = [list(map(lambda v: [v['x'], v['y']], pts))]
 #                 lat = statistics.mean(list(map(lambda v: v[1], pts[0])))
-#                 long = statistics.mean(list(map(lambda v: v[0], pts[0])))
-#                 # print(long)
+#                 lon = statistics.mean(list(map(lambda v: v[0], pts[0])))
+#                 # print(lon)
 #                 orig_zone = 15
 #                 orig_long = -93
-#                 diff = long - orig_long
+#                 diff = lon - orig_long
 #                 # print(diff)
 #                 ZONE_SIZE = 6
 #                 zone_diff = round(diff / ZONE_SIZE)
@@ -173,8 +173,8 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #                 sys.exit(-1)
 #             unnest_values(pt)
 #             lat = pt['y']
-#             long = pt['x']
-#         logging.info("Startup coordinates are {}, {}".format(lat, long))
+#             lon = pt['x']
+#         logging.info("Startup coordinates are {}, {}".format(lat, lon))
 #         scenario = try_read_first(project['scenarios'], 'scenarios', is_fatal=True)['scenario']
 #         start_time = scenario['startTime']['time']
 #         start_time = pd.to_datetime(start_time)
@@ -208,7 +208,7 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #         daily['Date'] = daily['Date'].apply(lambda x: str(x + datetime.timedelta(hours=13)))
 #         daily.to_csv('wx.csv', index=False)
 #         cmd = "./tbd"
-#         args = "{} {} {} {} {}:{:02d} -v --output_date_offsets \"{{1, 2, 3}}\" --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, long, hour, minute, ffmc, dmc, dc, apcp_0800)
+#         args = "{} {} {} {} {}:{:02d} -v --output_date_offsets \"{{1, 2, 3}}\" --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, lon, hour, minute, ffmc, dmc, dc, apcp_0800)
 #         if perim is not None:
 #             args = args + " --perim {}".format(perim)
 #         # run generated command for parsing data
@@ -239,12 +239,12 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 
 # dir_in = '/home/bfdata/202306061927/TIM_FIRE_007'
 
-def run_fire_from_folder(dir_in):
-    with open(os.path.join(dir_in, 'firestarr.json')) as f:
+def run_fire_from_folder(dir_fire):
+    with open(os.path.join(dir_fire, 'firestarr.json')) as f:
       data = json.load(f)
-    region = os.path.basename(os.path.dirname(os.path.dirname(dir_in)))
+    region = os.path.basename(os.path.dirname(os.path.dirname(dir_fire)))
     lat = data['lat']
-    long = data['long']
+    lon = data['lon']
     # job_name = os.path.basename(dir_in)
     # job_time = job_name[job_name.rindex('_') + 1:]
     # job_date = job_time[:8]
@@ -260,107 +260,22 @@ def run_fire_from_folder(dir_in):
     done_already = False
     if not done_already:
         common.ensure_dir(dir_out)
-        # project = data['project']
-        # pt = None
-        # ignition = try_read_first(project['ignitions'], 'ignitions', is_fatal=True)
-        # ign = try_read_first(ignition['ignition']['ignitions'], 'ignitions', is_fatal=True)
-        # perim = None
-        # poly = ign['polygon']
-        # if poly['units'] != 'LAT_LON':
-        #     logging.fatal("Only lat/long coordinates are currently supported")
-        #     sys.exit(-1)
-        if True:
-        # if ign['polyType'] != 'POINT':
-            if data['perim'] is not None:
-            # if ign['polyType'] == 'POLYGON_OUT':
-                perim = os.path.join(dir_in, data['perim'])
-                logging.debug(f'Perimeter input is {perim}')
-                # # pts = poly['polygon']['points']
-                # # pts = list(map(unnest_values, pts))
-                # # pts = [list(map(lambda v: [v['x'], v['y']], pts))]
-                # # lat = statistics.mean(list(map(lambda v: v[1], pts[0])))
-                # # long = statistics.mean(list(map(lambda v: v[0], pts[0])))
-                # # print(long)
-                # orig_zone = 15
-                # orig_long = -93
-                # diff = long - orig_long
-                # # print(diff)
-                # ZONE_SIZE = 6
-                # zone_diff = round(diff / ZONE_SIZE)
-                # # print(zone_diff)
-                # meridian = orig_long + (zone_diff * ZONE_SIZE)
-                # # print(meridian)
-                # zone = orig_zone + zone_diff
-                # # # print(pts)
-                # # p = '''{"type": "Polygon",
-                # #         "coordinates": ''' + str(pts) + ''',
-                # #     }'''
-                # # # print(p)
-                # # g = ogr.CreateGeometryFromJson(p)
-                # # # print(g)
-                # # # print("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
-                # # # print("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
-                # # # for idx, f in enumerate(g):
-                # #     # print("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
-                # source = osr.SpatialReference()
-                # source.ImportFromEPSG(4269)
-                # target = osr.SpatialReference()
-                # target.ImportFromEPSG(3159)
-                # z = target.ExportToWkt()
-                # z = z[:z.rindex(",AUTHORITY")] + "]"
-                # z = z.replace('UTM zone 15N', 'UTM zone {}N')
-                # z = z.replace('"central_meridian",-93', '"central_meridian",{}')
-                # z = z.format(zone, meridian)
-                # # print(z)
-                # # print(target)
-                # target.ImportFromWkt(z)
-                # # transform = osr.CoordinateTransformation(source, target)
-                # # g.Transform(transform)
-                # # #print(g)
-                # # # logging.debug("Hi! I'm a %s with an Area  %s" % (g.GetGeometryName(), g.Area()))
-                # # # logging.debug("I have inside me %s feature(s)!\n" % g.GetGeometryCount())
-                # # # for idx, f in enumerate(g):
-                # #     # logging.debug("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
-                out_name = '{}.shp'.format(fire_name)
-                out_file = os.path.join(dir_out, out_name)
-                p = gpd.read_file(perim)
-                p.to_file(out_file)
-                # gis.Project(perim, out_file, target)
-                # # driver = ogr.GetDriverByName("Esri Shapefile")
-                # # ds = driver.CreateDataSource(out_file)
-                # # layr1 = ds.CreateLayer('', None, ogr.wkbPolygon)
-                # # # create the field
-                # # layr1.CreateField(ogr.FieldDefn('id', ogr.OFTInteger))
-                # # # Create the feature and set values
-                # # defn = layr1.GetLayerDefn()
-                # # feat = ogr.Feature(defn)
-                # # feat.SetField('id', 1)
-                # # feat.SetGeometry(g)
-                # # layr1.CreateFeature(feat)
-                # # # close the shapefile
-                # # ds.Destroy()
-                # target.MorphToESRI()
-                # with open(os.path.join(out_dir, '{}.prj'.format(fire_name)), 'w') as file:
-                #     file.write(target.ExportToWkt())
-                # run_output = dir_out
-                # perim = out_file
-                # year = start_time.year
-                # name = fire_name
-                perim = gis.rasterize_perim(dir_out, out_file, start_time.year, fire_name)[1]
-            else:
-                logging.fatal("Unsupported ignition type {}".format(ign['polyType']))
-            if perim is None:
-                sys.exit(-1)
-        # else:
-        #     pt = try_read_first(poly['polygon'], 'points', is_fatal=True)
-        #     if pt is None:
-        #         # should have already exited but check
-        #         logging.fatal("Ignition point not initialized")
-        #         sys.exit(-1)
-        #     unnest_values(pt)
-        #     lat = pt['y']
-        #     long = pt['x']
-        logging.info("Startup coordinates are {}, {}".format(lat, long))
+        perim = data['perim']
+        if perim is not None:
+            perim = os.path.join(dir_fire, data['perim'])
+            logging.debug(f'Perimeter input is {perim}')
+            out_name = '{}.geojson'.format(fire_name)
+            out_file = os.path.join(dir_out, out_name)
+            lyr = gpd.read_file(perim)
+            lyr.to_file(out_file)
+            year = start_time.year
+            reference = gis.find_best_raster(lon, year)
+            raster = os.path.join(dir_out, "{}.tif".format(fire_name))
+            perim = gis.Rasterize(perim, raster, reference)
+        else:
+            gis.save_point_shp(lat, lon, dir_out, fire_name)
+            sys.exit(-1)
+        logging.info("Startup coordinates are {}, {}".format(lat, lon))
         hour = start_time.hour
         minute = start_time.minute
         tz = start_time.tz.utcoffset(start_time).total_seconds() / 60.0 / 60.0
@@ -377,11 +292,11 @@ def run_fire_from_folder(dir_in):
         #     logging.warning("Simulation does not start today - date offset set to {}".format(date_offset))
         cmd = "./tbd"
         wx_file = os.path.join(dir_out, 'wx.csv')
-        shutil.copy(os.path.join(dir_in, data['wx']), wx_file)
+        shutil.copy(os.path.join(dir_fire, data['wx']), wx_file)
         # date_offsets = [1, 2]
         date_offsets = data['offsets']
         args = "\"{}\" {} {} {} {:02d}:{:02d} -v --output_date_offsets \"{}\" --wx \"{}\"".format(
-            dir_out, start_date, lat, long, hour, minute, "{" + ", ".join([str(x) for x in date_offsets]) + "}", wx_file)
+            dir_out, start_date, lat, lon, hour, minute, "{" + ", ".join([str(x) for x in date_offsets]) + "}", wx_file)
         if perim is not None:
             args = args + " --perim \"{}\"".format(perim)
         args = args.replace('\\', '/')

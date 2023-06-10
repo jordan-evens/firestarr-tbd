@@ -7,6 +7,11 @@ import logging
 import os
 
 from osgeo import gdal, ogr, osr
+gdal.UseExceptions()
+gdal.PushErrorHandler('CPLQuietErrorHandler')
+gdal.SetConfigOption('CPL_LOG', '/dev/null')
+gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+
 import numpy as np
 import geopandas as gpd
 
@@ -15,7 +20,7 @@ from common import ensure_dir
 RASTER_DIR = "/appl/100m"
 
 def GetFeatureCount(shp):
-    """!
+    """!`
     Count number of features in a shapefile
     @param shp Shapefile to count features from
     @return Number of features in shapefile, or -1 on failure
@@ -173,16 +178,14 @@ def GetCellSize(raster):
     del gt
     return pixelSizeX
 
-def Rasterize(shp, raster, reference):
+def Rasterize(file_lyr, raster, reference):
     """!
     Convert a shapefile into a raster with the given spatial reference
-    @param shp Shapefile to convert to raster
+    # @param shp Shapefile to convert to raster
     @param raster Raster file path to save result to
     @param reference Reference raster to use for extents and alignment
     @return None
     """
-    from osgeo import gdal
-
     # Define NoData value of new raster
     nodata = 0
     # Get projection info from reference image
@@ -201,25 +204,14 @@ def Rasterize(shp, raster, reference):
     # datatype = gdal.GDT_UInt16
     burnVal = 1 # value for the output image pixels
 
-    # src_ds = gdal.OpenEx(shp)
-    # gdal.Rasterize(raster,
-    #                src_ds,
-    #                format=gdalformat,
-    #                outputType=datatype,
-    #                creationOptions=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'],
-    #                noData=nodata,
-    #                initValues=nodata,
-    #                xRes=pixelSizeX,
-    #                yRes=-pixelSizeY,
-    #                allTouched=True,
-    #                burnValues=burnVal)
-
     # Open Shapefile
-    shapefile = ogr.Open(shp)
-    shapefile_layer = shapefile.GetLayer()
+    feature = ogr.Open(file_lyr)
+    lyr = feature.GetLayer()
 
     # Rasterise
     #~ print("Rasterising shapefile...")
+    # crs = osr.SpatialReference(wkt=ref_raster.GetProjectionRef())
+    crs = ref_raster.GetProjectionRef()
     output = gdal.GetDriverByName(gdalformat).Create(
         raster,
         ref_raster.RasterXSize,
@@ -227,22 +219,24 @@ def Rasterize(shp, raster, reference):
         1,
         datatype,
         options=['TFW=YES', 'COMPRESS=LZW', 'TILED=YES'])
-    output.SetProjection(ref_raster.GetProjectionRef())
+    output.SetProjection(crs)
     output.SetGeoTransform(ref_raster.GetGeoTransform())
     # Write data to band 1
     band = output.GetRasterBand(1)
     band.SetNoDataValue(0)
-    gdal.RasterizeLayer(output, [1], shapefile_layer, burn_values=[burnVal])
+    gdal.RasterizeLayer(output, [1], lyr, burn_values=[burnVal])
     # Close datasets
     del band
     del output
     del ref_raster
-    del shapefile
+    del lyr
+    del feature
     # del src_ds
     # create projection file for output
-    prj = os.path.splitext(raster)[0] + ".prj"
-    with open (prj, 'w') as file:
-        file.write(GetSpatialReference(shp).ExportToWkt())
+    # prj = os.path.splitext(raster)[0] + ".prj"
+    # with open (prj, 'w') as file:
+    #     file.write(lyr.crs.ExportToWkt())
+    return raster
 
 def save_point_shp(latitude, longitude, out_dir, name):
     """!
@@ -343,12 +337,7 @@ def rasterize_perim(run_output, perim, year, name, raster=None):
     @return Perimeter that was rasterized
     @return Path to raster output
     """
-    prj = os.path.join(run_output, os.path.basename(perim).replace('.shp', '_NAD1983.shp'))
-    ensure_dir(os.path.dirname(prj))
-    ref_NAD83 = osr.SpatialReference()
-    ref_NAD83.SetWellKnownGeogCS('NAD83')
-    #~ try:
-    Project(perim, prj, ref_NAD83)
+    Project(perim, p, ref_NAD83)
     del ref_NAD83
     r = find_best_raster(Extent(prj).XCenter, year)
     # prj_utm = os.path.join(run_output, os.path.basename(perim).replace('.shp', os.path.basename(r)[9:14] + '.shp'))
