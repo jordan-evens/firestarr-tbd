@@ -23,8 +23,7 @@ import shutil
 DATA_DIR = common.ensure_dir('/appl/data')
 ROOT_DIR = common.ensure_dir(os.path.join(DATA_DIR, 'sims'))
 OUTPUT_DIR = common.ensure_dir(os.path.join(DATA_DIR, 'output'))
-PERIM_DIR = common.ensure_dir(os.path.join(OUTPUT_DIR, 'perimeter'))
-PROB_DIR = common.ensure_dir(os.path.join(OUTPUT_DIR, 'probability'))
+INITIAL_DIR = common.ensure_dir(os.path.join(OUTPUT_DIR, 'initial'))
 
 def unnest_values(dict):
     for i in dict:
@@ -66,10 +65,10 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #     job_date = job_time[:8]
 #     scenario_name = data['project']['scenarios']['scenarios'][0]['name']
 #     fire_name = scenario_name[:scenario_name.index(' ')]
-#     out_dir = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
-#     done_already = os.path.exists(out_dir)
+#     dir_out = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
+#     done_already = os.path.exists(dir_out)
 #     if not done_already:
-#         common.ensure_dir(out_dir)
+#         common.ensure_dir(dir_out)
 #         MSG_DEFAULT_STARTUP = 'using default startup indices'
 #         project = data['project']
 #         stn = try_read_first(project['stations'], 'stations', MSG_DEFAULT_STARTUP)
@@ -142,7 +141,7 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #                 # for idx, f in enumerate(g):
 #                     # logging.debug("I'm feature n.%s and I am a %s.\t I have an Area of %s - You can get my json repr with f.ExportToJson()" % (idx, f.GetGeometryName(),f.Area()))
 #                 out_name = '{}.shp'.format(fire_name)
-#                 out_file = os.path.join(out_dir, out_name)
+#                 out_file = os.path.join(dir_out, out_name)
 #                 driver = ogr.GetDriverByName("Esri Shapefile")
 #                 ds = driver.CreateDataSource(out_file)
 #                 layr1 = ds.CreateLayer('', None, ogr.wkbPolygon)
@@ -157,10 +156,10 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #                 # close the shapefile
 #                 ds.Destroy()
 #                 target.MorphToESRI()
-#                 with open(os.path.join(out_dir, '{}.prj'.format(fire_name)), 'w') as file:
+#                 with open(os.path.join(dir_out, '{}.prj'.format(fire_name)), 'w') as file:
 #                     file.write(target.ExportToWkt())
 #                 YEAR = 2021
-#                 perim = gis.rasterize_perim(out_dir, out_file, YEAR, fire_name)[1]
+#                 perim = gis.rasterize_perim(dir_out, out_file, YEAR, fire_name)[1]
 #             else:
 #                 logging.fatal("Unsupported ignition type {}".format(ign['polyType']))
 #             if perim is None:
@@ -208,7 +207,7 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #         daily['Date'] = daily['Date'].apply(lambda x: str(x + datetime.timedelta(hours=13)))
 #         daily.to_csv('wx.csv', index=False)
 #         cmd = "./tbd"
-#         args = "{} {} {} {} {}:{:02d} -v --output_date_offsets \"{{1, 2, 3}}\" --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(out_dir, start_date, lat, lon, hour, minute, ffmc, dmc, dc, apcp_0800)
+#         args = "{} {} {} {} {}:{:02d} -v --output_date_offsets \"{{1, 2, 3}}\" --wx wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {}".format(dir_out, start_date, lat, lon, hour, minute, ffmc, dmc, dc, apcp_0800)
 #         if perim is not None:
 #             args = args + " --perim {}".format(perim)
 #         # run generated command for parsing data
@@ -218,19 +217,19 @@ def try_read_first(dict, key, fail_msg=None, is_fatal=False):
 #         stdout, stderr = common.finish_process(common.start_process(run_what, "/appl/tbd"))
 #         t1 = timeit.default_timer()
 #         logging.info("Took {}s to run simulations".format(t1 - t0))
-#         log_name = os.path.join(out_dir, "log.txt")
+#         log_name = os.path.join(dir_out, "log.txt")
 #         with open(log_name, 'w') as log_file:
 #             log_file.write(stdout.decode('utf-8'))
-#         outputs = sorted(os.listdir(out_dir))
+#         outputs = sorted(os.listdir(dir_out))
 #         extent = None
 #         probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
 #         if len(probs) > 0:
 #             prob = probs[-1]
-#             extent = gis.project_raster(os.path.join(out_dir, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
+#             extent = gis.project_raster(os.path.join(dir_out, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
 #         perims = [x for x in outputs if x.endswith('tif') and not (x.startswith('probability') or x.startswith('intensity'))]
 #         if len(perims) > 0:
 #             perim = perims[0]
-#             gis.project_raster(os.path.join(out_dir, perim),
+#             gis.project_raster(os.path.join(dir_out, perim),
 #                                          os.path.join(PERIM_DIR, job_date, region, fire_name + '.tif'),
 #                                          outputBounds=extent)
 #     else:
@@ -243,22 +242,24 @@ def run_fire_from_folder(dir_fire):
     with open(os.path.join(dir_fire, 'firestarr.json')) as f:
       data = json.load(f)
     region = os.path.basename(os.path.dirname(os.path.dirname(dir_fire)))
-    lat = data['lat']
-    lon = data['lon']
-    # job_name = os.path.basename(dir_in)
-    # job_time = job_name[job_name.rindex('_') + 1:]
-    # job_date = job_time[:8]
-    job_time = data['job_time']
+    dir_out = data['dir_out']
     job_date = data['job_date']
     fire_name = data['fire_name']
-    start_time = data['start_time']
-    start_time = pd.to_datetime(start_time)
-    logging.info("Scenario start time is: {}".format(start_time))
-    # out_dir = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
-    dir_out = data['dir_out']
-    # done_already = os.path.exists(out_dir)
-    done_already = False
+    # dir_out = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
+    done_already = os.path.exists(dir_out)
+    log_name = os.path.join(dir_out, "log.txt")
     if not done_already:
+        lat = data['lat']
+        lon = data['lon']
+        # job_name = os.path.basename(dir_in)
+        # job_time = job_name[job_name.rindex('_') + 1:]
+        # job_date = job_time[:8]
+        job_time = data['job_time']
+        start_time = data['start_time']
+        start_time = pd.to_datetime(start_time)
+        logging.info("Scenario start time is: {}".format(start_time))
+        # done_already = False
+        # if not done_already:
         common.ensure_dir(dir_out)
         perim = data['perim']
         if perim is not None:
@@ -307,28 +308,46 @@ def run_fire_from_folder(dir_fire):
         stdout, stderr = common.finish_process(common.start_process(run_what, "/appl/tbd"))
         t1 = timeit.default_timer()
         logging.info("Took {}s to run simulations".format(t1 - t0))
-        log_name = os.path.join(dir_out, "log.txt")
         with open(log_name, 'w') as log_file:
             log_file.write(stdout.decode('utf-8'))
-        outputs = sorted(os.listdir(dir_out))
-        extent = None
-        probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
-        if len(probs) > 0:
-            prob = probs[-1]
-            extent = gis.project_raster(os.path.join(dir_out, prob), os.path.join(PROB_DIR, job_date, region, fire_name + '.tif'))
-        perims = [x for x in outputs if x.endswith('tif') and not (x.startswith('probability') or x.startswith('intensity'))]
-        if len(perims) > 0:
-            perim = perims[0]
-            gis.project_raster(os.path.join(dir_out, perim),
-                                         os.path.join(PERIM_DIR, job_date, region, fire_name + '.tif'),
-                                         outputBounds=extent)
     else:
-        return None
+        logging.info("Simulation already ran")
+    logging.debug(f"Collecting outputs from {dir_out}")
+    outputs = sorted(os.listdir(dir_out))
+    extent = None
+    probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
+    for prob in probs:
+        logging.debug(f"Adding raster to final outputs: {prob}")
+        # want to put each probability raster into the right date so we can combine them
+        d = prob[(prob.rindex('_') + 1):prob.rindex('.tif')].replace('-', '')
+        extent = gis.project_raster(
+            os.path.join(dir_out, prob),
+            os.path.join(INITIAL_DIR, job_date, region, d, fire_name + '.tif')
+        )
+    perims = [x for x in outputs if (
+        x.endswith('tif')
+        and not (
+            x.startswith('probability')
+            or x.startswith('intensity')
+            or 'dem.tif' == x
+            or 'fuel.tif' == x
+        )
+    )]
+    if len(perims) > 0:
+        # FIX: maybe put the perims used for the run and the outputs in the same root directory?
+        perim = perims[0]
+        logging.info(f"Adding raster to final outputs: {perim}")
+        gis.project_raster(os.path.join(dir_out, perim),
+                                        os.path.join(INITIAL_DIR, job_date, region, 'perim', fire_name + '.tif'),
+                                        outputBounds=extent)
     return log_name
 
 
 if __name__ == "__main__":
-    run_fire_from_folder(sys.argv[1])
+    if 1 < len(sys.argv):
+        run_fire_from_folder(sys.argv[1])
+    else:
+        logging.fatal("Must specify folder to run fire from")
 
 # python tbd.py /home/bfdata/session_20230604_084639_688567/outputs/canada/fires/54967
 # ./tbd "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542" 2023-06-05 48.92 -76.43 10:47 -v --output_date_offsets "{1, 2}" --wx "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/wx.csv" --perim "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/54967 unassigned 2023-Jun-04.tif" -v -v -v

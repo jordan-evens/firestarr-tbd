@@ -31,6 +31,7 @@ import json
 import pytz
 import pyproj
 import timezonefinder
+import subprocess
 
 
 sys.path.append('./cffdrs-ng')
@@ -157,84 +158,133 @@ def getPage(url):
 #     return simtimes, totaltime, dates
 
 
-def merge_dir(dir_input):
-    logging.debug("Merging {}".format(dir_input))
+def merge_dir(dir_in, force=False):
+    logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
     import importlib
-
+    from osgeo import gdal
+    use_exceptions = gdal.GetUseExceptions()
+    # HACK: if exceptions are on then gdal_merge throws one
+    gdal.DontUseExceptions()
     importlib.reload(gr)
     TILE_SIZE = str(1024)
-    file_tmp = dir_input + "_tmp.tif"
-    file_out = dir_input + ".tif"
-    file_int = dir_input + "_int.tif"
     co = list(
         itertools.chain.from_iterable(map(lambda x: ["-co", x], CREATION_OPTIONS))
     )
-    files = []
-    for region in os.listdir(dir_input):
-        dir_region = os.path.join(dir_input, region)
-        files = files + [
-            os.path.join(dir_region, x)
-            for x in sorted(os.listdir(dir_region))
-            if x.endswith(".tif")
-        ]
-    gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
-    # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
-    shutil.move(file_tmp, file_out)
-    logging.debug("Calculating...")
-    gdal_calc.Calc(
-        A=file_out,
-        outfile=file_tmp,
-        calc="A*100",
-        NoDataValue=0,
-        type="Byte",
-        creation_options=CREATION_OPTIONS,
-        quiet=True,
-    )
-    shutil.move(file_tmp, file_int)
-    dir_tile = os.path.join(dir_input, "tiled")
-    if os.path.exists(dir_tile):
-        logging.debug("Removing {}".format(dir_tile))
-        shutil.rmtree(dir_tile)
-    import subprocess
-
-    file_cr = dir_input + "_cr.tif"
-    logging.debug("Applying symbology...")
-    subprocess.run(
-        "gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES".format(
-            file_int, file_cr
-        ),
-        shell=True,
-    )
-    dir_tile = ensure_dir(dir_tile)
-    logging.debug(
-        "python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}".format(
-            file_cr, dir_tile, os.cpu_count()
+    dir_base = os.path.dirname(dir_in)
+    dir_parent = os.path.dirname(dir_base)
+    dir_type = os.path.basename(dir_base)
+    # want to put probability and perims together
+    dir_out = common.ensure_dir(os.path.join(dir_parent,
+                                             'combined',
+                                             #  os.path.basename(dir_base),
+                                             os.path.basename(dir_in)))
+    files_by_for_what = {}
+    for region in os.listdir(dir_in):
+        dir_region = os.path.join(dir_in, region)
+        if os.path.isdir(dir_region):
+            for for_what in os.listdir(dir_region):
+                dir_for_what = os.path.join(dir_region, for_what)
+                files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
+                    os.path.join(dir_for_what, x)
+                    for x in sorted(os.listdir(dir_for_what))
+                    if x.endswith(".tif")
+                ]
+    ymd_origin = os.path.basename(dir_in)
+    date_origin = datetime.datetime.strptime(ymd_origin, '%Y%m%d')
+    for for_what, files in files_by_for_what.items():
+        dir_in_for_what = os.path.basename(for_what)
+        if 'perim' == dir_in_for_what:
+            dir_for_what = 'perim'
+            title = f"FireSTARR - {ymd_origin} Input Perimeters"
+        else:
+            date_cur = datetime.datetime.strptime(dir_in_for_what, '%Y%m%d')
+            offset = (date_cur - date_origin).days + 1
+            dir_for_what = f'firestarr_day_{offset:02d}'
+            title = f"FireSTARR - {ymd_origin} Day {offset:02d}"
+        file_root = os.path.join(dir_out, dir_for_what)
+        file_tmp = f"{file_root}_tmp.tif"
+        file_out = f"{file_root}.tif"
+        file_int = f"{file_root}_int.tif"
+        dir_tile = file_root
+        if os.path.exists(dir_tile):
+            if force:
+                logging.info("Removing {}".format(dir_tile))
+                shutil.rmtree(dir_tile)
+            else:
+                logging.info(f"Output {dir_tile} already exists")
+                return dir_tile
+        gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
+        # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
+        shutil.move(file_tmp, file_out)
+        if 'perim' != dir_in_for_what:
+            # only calculate int output if looking at probability
+            logging.debug("Calculating...")
+            gdal_calc.Calc(
+                A=file_out,
+                outfile=file_tmp,
+                calc="A*100",
+                NoDataValue=0,
+                type="Byte",
+                creation_options=CREATION_OPTIONS,
+                quiet=True,
+            )
+            shutil.move(file_tmp, file_int)
+            # apply symbology to probability
+            file_cr = f"{file_root}_cr.tif"
+            logging.debug("Applying symbology...")
+            subprocess.run(
+                "gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES".format(
+                    file_int, file_cr
+                ),
+                shell=True,
+            )
+            file_out = file_cr
+        dir_tile = ensure_dir(dir_tile)
+        args = f"-a 0 -z 5-12 {file_out} {dir_tile} -t \"{title}\" --processes={os.cpu_count()}"
+        logging.debug(
+            f"python gdal2tiles.py {args}"
         )
-    )
-    subprocess.run(
-        "python /usr/local/bin/gdal2tiles.py -a 0 -z 5-12 {} {} --processes={}".format(
-            file_cr, dir_tile, os.cpu_count()
-        ),
-        shell=True,
-    )
-    logging.debug("Made tiles...")
-    # retun dir_tile
+        subprocess.run(
+            f"python /appl/.venv/bin/gdal2tiles.py {args}",
+            shell=True,
+        )
+        logging.info(f"Made tiles for {for_what}...")
+    if use_exceptions:
+        gdal.UseExceptions()
+    return dir_tile
+
+
+PLACEHOLDER_TITLE = "__TITLE__"
 
 
 def merge_dirs(dir_input, dates=None):
+    results = []
     for d in sorted(os.listdir(dir_input)):
         if dates is None or d in dates:
             dir_in = os.path.join(dir_input, d)
-            result = merge_dir(dir_in)
+            results.append(merge_dir(dir_in))
+    if 0 == len(results):
+        logging.warning(f"No directories merged from {dir_input}")
+        return
+    # result = '/appl/data/output/combined/probability/20230610'
     # result should now be the results for the most current day
-    dir_out = os.path.join(dir_input, "tiled")
-    if os.path.exists(dir_out):
-        shutil.rmtree(dir_out)
-    # shutil.move(result, dir_out)
-    shutil.move(os.path.join(dir_in, "tiled"), dir_out)
-    # move and then copy from there since it shouldn't affect access for as long
-    shutil.copytree(dir_out, os.path.join(dir_in, "tiled"))
+    # dir_out = os.path.join(os.path.dirname(dir_input), "current", os.path.basename(dir_input))
+    result = results[-1]
+    FILE_HTML = '/appl/data/output/firestarr.html'
+    title = f'FireSTARR - {os.path.basename(result.rstrip("/"))}'
+    with open(FILE_HTML, 'r') as f_in:
+        with open(f'{result}/{os.path.basename(FILE_HTML)}', 'w') as f_out:
+            f_out.writelines([line.replace(PLACEHOLDER_TITLE, title) for line in f_in.readlines()])
+    return result
+    # dir_out = os.path.join(os.path.dirname(dir_input), "current")
+    # logging.info(f"Moving results to {dir_out}")
+    # if os.path.exists(dir_out):
+    #     logging.info("Removing existing results")
+    #     shutil.rmtree(dir_out)
+    # logging.info(f"Copying {result} to {dir_out}")
+    # shutil.copytree(result, dir_out)
+
 
 
 def get_fires_m3(dir_out):
@@ -256,7 +306,7 @@ def get_fires_folder(dir_fires, crs='EPSG:3347'):
     return df_fires
 
 
-# dir_fires = "/home/bfdata/affes/20230609_0750_Perimeters"
+# dir_fires = "/home/bfdata/affes/latest"
 def run_all_fires(dir_fires=None):
     DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
@@ -289,11 +339,7 @@ def run_all_fires(dir_fires=None):
     dates = []
     totaltime = 0
     tf = timezonefinder.TimezoneFinder()
-    # next_fire = df_fires.iloc[0]
     for fireid, next_fire in df_fires.iterrows():
-        # log_name = os.path.join(fire.curdir, "log_service.txt")
-        # run_fire(next_fire, dir_out, tf, run_start, df_fires, df_wx_cwfis_wgs)
-        # def run_fire(next_fire, dir_out, tf, run_start, df_fires, df_wx_cwfis_wgs):
         print(next_fire)
         fire_name = next_fire['fire_name']
         dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
@@ -416,7 +462,14 @@ def run_all_fires(dir_fires=None):
     #         dates = sorted(dates + [x for x in d if x not in dates])
     #         totaltime = totaltime + t
     # return simtimes, totaltime, dates
-    return results
+    return dir_out, results
+
+def merge_outputs(dir_out):
+    for fire_name in [x for x in os.listdir(dir_out) if os.path.isdir(os.path.join(dir_out, x))]:
+        dir_fire = os.path.join(dir_out, fire_name)
+        print(dir_fire)
+        log_out = tbd.run_fire_from_folder(dir_fire)
+    merge_dirs("/appl/data/output/initial")
 
 
 # this was okay when using the other container
@@ -453,14 +506,15 @@ def run_all_fires(dir_fires=None):
 #     return simtimes, totaltime, dates
 
 if __name__ == "__main__":
-    run_all_fires(sys.argv[1])
+    dir_job, results = run_all_fires(sys.argv[1] if len(sys.argv) > 1 else None)
     # simtimes, totaltime, dates = run_all_fires()
-    # n = len(simtimes)
-    # if n > 0:
-    #     logging.info(
-    #         "Total of {} fires took {}s - average time is {}s".format(
-    #             n, totaltime, totaltime / n
-    #         )
-    #     )
-    #     merge_dirs("/appl/data/output/probability", dates)
-    #     merge_dirs("/appl/data/output/perimeter", dates)
+    n = len(results)
+    if n > 0:
+        # logging.info(
+        #     "Total of {} fires took {}s - average time is {}s".format(
+        #         n, totaltime, totaltime / n
+        #     )
+        # )
+        # merge_dirs("/appl/data/output/probability", dates)
+        # merge_dirs("/appl/data/output/perimeter", dates)
+        merge_dirs("/appl/data/output/initial")

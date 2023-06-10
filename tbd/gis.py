@@ -376,6 +376,7 @@ def project_raster(filename, output_raster=None, outputBounds=None, options=['CO
     if output_raster is None:
         output_raster = filename[:-4] + '.tif'
     common.ensure_dir(os.path.dirname(output_raster))
+    logging.debug(f"Projecting {filename} to {output_raster}")
     warp = gdal.Warp(output_raster,
                      input_raster,
                      dstNodata=0,

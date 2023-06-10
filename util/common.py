@@ -47,7 +47,7 @@ SETTINGS_FILE = r'../settings.ini'
 CONFIG = None
 
 ## @cond Doxygen_Suppress
-logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 ## @endcond
 
 def ensure_dir(dir):
