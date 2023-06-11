@@ -24,6 +24,7 @@ import sys
 import copy
 import zipfile
 import requests
+import zipfile
 from tqdm import tqdm
 
 ## So HTTPS transfers work properly
@@ -533,3 +534,20 @@ def finish_process(process):
             sys.exit(process.returncode)
         raise RuntimeError('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
     return stdout, stderr
+
+
+def zip_folder(zip_name, path):
+    with zipfile.ZipFile(zip_name, 'w') as zf:
+        all_files = []
+        logging.info("Finding files")
+        for root, dirs, files in os.walk(path):
+            for d in dirs:
+                dir = os.path.join(root, d)
+                zf.write(dir, dir.replace(path, '').lstrip('/'))
+            for f in files:
+                all_files.append(os.path.join(root, f))
+        logging.info("Zipping")
+        for f in tqdm(all_files, desc=os.path.basename(zip_name), leave=False):
+            f_relative = f.replace(path, '').lstrip('/')
+            zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
+        return zip_name
