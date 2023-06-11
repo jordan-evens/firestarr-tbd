@@ -52,6 +52,7 @@ CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
 CRS = 4269
 PLACEHOLDER_TITLE = "__TITLE__"
 FILE_HTML = '/appl/data/output/firestarr.html'
+WANT_DATES = [1, 2, 3, 7, 14]
 
 
 def getPage(url):
@@ -234,7 +235,7 @@ def get_fires_folder(dir_fires, crs='EPSG:3347'):
     return df_fires
 
 
-def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current):
+def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current, max_days=None):
     if 1 != len(df_fire):
         raise RuntimeError("Expected exactly one row for run_fire()")
     next_fire = df_fire.iloc[0]
@@ -307,10 +308,10 @@ def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current):
     # HACK: don't start right at midnight because the hour before is missing
     if (6 > start_time.hour):
         start_time = start_time.replace(hour=6, minute=0, second=0)
-    WANT_DATES = [1, 2, 3, 7, 14]
-    # WANT_DATES = [1, 2, 3]
-    max_days = (df_wx['Date'].max() - df_wx['Date'].min()).days
-    offsets = [x for x in WANT_DATES if x < max_days]
+    days_available = (df_wx['Date'].max() - df_wx['Date'].min()).days
+    if max_days is not None:
+        want_dates = [x for x in WANT_DATES if x <= max_days]
+    offsets = [x for x in WANT_DATES if x <= max_days]
     data = {
         "wx": "wx.csv",
         "job_date": run_start.strftime("%Y%m%d"),
@@ -356,7 +357,7 @@ def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current):
 
 
 # dir_fires = "/home/bfdata/affes/latest"
-def run_all_fires(dir_fires=None):
+def run_all_fires(dir_fires=None, max_days=None):
     t0 = timeit.default_timer()
     DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
@@ -401,7 +402,8 @@ def run_all_fires(dir_fires=None):
                               tf,
                               df_fire,
                               df_wx_cwfis_wgs,
-                              dir_current)
+                              dir_current,
+                              max_days)
             results[fire_name] = result
             if result['sim_finished']:
                 sim_time += result['sim_time']
@@ -427,8 +429,9 @@ def run_all_fires(dir_fires=None):
 
 
 if __name__ == "__main__":
-    dir_fires = sys.argv[1] if len(sys.argv) > 1 else None
-    dir_out, dir_current, results, dates_out, totaltime = run_all_fires(dir_fires)
+    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
+    dir_out, dir_current, results, dates_out, totaltime = run_all_fires(dir_fires, max_days)
     # simtimes, totaltime, dates = run_all_fires()
     n = len(results)
     if n > 0:
