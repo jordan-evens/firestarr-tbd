@@ -62,7 +62,7 @@ def getPage(url):
     return BeautifulSoup(page, "html.parser")
 
 
-def merge_dir(dir_in, run_id, force=False):
+def merge_dir(dir_in, run_id, force=False, do_tile=True):
     logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
     import importlib
@@ -122,56 +122,58 @@ def merge_dir(dir_in, run_id, force=False):
         # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
         shutil.move(file_tmp, file_base)
         file_out = file_base
-        if 'perim' != dir_in_for_what:
-            # only calculate int output if looking at probability
-            logging.debug("Calculating...")
-            gdal_calc.Calc(
-                A=file_out,
-                outfile=file_tmp,
-                calc="A*100",
-                NoDataValue=0,
-                type="Byte",
-                creation_options=CREATION_OPTIONS,
-                quiet=True,
+        if do_tile:
+            if 'perim' != dir_in_for_what:
+                # only calculate int output if looking at probability
+                logging.debug("Calculating...")
+                gdal_calc.Calc(
+                    A=file_out,
+                    outfile=file_tmp,
+                    calc="A*100",
+                    NoDataValue=0,
+                    type="Byte",
+                    creation_options=CREATION_OPTIONS,
+                    quiet=True,
+                )
+                shutil.move(file_tmp, file_int)
+                # apply symbology to probability
+                file_cr = f"{file_root}_cr.tif"
+                logging.debug("Applying symbology...")
+                subprocess.run(
+                    "gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES".format(
+                        file_int, file_cr
+                    ),
+                    shell=True,
+                )
+                file_out = file_cr
+            dir_tile = ensure_dir(dir_tile)
+            args = f"-a 0 -z 5-12 {file_out} {dir_tile} -t \"{title}\" --processes={os.cpu_count()}"
+            logging.debug(
+                f"python gdal2tiles.py {args}"
             )
-            shutil.move(file_tmp, file_int)
-            # apply symbology to probability
-            file_cr = f"{file_root}_cr.tif"
-            logging.debug("Applying symbology...")
             subprocess.run(
-                "gdaldem color-relief {} /appl/tbd/col.txt {} -alpha -co COMPRESS=LZW -co TILED=YES".format(
-                    file_int, file_cr
-                ),
+                f"python /appl/.venv/bin/gdal2tiles.py {args}",
                 shell=True,
             )
-            file_out = file_cr
-        dir_tile = ensure_dir(dir_tile)
-        args = f"-a 0 -z 5-12 {file_out} {dir_tile} -t \"{title}\" --processes={os.cpu_count()}"
-        logging.debug(
-            f"python gdal2tiles.py {args}"
-        )
-        subprocess.run(
-            f"python /appl/.venv/bin/gdal2tiles.py {args}",
-            shell=True,
-        )
-        logging.info(f"Made tiles for {for_what}...")
+            logging.info(f"Made tiles for {for_what}...")
     dir_rasters = ensure_dir(os.path.join(dir_out, 'rasters'))
     logging.info(f"Moving rasters to {dir_rasters}")
     for file in [x for x in os.listdir(dir_out) if not x.endswith('.html')]:
         file_in = os.path.join(dir_out, file)
         if os.path.isfile(file_in):
             shutil.move(file_in, os.path.join(dir_rasters, file))
-    title = f'FireSTARR - {run_id}'
-    with open(FILE_HTML, 'r') as f_in:
-        file_html = os.path.join(dir_out, os.path.basename(FILE_HTML))
-        with open(file_html, 'w') as f_out:
-            f_out.writelines([line.replace(PLACEHOLDER_TITLE, title) for line in f_in.readlines()])
+    if do_tile:
+        title = f'FireSTARR - {run_id}'
+        with open(FILE_HTML, 'r') as f_in:
+            file_html = os.path.join(dir_out, os.path.basename(FILE_HTML))
+            with open(file_html, 'w') as f_out:
+                f_out.writelines([line.replace(PLACEHOLDER_TITLE, title) for line in f_in.readlines()])
     if use_exceptions:
         gdal.UseExceptions()
     return dir_out
 
 
-def merge_dirs(dir_input, dates=None):
+def merge_dirs(dir_input, dates=None, do_tile=True):
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
     run_id = os.path.basename(dir_input)
@@ -181,7 +183,7 @@ def merge_dirs(dir_input, dates=None):
     for d in sorted(os.listdir(dir_initial)):
         if dates is None or d in dates:
             dir_in = os.path.join(dir_initial, d)
-            results.append(merge_dir(dir_in, run_id))
+            results.append(merge_dir(dir_in, run_id, do_tile=do_tile))
     if 0 == len(results):
         logging.warning("No directories merged from %s", dir_initial)
         return
@@ -189,12 +191,13 @@ def merge_dirs(dir_input, dates=None):
     # result should now be the results for the most current day
     # dir_out = os.path.join(os.path.dirname(dir_input), "current", os.path.basename(dir_input))
     result = results[-1]
-    logging.info("Final results of merge are in %s", result)
-    dir_zip = os.path.dirname(dir_input)
-    run_id = os.path.basename(dir_input)
-    file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
-    logging.info("Creating archive %s", file_zip)
-    z = common.zip_folder(file_zip, result)
+    if do_tile:
+        logging.info("Final results of merge are in %s", result)
+        dir_zip = os.path.dirname(dir_input)
+        run_id = os.path.basename(dir_input)
+        file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
+        logging.info("Creating archive %s", file_zip)
+        z = common.zip_folder(file_zip, result)
     # # add a '/' so it uses the contents but not the folder
     # args = [
     #     "-c",
@@ -268,8 +271,7 @@ def make_run_fire(dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_da
     return dir_fire
 
 
-def do_run_fire(for_what):
-    dir_fire, dir_current = for_what
+def do_prep_fire(dir_fire):
     # load and update the configuration with more data
     with open(os.path.join(dir_fire, FILE_SIM)) as f:
         data = json.load(f)
@@ -291,7 +293,14 @@ def do_run_fire(for_what):
         ffmc_old = data['ffmc_old']
         dmc_old = data['dmc_old']
         dc_old = data['dc_old']
-        df_wx_spotwx = model_data.get_wx_ensembles(lat, lon)
+        try:
+            df_wx_spotwx = model_data.get_wx_ensembles(lat, lon)
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception as ex:
+            # logging.fatal("Could not get weather for %s", dir_fire)
+            # logging.fatal(ex)
+            return ex
         df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
         df_wx_fire = df_wx_filled.rename(columns={
             'datetime': 'TIMESTAMP',
@@ -355,16 +364,63 @@ def do_run_fire(for_what):
         data["wx"] = file_wx
     with open(os.path.join(dir_fire, FILE_SIM), "w") as f:
         json.dump(data, f)
+    return dir_fire
+
+
+def do_run_fire(for_what):
+    dir_fire, dir_current = for_what
+    # HACK: in case do_prep_fire() failed
+    if isinstance(dir_fire, Exception):
+        return dir_fire
+    try:
+        with open(os.path.join(dir_fire, FILE_SIM)) as f:
+            data = json.load(f)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.warning(ex)
+        return ex
     # at this point everything should be in the sim file, and we can just run it
-    result = tbd.run_fire_from_folder(dir_fire, dir_current)
-    t = result['sim_time']
-    if t is not None:
-        logging.debug("Took {}s to run simulations".format(t))
-    return result
+    try:
+        result = tbd.run_fire_from_folder(dir_fire, dir_current)
+        t = result['sim_time']
+        if t is not None:
+            logging.debug("Took {}s to run simulations".format(t))
+        result['failed'] = False
+        return result
+    except Exception as ex:
+        logging.warning(ex)
+        return ex
+        # data['sim_time'] = None
+        # data['dates_out'] = None
+        # data['sim_finished'] = False
+        # data['failed'] = True
+        # return data
+
+
+# make this a function so we can call it during or after loop
+def check_failure(dir_fire, result, stop_on_any_failure):
+    if isinstance(result, Exception):
+        logging.warning("Failed to get weather for %s", dir_fire)
+        if isinstance(result, common.ParseError):
+            file_content = os.path.join(dir_fire, "exception_content.out")
+            with open(file_content, "w") as f_ex:
+                # HACK: this is just where it ends up
+                content = result.args[0][0]
+                f_ex.write(str(content))
+            with open(os.path.join(dir_fire, "exception_trace.out"), "w") as f_ex:
+                f_ex.writelines(result.trace)
+        else:
+            with open(os.path.join(dir_fire, "exception.out"), "w") as f_ex:
+                f_ex.write(str(result))
+        if stop_on_any_failure:
+            raise result
+        return 1
+    return 0
 
 
 # dir_fires = "/home/bfdata/affes/latest"
-def run_all_fires(dir_fires=None, max_days=None):
+def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     t0 = timeit.default_timer()
     DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
@@ -377,6 +433,8 @@ def run_all_fires(dir_fires=None, max_days=None):
     run_id = run_start.strftime("%Y%m%d%H%M")
     run_name = f"{run_prefix}_{run_id}"
     dir_out = ensure_dir(os.path.join(DIR_ROOT, run_name))
+    # keep a copy of the settings for reference
+    shutil.copy('/appl/tbd/settings.ini', os.path.join(dir_out, "settings.ini"))
     # "current" results folder to update based on new run data
     dir_current = os.path.join(tbd.DIR_OUTPUT, f"current_{run_prefix}")
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
@@ -402,6 +460,7 @@ def run_all_fires(dir_fires=None, max_days=None):
     # cut out the row as a DataFrame still so we can use crs and centroid
     df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     dirs_fire = []
+    wx_failed = 0
     for df_fire in tqdm(df_by_fire, desc='Separating fires', leave=False):
         fire_name = df_fire.iloc[0]['fire_name']
         pt_centroid = df_fire.centroid.iloc[0]
@@ -410,26 +469,52 @@ def run_all_fires(dir_fires=None, max_days=None):
         df_wx_actual = df_wx[dists == min(dists)]
         ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][['ffmc', 'dmc', 'dc']]
         dir_fire = make_run_fire(dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days)
+        # wx_failed += check_failure(dir_fire, do_prep_fire(dir_fire), stop_on_any_failure)
         dirs_fire.append(dir_fire)
     # small limit due to amount of disk access
     # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
+    dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
+    for i in range(len(dirs_fire)):
+        result = dirs_ready[i]
+        dir_fire = dirs_fire[i]
+        wx_failed += check_failure(dir_fire, result, stop_on_any_failure)
+    if 0 < wx_failed:
+        logging.warning("%d fires could not get weather")
+    # if stop_on_any_failure and 0 < wx_failed:
+    #     logging.fatal("Stopping becase %d fires could not find weather", wx_failed)
+    #     raise RuntimeError("Could not prepare weather for all fires")
     # HACK: weird mess to ensure thread has proper objects to call function
-    for_what = list(zip(dirs_fire, [dir_current] * len(dirs_fire)))
+    for_what = list(zip(dirs_ready, [dir_current] * len(dirs_ready)))
     sim_results = tqdm_pool.pmap(do_run_fire, for_what, desc="Running simulations")
     dates_out = []
     results = {}
     sim_time = 0
+    sim_times = []
+    NUM_TRIES = 5
     for result in sim_results:
-        fire_name = result['fire_name']
-        results[fire_name] = result
-        if result['sim_finished']:
-            sim_time += result['sim_time']
-            dates_out = dates_out + [x for x in result['dates_out']]
+        tries = NUM_TRIES
+        dir_fire = os.path.dirname(result['dir_out'])
+        # try again if failed
+        while (isinstance(result, Exception) or result.get('failed', True)) and tries > 0:
+            logging.warning("Retrying running %s", dir_fire)
+            result = do_run_fire([dir_fire, dir_current])
+            tries -= 1
+        if (isinstance(result, Exception) or result.get('failed', True)):
+            logging.warning("Could not run fire %s", dir_fire)
+        else:
+            fire_name = result['fire_name']
+            results[fire_name] = result
+            if result['sim_finished']:
+                sim_time += result['sim_time']
+                sim_times.append(result['sim_time'])
+                dates_out = dates_out + [x for x in result['dates_out']]
     logging.info("Done")
     t1 = timeit.default_timer()
     totaltime = (t1 - t0)
     logging.info("Took %ds to run fires", totaltime)
     logging.info("Successful simulations used %ds", sim_time)
+    logging.info("Shortest simulation took %ds, longest too %ds",
+                 min(sim_times), max(sim_times))
     return dir_out, dir_current, results, dates_out, totaltime
 
 

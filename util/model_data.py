@@ -1,4 +1,5 @@
 from common import *
+import logging
 import io
 import urllib
 import pandas as pd
@@ -9,11 +10,13 @@ import json
 import numpy as np
 import geopandas as gpd
 
-
 # WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0'
 # WFS_ROOT = 'http://s-edm-sahal:8080/geoserver/ows?service=wfs&version=2.0.0'
 WFS_ROOT = 'http://s-edm-sahal.nrn.nrcan.gc.ca:8080/geoserver/ows?service=wfs&version=2.0.0'
+WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
 EPSG = 3978
+# DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
+DEFAULT_STATUS_KEEP = ["OC"]
 
 # def query_geoserver(table_name, f_out, features=None,filter=None):
 #     while True:
@@ -38,17 +41,18 @@ EPSG = 3978
 #             time.sleep(t)
 
 
-def query_geoserver(table_name, f_out, features=None, filter=None):
+def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT):
     logging.debug(f'Getting table {table_name} in projection {str(EPSG)}')
     #https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typenames=fireops:cwfis_allstn2022&outputFormat=application/json
     # request_url = f'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typename={table_name}&outputFormat=application/json&srsName=EPSG:{str(EPSG)}'
-    request_url = f'{WFS_ROOT}&request=GetFeature&typename={table_name}&outputFormat=application/json'
+    request_url = f'{wfs_root}&request=GetFeature&typename={table_name}&outputFormat=application/json'
     if features is not None:
         request_url += f'&propertyName={features}'
     if filter is not None:
         # request_url += f'&CQL_FILTER={filter}'
         request_url += f'&CQL_FILTER={urllib.parse.quote(filter)}'
     logging.debug(request_url)
+    print(request_url)
     return try_save(lambda _: save_http(_,
                                         save_as=f_out,
                                         check_modified=False,
@@ -123,6 +127,36 @@ def get_fires_m3(dir_out):
     # return gdf, fires_shp
 
 
+# def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
+def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+    f_out = f'{dir_out}/dip_current.json'
+    # table_name = "ciffc:wildfire_current"
+    table_name = "public:activefires_current"
+    # features = "*"
+    features = None
+    filter = None
+    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
+    f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
+    gdf = gpd.read_file(f_json)
+    return gdf, f_json
+
+
+def get_fires_ciffc(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+    table_name = "ciffc:ytd_fires"
+    f_out = f'{dir_out}/ciffc_current.json'
+    # features = "*"
+    features = None
+    filter = None
+    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
+    f_json = query_geoserver(table_name, f_out, features=features, filter=filter, wfs_root=WFS_CIFFC)
+    gdf = gpd.read_file(f_json)
+    return gdf, f_json
+
+
 def get_wx_cwfis(dir_out, dates):
     layer = 'public:firewx_stns_current'
     # layer = 'public:firewx_stns_{:04d}'
@@ -136,7 +170,7 @@ def get_wx_cwfis(dir_out, dates):
         file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
         if not os.path.exists(file_out):
             save_http(url, file_out)
-        print("Reading {}".format(file_out))
+        logging.debug("Reading {}".format(file_out))
         df_day = pd.read_csv(file_out)
         df = pd.concat([df, df_day])
     df = df[['wmo', 'lat', 'lon', 'prov', 'rep_date', 'temp', 'rh', 'ws', 'precip', 'ffmc', 'dmc', 'dc', 'isi', 'bui', 'fwi']]
@@ -188,11 +222,21 @@ def get_wx_spotwx(lat, long):
 
 def get_wx_ensembles(lat, long):
     SPOTWX_KEY =  get_spotwx_key()
-    url = f'http://spotwx.io/api.php?key={SPOTWX_KEY}&model=geps&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
-    # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model=geps&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
-    def get_ensemble_data(url):
-        response = requests.get(url, verify=False)
-        content = str(response.content, encoding='utf-8')
+    model = "geps"
+    url = f'http://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    content = None
+    try:
+        content = try_save(get_http, url)
+        content = str(content, encoding='utf-8')
+    except KeyboardInterrupt as e:
+        raise e
+    except Exception as e:
+        # so retried but never got content, so url is not reachable at all
+        logging.fatal("Could not get wx from %s", url)
+        raise e
+    # have content, but now we need to see if we can parse it
+    try:
         df_initial = pd.read_csv(io.StringIO(content))
         index = ['MODEL', 'LAT', 'LON', 'ISSUEDATE', 'UTC_OFFSET', 'DATETIME']
         all_cols =  np.unique([x[:x.index('_')] for x in df_initial.columns if '_' in x])
@@ -226,8 +270,12 @@ def get_wx_ensembles(lat, long):
         df = df[index_final + ['datetime', 'temp', 'rh', 'wd', 'ws', 'precip']]
         df = df.set_index(index_final)
         return df
-    # wrap entire parse function, so if http works but doesn't return valid data we try again
-    return try_save(get_ensemble_data, url)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception:
+        # so we couldn't parse the content, but we have something
+        # logging.fatal("Could not parse content for %s", url)
+        raise ParseError(content)
 
 
 def wx_interpolate(df):

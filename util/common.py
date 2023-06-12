@@ -26,6 +26,8 @@ import zipfile
 import requests
 import zipfile
 from tqdm import tqdm
+import sys
+import traceback
 
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -259,7 +261,7 @@ def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
     return save_as
 
 
-def try_save(fct, url, max_save_retries=5):
+def try_save(fct, url, max_save_retries=5, check_code=True):
     """!
     Use callback fct to try saving up to a fixed number of retries
     @param fct Function to apply to url
@@ -273,12 +275,13 @@ def try_save(fct, url, max_save_retries=5):
             return fct(url)
         except ConnectionError as ex:
             logging.warning(ex)
-            # no point in retrying if URL doesn't exist
-            if 403 == ex.errno:
-                logging.error(ex.reason)
-                raise ex
-            if 404 == ex.errno or save_tries >= max_save_retries:
-                raise ex
+            if check_code:
+                # no point in retrying if URL doesn't exist
+                if 403 == ex.errno:
+                    logging.error(ex.reason)
+                    raise ex
+                if 404 == ex.errno or save_tries >= max_save_retries:
+                    raise ex
             logging.warning("Retrying save for {}".format(url))
             save_tries += 1
 
@@ -551,3 +554,11 @@ def zip_folder(zip_name, path):
             f_relative = f.replace(path, '').lstrip('/')
             zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name
+
+
+# so we can throw an exception and include the content that didn't parse plus
+# the exception that happened
+class ParseError(Exception):
+    def __init__(self, *args):
+        super().__init__(args)
+        self.trace = traceback.format_exception(*sys.exc_info())
