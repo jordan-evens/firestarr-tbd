@@ -1,5 +1,7 @@
 """Shared code"""
 
+from log import *
+
 import math
 import urllib.request as urllib2
 import urllib.error
@@ -13,7 +15,6 @@ import io
 import subprocess
 import shlex
 import pandas as pd
-import logging
 import configparser
 import re
 import numpy as np
@@ -49,9 +50,6 @@ SETTINGS_FILE = r'../settings.ini'
 ## loaded configuration
 CONFIG = None
 
-## @cond Doxygen_Suppress
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-## @endcond
 
 def ensure_dir(dir):
     """!

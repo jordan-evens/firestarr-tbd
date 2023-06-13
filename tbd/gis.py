@@ -311,7 +311,7 @@ def find_raster_meridians(year):
         logging.error("Error: missing rasters in directory {}".format(raster_root))
     return result
 
-def find_best_raster(lon, year):
+def find_best_raster(lon, year, only_int_zones=False):
     """!
     Find the raster with the closest meridian
     @param lon Longitude to look for closest raster for
@@ -322,8 +322,9 @@ def find_best_raster(lon, year):
     best = 9999
     m = find_raster_meridians(year)
     for i in m.keys():
-        if (abs(best - lon) > abs(i - lon)):
-            best = i
+        if not only_int_zones or not m[i].endswith('_5.tif'):
+            if (abs(best - lon) > abs(i - lon)):
+                best = i
     return m[best]
 
 def rasterize_perim(run_output, perim, year, name, raster=None):

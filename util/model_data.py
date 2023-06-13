@@ -10,13 +10,29 @@ import json
 import numpy as np
 import geopandas as gpd
 
+from osgeo import gdal
+
+# none of this works, so maybe it's another package that's causing issues?
+gdal.UseExceptions()
+gdal.SetConfigOption('CPL_LOG', '/dev/null')
+gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+gdal.SetErrorHandler('CPLLoggingErrorHandler')
+# # gdal.PushErrorHandler('CPLLoggingErrorHandler')
+# gdal.SetConfigOption('CPL_LOG', '/dev/null')
+# gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+# # # HACK: seems to pick up on logging level and set debug output otherwise
+# # logging.getLogger('gdal').setLevel(logging.getLogger().handlers[0].level)
+# # # # HACK: seems to pick up on logging level and set debug output otherwise
+# # # gdal.ConfigurePythonLogging(enable_debug=False)
+
+
 # WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0'
 # WFS_ROOT = 'http://s-edm-sahal:8080/geoserver/ows?service=wfs&version=2.0.0'
 WFS_ROOT = 'http://s-edm-sahal.nrn.nrcan.gc.ca:8080/geoserver/ows?service=wfs&version=2.0.0'
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
 EPSG = 3978
-# DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
-DEFAULT_STATUS_KEEP = ["OC"]
+DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
+# DEFAULT_STATUS_KEEP = ["OC"]
 
 # def query_geoserver(table_name, f_out, features=None,filter=None):
 #     while True:
@@ -127,30 +143,33 @@ def get_fires_m3(dir_out):
     # return gdf, fires_shp
 
 
-# def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
-def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+# def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     f_out = f'{dir_out}/dip_current.json'
     # table_name = "ciffc:wildfire_current"
     table_name = "public:activefires_current"
     # features = "*"
     features = None
-    filter = None
-    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
-    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = None
+    if status_ignore is None:
+        status_ignore = []
+    filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
     # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)
     return gdf, f_json
 
 
-def get_fires_ciffc(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+# def get_fires_ciffc(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     table_name = "ciffc:ytd_fires"
     f_out = f'{dir_out}/ciffc_current.json'
     # features = "*"
     features = None
-    filter = None
-    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
-    # filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = None
+    if status_ignore is None:
+        status_ignore = []
+    filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
     # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter, wfs_root=WFS_CIFFC)
     gdf = gpd.read_file(f_json)

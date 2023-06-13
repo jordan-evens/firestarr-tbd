@@ -1,15 +1,27 @@
-# import libraries
+import os
+import sys
+import logging
+
+# DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
+DEFAULT_FILE_LOG_LEVEL = logging.INFO
+
+sys.path.append("../util")
+from log import *
+DIR_LOG = "./logs"
+os.makedirs(DIR_LOG, exist_ok=True)
+LOG_MAIN = add_log_rotating(os.path.join(DIR_LOG, "firestarr.log"),
+                            level = DEFAULT_FILE_LOG_LEVEL)
+
+
 import urllib.request as urllib2
 from bs4 import BeautifulSoup
 import pandas as pd
-import os
 import datetime
-import sys
 
-sys.path.append("../util")
 import common
 from common import ensure_dir
 import model_data
+import gis
 import tbd
 import timeit
 import logging
@@ -52,6 +64,9 @@ CRS = 4269
 PLACEHOLDER_TITLE = "__TITLE__"
 FILE_HTML = '/appl/data/output/firestarr.html'
 WANT_DATES = [1, 2, 3, 7, 14]
+KM_TO_M = 1000
+# HACK: FIX: assume everything is this year
+YEAR = datetime.date.today().year
 
 
 def getPage(url):
@@ -62,7 +77,7 @@ def getPage(url):
     return BeautifulSoup(page, "html.parser")
 
 
-def merge_dir(dir_in, run_id, force=False, do_tile=True):
+def merge_dir(dir_in, run_id, force=False, do_tile=False):
     logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
     import importlib
@@ -173,7 +188,8 @@ def merge_dir(dir_in, run_id, force=False, do_tile=True):
     return dir_out
 
 
-def merge_dirs(dir_input, dates=None, do_tile=True):
+def merge_dirs(dir_input, dates=None, do_tile=False):
+    # NOTE: do_tile takes hours if run for the entire country with all polygons
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
     run_id = os.path.basename(dir_input)
@@ -218,11 +234,274 @@ def merge_dirs(dir_input, dates=None, do_tile=True):
     # shutil.copytree(result, dir_out)
 
 
-def get_fires_m3(dir_out):
-    df_fires, fires_json = model_data.get_fires_m3(dir_out)
-    df_fires['guess_id'] = df_fires['guess_id'].replace(np.nan, None)
-    df_fires['fire_name'] = df_fires.apply(lambda x: (x['guess_id'] or x['id']).replace(' ', '_'), axis=1)
+# def fix_name(name):
+#     if isinstance(name, str) or not (name is None or np.isnan(name)):
+#         return str(name).replace('-', '_')
+#     return ''
+
+
+# def get_fires_m3(dir_out):
+#     df_m3, m3_json = model_data.get_fires_m3(dir_out)
+#     df_m3['guess_id'] = df_m3['guess_id'].apply(fix_name)
+#     # df_m3['guess_id'] = df_m3['guess_id'].replace(np.nan, None)
+#     df_m3['fire_name'] = df_m3.apply(lambda x: fix_name(x['guess_id'] or x['id']), axis=1)
+#     # df_m3['guess_id'] = df_m3['guess_id'].fillna('')
+#     # df_m3['guess_id'] = df_m3['guess_id'].astype(str)
+#     # df_dip, dip_json = model_data.get_fires_dip(dir_out, status_ignore=None)
+#     df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
+#     df_ciffc['fire_name'] = df_ciffc['field_agency_fire_id'].apply(fix_name)
+#     del df_ciffc['id']
+#     df_join = pd.merge(df_m3, df_ciffc, left_on="fire_name", right_on="fire_name")
+#     # HACK: doing "x in df_m3.fire_name" isn't working, but == does
+#     no_join = [x for x in df_m3.guess_id if not np.any(df_join.guess_id.str.contains(str(x), regex=False))]
+#     # HACK: dumb comparison for now
+#     def find_index(x):
+#         m = df_ciffc.fire_name.str.contains(x)
+#         if np.any(m):
+#             return df_ciffc[m].index
+#         return None
+#     idx_maybe_join = [int(idx[0]) for idx in [find_index(x) for x in no_join] if idx is not None]
+#     maybe_join = df_ciffc.iloc[idx_maybe_join][:]
+#     # HACK: FIX: assume everything is this year
+#     year = datetime.date.today().year
+#     maybe_join['fire_name'] = maybe_join['fire_name'].apply(lambda x: x[5:] if x.startswith(f'{year}_') else x)
+#     df_join_maybe = pd.merge(df_m3, maybe_join, left_on="fire_name", right_on="fire_name")
+#     df_matched = pd.concat([df_join, df_join_maybe])
+#     id_matched = df_matched.id
+#     id_m3 = df_m3.id
+#     id_diff = list(set(id_m3) - set(id_matched))
+#     df_matched = df_matched.set_index(['id'])
+#     df_unmatched = df_m3.set_index(['id']).loc[id_diff]
+#     n_idx = len(list(df_unmatched.index) + list(df_matched.index))
+#     n_idx_set = len(set(df_unmatched.index).union(set(df_matched.index)))
+#     n_idx_orig = len(df_m3)
+#     if (n_idx != n_idx_set or n_idx != n_idx_orig):
+#         logging.error("Somehow lost or gained fires when trying to match m3 to ciffc")
+#         logging.error("Excpected %d fires after match, but had %d total and %d unique",
+#                       n_idx_orig, n_idx, n_idx_set)
+#         raise RuntimeError("Matching M3 polygons failed")
+#     df_OC = df_matched[df_matched.field_stage_of_control_status == "OC"]
+
+#     # # no_join = [x for x in df_m3.guess_id if x not in df_join.guess_id]
+#     # # # df_dip_proj = df_dip.to_crs(df_m3.crs)
+#     # # # df_within = df_dip_proj.sjoin(df_m3, how="left", predicate="within")
+#     # # # # FIX: ideally want to group nearby fires so they can interact in sims
+#     # # # m3_no_match =  [x for x in df_m3.fire_name if x not in df_within.fire_name]
+#     # # # name_no_match = [x for x in df_m3.fire_name if x not in df_dip.firename]
+#     # # # df_both = df_dip_proj.sjoin_nearest(df_m3, max_distance=0.1)
+#     # # # if there's a detection then the fire is active even if they say it's no OC?
+#     # df_no_guess = df_m3[df_m3['guess_id'] == '']
+#     # df_join = pd.merge(df_m3, df_dip, left_on="guess_id", right_on="firename")
+#     # df_OC = df_join[df_join.stage_of_control == "OC"]
+#     # del df_OC['geometry_y']
+#     # df_OC = df_OC.rename(columns={"geometry_x": "geometry"})
+#     # df_OC.set_geometry(df_OC["geometry"])
+#     # return df_OC
+#     # # # so group polygons and points into clusters and run that way so sims interact for nearby fires
+#     # # return df_m3
+
+
+
+
+def get_fires_active(dir_out):
+    str_year = str(YEAR)
+    def fix_name(name):
+        if isinstance(name, str) or not (name is None or np.isnan(name)):
+            s = str(name).replace('-', '_')
+            if s.startswith(str_year):
+                s = s[len(str_year):]
+            s = s.strip('_')
+            return s
+        return ''
+    df_m3, m3_json = model_data.get_fires_m3(dir_out)
+    df_m3['guess_id'] = df_m3['guess_id'].apply(fix_name)
+    df_m3['fire_name'] = df_m3.apply(lambda x: fix_name(x['guess_id'] or x['id']), axis=1)
+    df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
+    df_ciffc['fire_name'] = df_ciffc['field_agency_fire_id'].apply(fix_name)
+    df_ciffc_non_geo = df_ciffc.loc[:]
+    del df_ciffc_non_geo['id']
+    del df_ciffc_non_geo['geometry']
+    df_matched = pd.merge(df_m3, df_ciffc_non_geo, left_on="fire_name", right_on="fire_name")
+    # fires that were matched but don't join with ciffc
+    missing = [x for x in list(set(np.unique(df_m3.guess_id)) - set(df_matched.fire_name)) if x]
+    logging.error("M3 guessed polygons for %d fires that aren't listed on ciffc: %s",
+                  len(missing), str(missing))
+    # Only want to run OC matched polygons, and everything else plus ciffc points
+    id_matched = df_matched.id
+    id_m3 = df_m3.id
+    id_diff = list(set(id_m3) - set(id_matched))
+    df_matched = df_matched.set_index(['id'])
+    df_unmatched = df_m3.set_index(['id']).loc[id_diff]
+    logging.info('M3 has %d polygons that are not tied to a fire', len(df_unmatched))
+    df_OC = df_matched[df_matched.field_stage_of_control_status == "OC"]
+    logging.info("M3 has %d polygons that are tied to OC fires", len(df_OC))
+    df_poly_m3 = pd.concat([df_OC, df_unmatched])
+    logging.info("Using %d polygons as inputs", len(df_poly_m3))
+    # now find any OC fires that weren't matched to a polygon
+    diff_ciffc = list((set(df_ciffc.fire_name) - set(df_matched.fire_name)))
+    df_ciffc_pts = df_ciffc.set_index(['fire_name']).loc[diff_ciffc]
+    df_ciffc_OC = df_ciffc_pts[df_ciffc_pts.field_stage_of_control_status == 'OC']
+    logging.info("Found %d OC fires that aren't matched with polygons", len(df_ciffc_OC))
+    df_poly = df_poly_m3.reset_index()[['fire_name', 'geometry']]
+    df_pts = df_ciffc_OC.reset_index()[['fire_name', 'geometry']].to_crs(df_poly.crs)
+    df_fires = pd.concat([df_pts, df_poly])
     return df_fires
+
+
+def separate_points(f):
+    pts = [x for x in f if x.geom_type == 'Point']
+    polys = [x for x in f if x.geom_type != 'Point']
+    return pts, polys
+
+
+def group_fires(df_fires, group_distance_km=10):
+    group_distance = group_distance_km * KM_TO_M
+    crs = df_fires.crs
+    def to_gdf(d):
+        return gpd.GeoDataFrame(geometry=d, crs=crs)
+    groups = to_gdf(df_fires['geometry'])
+    pts, polys = separate_points(groups.geometry)
+    df_polys = to_gdf(polys)
+    # we can check if any points are within polygons, and throw out any that are
+    pts_keep = [p for p in pts if not np.any(df_polys.contains(p))]
+    # p_check = [to_gdf([x]) for x in (pts_keep + polys)]
+    p_check = to_gdf(pts_keep + polys)
+    p = p_check.iloc[:1]
+    p_check = p_check.iloc[1:]
+    # just check polygon proximity to start
+    # logging.info("Grouping polygons")
+    with tqdm(desc="Grouping fires", total=len(p_check), leave=False) as tq:
+        p_done = []
+        while 0 < len(p_check):
+            compare_to = to_gdf(p_check.geometry)
+            # distances should be in meters
+            compare_to['dist'] = compare_to.apply(lambda x: min(x['geometry'].distance(y) for y in p.geometry), axis=1)
+            p_nearby = compare_to[compare_to.dist <= group_distance]
+            if 0 < len(p_nearby):
+                group = list(p.geometry) + list(p_nearby.geometry)
+                g_pts, g_polys = separate_points(group)
+                g_dissolve = list(to_gdf(g_polys).dissolve().geometry)
+                p = to_gdf(g_pts + g_dissolve)
+                # need to check whatever was far away
+                p_check = compare_to[compare_to.dist > group_distance][['geometry']]
+                tq.update(len(group))
+            else:
+                tq.update(1)
+                # nothing close to this, so done with it
+                p_done.append(p)
+                p = p_check.iloc[:1]
+                p_check = p_check.iloc[1:]
+    merged = [p] + p_done
+    # NOTE: year should not be relevant, because we just care about the projection, not the data
+    zone_rasters = gis.find_raster_meridians(YEAR)
+    zone_rasters = {k: v for k, v in zone_rasters.items() if not v.endswith('_5.tif')}
+    def find_best_zone_raster(lon):
+        best = 9999
+        for i in zone_rasters.keys():
+            if (abs(best - lon) > abs(i - lon)):
+                best = i
+        return zone_rasters[best]
+    for i in tqdm(range(len(merged)), desc="Naming groups", leave=False):
+        df_group = merged[i]
+        # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
+        df_dissolve = df_group.dissolve()
+        centroid = df_dissolve.centroid.to_crs(CRS).iloc[0]
+        df_group['lon'] = centroid.x
+        df_group['lat'] = centroid.y
+        # # df_fires = df_fires.to_crs(CRS)
+        # df_fires = df_fires.sort_values(['area_calc'])
+        # HACK: name based on UTM coordinates
+        r = find_best_zone_raster(centroid.x)
+        zone_wkt = gis.GetSpatialReference(r).ExportToWkt()
+        zone = int(os.path.basename(r).split('_')[1])
+        # HACK: just use gpd since it's easier
+        centroid_utm = gpd.GeoDataFrame(geometry=[centroid], crs=CRS).to_crs(zone_wkt).iloc[0].geometry
+        # this is too hard to follow
+        # df_group['fire_name'] = f"{zone}N_{int(centroid_utm.x)}_{int(centroid_utm.y)}"
+        BM_MULT = 10000
+        easting = int((centroid_utm.x) // BM_MULT)
+        northing = int((centroid_utm.y) // BM_MULT)
+        basemap = easting * 1000 + northing
+        # df_group['utm_zone'] = zone
+        # df_group['basemap'] = int(f"{easting:02d}{northing:03d}")
+        n_or_s = 'N' if centroid.y >= 0 else 'S'
+        df_group['fire_name'] = f"{zone}{n_or_s}_{basemap}"
+        # it should be impossible for 2 groups to be in the same basemap, because they are 10km?
+        merged[i] = df_group
+    results = pd.concat(merged)
+    logging.info("Created %d groups", len(results))
+    return results
+
+
+# def group_fires(df_fires, group_distance_km=10):
+#     group_distance = group_distance_km * KM_TO_M
+#     crs = df_fires.crs
+#     groups = gpd.GeoDataFrame(geometry=df_fires['geometry'], crs=crs)
+#     pts = [x for x in groups.geometry if x.geom_type == 'Point']
+#     polys = [x for x in groups.geometry if x.geom_type != 'Point']
+#     df_polys = gpd.GeoDataFrame(geometry=polys, crs=crs)
+#     # we can check if any points are within polygons, and throw out any that are
+#     pts_keep = [p for p in pts if not np.any(df_polys.contains(p))]
+#     # just check polygon proximity to start
+#     # logging.info("Grouping polygons")
+#     with tqdm(desc="Grouping polygons", total=len(polys), leave=False) as tq:
+#         p_done = []
+#         while 1 < len(polys):
+#             p = polys.pop(0)
+#             compare_to = gpd.GeoDataFrame(geometry=polys, crs=crs)
+#             # distances should be in meters
+#             compare_to['dist'] = compare_to.geometry.distance(p)
+#             p_nearby = compare_to[compare_to.dist <= group_distance]
+#             if 0 < len(p_nearby):
+#                 p_far = compare_to[compare_to.dist > group_distance]
+#                 group = [p] + list(p_nearby.geometry)
+#                 tq.update(len(group))
+#                 # should be able to dissolve all polygons, but need to keep distinct points
+#                 # so do points later
+#                 p = gpd.GeoDataFrame(geometry=group, crs=crs).dissolve().geometry[0]
+#                 polys = [p] + list(p_far.geometry)
+#             else:
+#                 tq.update(1)
+#                 # nothing close to this, so done with it
+#                 p_done.append(p)
+#     # polys should just be 1 thing if we had any polygons
+#     df_polys = gpd.GeoDataFrame(geometry=p_done, crs=crs)
+#     df_pts = gpd.GeoDataFrame(geometry=pts_keep, crs=crs)
+#     df_closest = df_pts.sjoin_nearest(df_polys, how="left", max_distance=group_distance)
+#     results = []
+#     for i in range(len(df_polys)):
+#         p = df_polys.iloc[i].geometry
+#         pts = df_closest[df_closest.index_right == i]
+#         group = [p] + list(pts.geometry)
+#         results.append(gpd.GeoDataFrame(geometry=group, crs=crs))
+#     df_remaining = df_closest[np.isnan(df_closest.index_right)]
+#     results.extend([gpd.GeoDataFrame(geometry=[df_remaining.iloc[i].geometry], crs=crs) for i in range(len(df_remaining))])
+#     for i in range(len(results)):
+#         df_group = results[i]
+#         # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
+#         df_dissolve = df_group.dissolve()
+#         centroid = df_dissolve.centroid.to_crs(CRS).iloc[0]
+#         df_group['lon'] = centroid.x
+#         df_group['lat'] = centroid.y
+#         df_group['area_calc'] = df_group.area
+#         # # df_fires = df_fires.to_crs(CRS)
+#         # df_fires = df_fires.sort_values(['area_calc'])
+#         # HACK: name based on UTM coordinates
+#         r = gis.find_best_raster(centroid.x, YEAR)
+#         zone = gis.GetSpatialReference(r).ExportToWkt()
+#         zone_string = '_'.join(os.path.basename(r).split('_')[1:]).split('.')[0]
+#         # HACK: just use gpd since it's easier
+#         centroid_utm = gpd.GeoDataFrame(geometry=[centroid], crs=CRS).to_crs(zone).iloc[0].geometry
+#         df_group['fire_name'] = f"{zone_string}N_{int(centroid_utm.x)}_{int(centroid_utm.y)}"
+#         df_group['utm_zone'] = float(zone_string)
+#         BM_MULT = 10000
+#         easting = int((centroid_utm.x) // BM_MULT)
+#         northing = int((centroid_utm.y) // BM_MULT)
+#         df_group['basemap'] = int(f"{easting:02d}{northing:03d}")
+#         # it should be impossible for 2 groups to be in the same basemap, because they are 10km?
+#         results[i] = df_group
+#     results = pd.concat(results)
+#     return results
 
 
 def get_fires_folder(dir_fires, crs='EPSG:3347'):
@@ -240,17 +519,11 @@ def get_fires_folder(dir_fires, crs='EPSG:3347'):
 # def prepare_run_fire(dir_out, run_start, tf, df_fire, df_wx, max_days=None):
 # def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current, max_days=None):
 def make_run_fire(dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days=None):
-    if 1 != len(df_fire):
-        raise RuntimeError("Expected exactly one row for run_fire()")
-    next_fire = df_fire.iloc[0]
-    # print(next_fire)
-    # we can use this directly because it's a projected coordinate
-    # pt_centroid = df_fire.centroid.iloc[0]
-    fire_name = next_fire['fire_name']
+    if 1 != len(np.unique(df_fire['fire_name'])):
+        raise RuntimeError("Expected exactly one fire_name run_fire()")
+    fire_name, lat, lon = df_fire[['fire_name', 'lat', 'lon']].iloc[0]
     dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
     logging.debug('Saving %s to %s', fire_name, dir_fire)
-    lat = next_fire['lat']
-    lon = next_fire['lon']
     file_fire = os.path.join(dir_fire, '{}_NAD1983.geojson'.format(fire_name))
     df_fire.to_file(file_fire)
     data = {
@@ -419,20 +692,29 @@ def check_failure(dir_fire, result, stop_on_any_failure):
     return 0
 
 
+def do_prep_and_run_fire(for_what):
+    dir_fire, dir_current = for_what
+    dir_ready = do_prep_fire(dir_fire)
+    return do_run_fire((dir_ready, dir_current))
+
+
 # dir_fires = "/home/bfdata/affes/latest"
 def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     t0 = timeit.default_timer()
     DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
+    run_prefix = 'm3' if dir_fires is None else dir_fires.replace('\\', '/').strip('/').replace('/', '_')
+    run_id = run_start.strftime("%Y%m%d%H%M")
+    run_name = f"{run_prefix}_{run_id}"
+    dir_out = ensure_dir(os.path.join(DIR_ROOT, run_name))
+    log_run = add_log_file(os.path.join(dir_out, "firestarr.txt"),
+                           level=DEFAULT_FILE_LOG_LEVEL)
+    logging.debug("Starting run for %s", dir_out)
     today = run_start.date()
     yesterday = today - datetime.timedelta(days=1)
     # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
     crs = 'EPSG:3347'
     proj = pyproj.CRS(crs)
-    run_prefix = 'm3' if dir_fires is None else dir_fires.replace('\\', '/').strip('/').replace('/', '_')
-    run_id = run_start.strftime("%Y%m%d%H%M")
-    run_name = f"{run_prefix}_{run_id}"
-    dir_out = ensure_dir(os.path.join(DIR_ROOT, run_name))
     # keep a copy of the settings for reference
     shutil.copy('/appl/tbd/settings.ini', os.path.join(dir_out, "settings.ini"))
     # "current" results folder to update based on new run data
@@ -440,17 +722,18 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
     dir_current = os.path.join(dir_current, run_id)
     if dir_fires is None:
-        df_fires = get_fires_m3(dir_out)
+        df_fires_active = get_fires_active(dir_out)
+        df_fires_groups = group_fires(df_fires_active)
+        df_fires = df_fires_groups
     else:
         df_fires = get_fires_folder(dir_fires, crs)
-    df_fires = df_fires.to_crs(crs)
-    # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
-    centroids = df_fires.centroid.to_crs(CRS)
-    df_fires['lon'] = centroids.x
-    df_fires['lat'] = centroids.y
-    df_fires['area_calc'] = df_fires.area
-    # df_fires = df_fires.to_crs(CRS)
-    df_fires = df_fires.sort_values(['area_calc'])
+        df_fires = df_fires.to_crs(crs)
+        # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
+        centroids = df_fires.centroid.to_crs(CRS)
+        df_fires['lon'] = centroids.x
+        df_fires['lat'] = centroids.y
+        # df_fires = df_fires.to_crs(CRS)
+    fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
     df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
     # we only want stations that have indices
     for index in ['ffmc', 'dmc', 'dc']:
@@ -458,12 +741,15 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
     df_wx = df_wx_cwfis_wgs
     # cut out the row as a DataFrame still so we can use crs and centroid
-    df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
+    # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     dirs_fire = []
-    wx_failed = 0
-    for df_fire in tqdm(df_by_fire, desc='Separating fires', leave=False):
-        fire_name = df_fire.iloc[0]['fire_name']
-        pt_centroid = df_fire.centroid.iloc[0]
+    # wx_failed = 0
+    # for df_fire in tqdm(df_by_fire, desc='Separating fires', leave=False):
+    for fire_name in tqdm(fire_areas.index, desc='Separating fires', leave=False):
+        # fire_name = df_fire.iloc[0]['fire_name']
+        df_fire = df_fires[df_fires['fire_name'] == fire_name]
+        # NOTE: lat/lon are for centroid of group, not individual geometry
+        pt_centroid = df_fire.dissolve().centroid.iloc[0]
         dists = df_wx.distance(pt_centroid)
         # figure out startup indices yesterday
         df_wx_actual = df_wx[dists == min(dists)]
@@ -473,19 +759,22 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
         dirs_fire.append(dir_fire)
     # small limit due to amount of disk access
     # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
-    dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
-    for i in range(len(dirs_fire)):
-        result = dirs_ready[i]
-        dir_fire = dirs_fire[i]
-        wx_failed += check_failure(dir_fire, result, stop_on_any_failure)
-    if 0 < wx_failed:
-        logging.warning("%d fires could not get weather")
-    # if stop_on_any_failure and 0 < wx_failed:
-    #     logging.fatal("Stopping becase %d fires could not find weather", wx_failed)
-    #     raise RuntimeError("Could not prepare weather for all fires")
-    # HACK: weird mess to ensure thread has proper objects to call function
-    for_what = list(zip(dirs_ready, [dir_current] * len(dirs_ready)))
-    sim_results = tqdm_pool.pmap(do_run_fire, for_what, desc="Running simulations")
+    # dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
+    # for i in range(len(dirs_fire)):
+    #     result = dirs_ready[i]
+    #     dir_fire = dirs_fire[i]
+    #     wx_failed += check_failure(dir_fire, result, stop_on_any_failure)
+    # if 0 < wx_failed:
+    #     logging.warning("%d fires could not get weather")
+    # # if stop_on_any_failure and 0 < wx_failed:
+    # #     logging.fatal("Stopping becase %d fires could not find weather", wx_failed)
+    # #     raise RuntimeError("Could not prepare weather for all fires")
+    # # HACK: weird mess to ensure thread has proper objects to call function
+    # for_what = list(zip(dirs_ready, [dir_current] * len(dirs_ready)))
+    # sim_results = tqdm_pool.pmap(do_run_fire, for_what, desc="Running simulations")
+    # running into API 180 requests/min limit
+    for_what = list(zip(dirs_fire, [dir_current] * len(dirs_fire)))
+    sim_results = tqdm_pool.pmap(do_prep_and_run_fire, for_what, desc="Running simulations")
     dates_out = []
     results = {}
     sim_time = 0
@@ -515,6 +804,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     logging.info("Successful simulations used %ds", sim_time)
     logging.info("Shortest simulation took %ds, longest too %ds",
                  min(sim_times), max(sim_times))
+    logging.getLogger().removeHandler(log_run)
     return dir_out, dir_current, results, dates_out, totaltime
 
 
@@ -528,7 +818,13 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
 #     merge_dirs(dir_current)
 
 
+def merge_latest(dir_root, do_tile=False):
+    dir_latest = [x for x in os.listdir(dir_root) if os.path.isdir(os.path.join(dir_root, x))][-1]
+    return merge_dirs(os.path.join(dir_root, dir_latest), do_tile=do_tile)
+
+
 if __name__ == "__main__":
+    logging.debug("Called with args %s", str(sys.argv))
     max_days = int(sys.argv[1]) if len(sys.argv) > 1 else None
     dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
     dir_out, dir_current, results, dates_out, totaltime = run_all_fires(dir_fires, max_days)
@@ -540,4 +836,5 @@ if __name__ == "__main__":
                 n, totaltime, totaltime / n
             )
         )
-        merge_dirs(dir_current)
+        merge_dirs(dir_current, do_tile=False)
+    # dir_root = "/appl/data/output/current_m3"
