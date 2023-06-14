@@ -22,6 +22,7 @@ import datetime
 
 import common
 from common import ensure_dir
+import publish
 import model_data
 import gis
 import tbd
@@ -216,13 +217,12 @@ def merge_dirs(dir_input=None, dates=None, do_tile=False):
     # result should now be the results for the most current day
     # dir_out = os.path.join(os.path.dirname(dir_input), "current", os.path.basename(dir_input))
     result = results[-1]
-    if do_tile:
-        logging.info("Final results of merge are in %s", result)
-        dir_zip = os.path.dirname(dir_input)
-        run_id = os.path.basename(dir_input)
-        file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
-        logging.info("Creating archive %s", file_zip)
-        z = common.zip_folder(file_zip, result)
+    logging.info("Final results of merge are in %s", result)
+    dir_zip = os.path.dirname(dir_input)
+    run_id = os.path.basename(dir_input)
+    file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
+    logging.info("Creating archive %s", file_zip)
+    z = common.zip_folder(file_zip, result)
     # # add a '/' so it uses the contents but not the folder
     # args = [
     #     "-c",
@@ -379,6 +379,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     p_check = p_check.iloc[1:]
     # just check polygon proximity to start
     # logging.info("Grouping polygons")
+    # FIX: progress bar didn't work
     with tqdm(desc="Grouping fires", total=len(p_check), leave=False) as tq:
         p_done = []
         while 0 < len(p_check):
@@ -743,7 +744,11 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
         df_fires['lon'] = centroids.x
         df_fires['lat'] = centroids.y
         # df_fires = df_fires.to_crs(CRS)
-    fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
+    # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
+    # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
+    # takes the longest to run?
+    # FIX: consider sorting by startup indices or overall DSR for period instead?
+    fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values(ascending=False)
     df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
     # we only want stations that have indices
     for index in ['ffmc', 'dmc', 'dc']:
@@ -847,4 +852,5 @@ if __name__ == "__main__":
             )
         )
         merge_dirs(dir_current, do_tile=False)
+        publish.publish_folder(dir_current)
     # dir_root = "/appl/data/output/current_m3"

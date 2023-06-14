@@ -11,6 +11,9 @@ import pandas as pd
 import geopandas as gpd
 import shapely
 import shapely.geometry
+import sys
+sys.path.append("../util")
+import server
 
 DIR_ROOT = r"/appl/data/output"
 DIR_TMP_ROOT = os.path.join(DIR_ROOT, "service")
@@ -31,6 +34,7 @@ FACTORS = [2, 4, 8, 16]
 
 
 def symbolize(file_in, file_out):
+    # FIX: figure out if symbolizing right in the map service makes sense or not
     # # write to .ovr instead of into raster
     # with rasterio.Env(TIFF_USE_OVR=True):
     #     # HACK: trying to get .ovr to compress
@@ -75,36 +79,54 @@ def symbolize(file_in, file_out):
     os.remove(file_out_int)
 
 
-# if "__main__" == __name__:
-logging.info("Publishing files")
-dir_input = "current_m3"
-# dir_input = "current_home_bfdata_affes_latest"
-dir_main = os.path.join(DIR_ROOT, dir_input)
-run_id = os.listdir(dir_main)[-1]
-##########################
-# run_id = '202306131555'
-#######################
-dir_base = os.path.join(dir_main, run_id, "combined")
-# find last date in directory
-# redundant to use loop now that output structure is different, but still works
-dir_date = [x for x in os.listdir(dir_base) if os.path.isdir(os.path.join(dir_base, x))][-1]
-dir_in = os.path.join(dir_base, dir_date, "rasters")
-logging.info("Using files in %s", dir_in)
-files_tif = [f for f in os.listdir(dir_in) if REGEX_TIF.match(f)]
-dir_tmp = os.path.join(DIR_TMP_ROOT, dir_date, run_id)
-#############################
-# dir_tmp += '_TEST'
-#############################
-logging.info("Staging in temporary directory %s", dir_tmp)
-if not os.path.exists(dir_tmp):
-    os.makedirs(dir_tmp)
-for file in tqdm(files_tif, desc="Symbolizing files"):
-    logging.info(f"Processing file")
-    file_out = os.path.join(dir_tmp, file)
-    file_in = os.path.join(dir_in, file)
-    # shutil.copy(file_in, file_prob_tif)
-    symbolize(file_in, file_out)
-# HACK: using CopyRaster and CopyFeature fail, but this seems okay
-for file in tqdm(os.listdir(dir_tmp), desc=f"Copying to output directory {DIR_OUT}"):
-    shutil.copy(os.path.join(dir_tmp, file), os.path.join(DIR_OUT, file))
-logging.info("Done")
+def publish_folder(dir_runid):
+    run_id = os.path.basename(dir_runid)
+    dir_base = os.path.join(dir_runid, "combined")
+    # find last date in directory
+    # redundant to use loop now that output structure is different, but still works
+    dir_date = [x for x in os.listdir(dir_base) if os.path.isdir(os.path.join(dir_base, x))][-1]
+    dir_in = os.path.join(dir_base, dir_date, "rasters")
+    logging.info("Using files in %s", dir_in)
+    files_tif = [f for f in os.listdir(dir_in) if REGEX_TIF.match(f)]
+    dir_tmp = os.path.join(DIR_TMP_ROOT, dir_date, run_id)
+    #############################
+    # dir_tmp += '_TEST'
+    #############################
+    logging.info("Staging in temporary directory %s", dir_tmp)
+    if not os.path.exists(dir_tmp):
+        os.makedirs(dir_tmp)
+    for file in tqdm(files_tif, desc="Symbolizing files"):
+        logging.info(f"Processing file")
+        file_out = os.path.join(dir_tmp, file)
+        file_in = os.path.join(dir_in, file)
+        # shutil.copy(file_in, file_prob_tif)
+        symbolize(file_in, file_out)
+    files_tif_service = [f for f in os.listdir(DIR_OUT) if REGEX_TIF.match(f)]
+    if files_tif != files_tif_service:
+        logging.fatal(f"Files to be published do not match files that service is using\n{files_tif} != {files_tif_service}")
+        raise RuntimeError("Files to be published do not match files that service is using")
+    # HACK: copying seems to take a while, so try to do this without stopping before copy
+    # logging.info("Stopping services")
+    # server.stopServices()
+    # HACK: using CopyRaster and CopyFeature fail, but this seems okay
+    for file in tqdm(os.listdir(dir_tmp), desc=f"Copying to output directory {DIR_OUT}"):
+        shutil.copy(os.path.join(dir_tmp, file), os.path.join(DIR_OUT, file))
+    logging.info("Restarting services")
+    server.restartServices()
+    logging.info("Done")
+
+
+def publish_latest(dir_input="current_m3"):
+    logging.info(f"Publishing latest files for {dir_input}")
+    # dir_input = "current_home_bfdata_affes_latest"
+    dir_main = os.path.join(DIR_ROOT, dir_input)
+    run_id = os.listdir(dir_main)[-1]
+    ##########################
+    # run_id = '202306131555'
+    #######################
+    dir_runid = os.path.join(dir_main, run_id)
+    publish_folder(dir_runid)
+
+
+if "__main__" == __name__:
+    publish_latest()

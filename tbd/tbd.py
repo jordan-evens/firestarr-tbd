@@ -65,6 +65,8 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                 year = start_time.year
                 reference = gis.find_best_raster(lon, year)
                 raster = os.path.join(dir_out, "{}.tif".format(fire_name))
+                # FIX: if we never use points then the sims don't guarantee
+                # running from non-fuel for the points like normally
                 perim = gis.Rasterize(perim, raster, reference)
             else:
                 gis.save_point_shp(lat, lon, dir_out, fire_name)
