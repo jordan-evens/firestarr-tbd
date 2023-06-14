@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 
+DEFAULT_GROUP_DISTANCE_KM = 20
+
 # DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
@@ -36,10 +38,10 @@ import tqdm_pool
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append("/usr/local/bin")
 import osgeo
-import osgeo.utils
-import osgeo.utils.gdal_merge as gm
-import osgeo.utils.gdal_retile as gr
-import osgeo.utils.gdal_calc as gdal_calc
+import osgeo_utils
+import osgeo_utils.gdal_merge as gm
+import osgeo_utils.gdal_retile as gr
+import osgeo_utils.gdal_calc as gdal_calc
 import itertools
 import json
 import pytz
@@ -52,9 +54,8 @@ import NG_FWI
 import tbd
 from tbd import FILE_SIM
 
-DIR = "/appl/data/fgmj/"
-EXT_DIR = os.path.abspath(os.path.join(DIR, "../extracted/fgmj"))
-ensure_dir(EXT_DIR)
+DIR_DATA = "../data"
+DIR_SIMS = os.path.join(DIR_DATA, "sims")
 CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
 # CRS_NAD83 = 4269
 # CRS_NAD83_CSRS = 4617
@@ -62,7 +63,7 @@ CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
 # CRS = "ESRI:102002"
 CRS = 4269
 PLACEHOLDER_TITLE = "__TITLE__"
-FILE_HTML = '/appl/data/output/firestarr.html'
+FILE_HTML = os.path.join(DIR_DATA, 'output/firestarr.html')
 WANT_DATES = [1, 2, 3, 7, 14]
 KM_TO_M = 1000
 # HACK: FIX: assume everything is this year
@@ -110,7 +111,11 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
                     if x.endswith(".tif")
                 ]
     ymd_origin = os.path.basename(dir_in)
-    date_origin = datetime.datetime.strptime(ymd_origin, '%Y%m%d')
+    # HACK: need to worry about local vs UTC time here
+    # date_origin = datetime.datetime.strptime(ymd_origin, '%Y%m%d')
+    dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
+    for_dates = [datetime.datetime.strptime(_, '%Y%m%d') for _ in dirs_what  if 'perim' != _]
+    date_origin = min(for_dates)
     for for_what, files in files_by_for_what.items():
         dir_in_for_what = os.path.basename(for_what)
         if 'perim' == dir_in_for_what:
@@ -188,8 +193,12 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
     return dir_out
 
 
-def merge_dirs(dir_input, dates=None, do_tile=False):
+def merge_dirs(dir_input=None, dates=None, do_tile=False):
     # NOTE: do_tile takes hours if run for the entire country with all polygons
+    if dir_input is None:
+        dir_default = os.path.join(tbd.DIR_OUTPUT, "current_m3")
+        dir_input = os.path.join(dir_default, os.listdir(dir_default)[-1])
+        logging.info("Defaulting to directory %s", dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
     run_id = os.path.basename(dir_input)
@@ -354,7 +363,7 @@ def separate_points(f):
     return pts, polys
 
 
-def group_fires(df_fires, group_distance_km=10):
+def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     group_distance = group_distance_km * KM_TO_M
     crs = df_fires.crs
     def to_gdf(d):
@@ -698,15 +707,14 @@ def do_prep_and_run_fire(for_what):
     return do_run_fire((dir_ready, dir_current))
 
 
-# dir_fires = "/home/bfdata/affes/latest"
+# dir_fires = "/appl/data/affes/latest"
 def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     t0 = timeit.default_timer()
-    DIR_ROOT = "/home/bfdata"
     run_start = datetime.datetime.now()
     run_prefix = 'm3' if dir_fires is None else dir_fires.replace('\\', '/').strip('/').replace('/', '_')
     run_id = run_start.strftime("%Y%m%d%H%M")
     run_name = f"{run_prefix}_{run_id}"
-    dir_out = ensure_dir(os.path.join(DIR_ROOT, run_name))
+    dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
     log_run = add_log_file(os.path.join(dir_out, "firestarr.txt"),
                            level=DEFAULT_FILE_LOG_LEVEL)
     logging.debug("Starting run for %s", dir_out)
@@ -717,6 +725,8 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     proj = pyproj.CRS(crs)
     # keep a copy of the settings for reference
     shutil.copy('/appl/tbd/settings.ini', os.path.join(dir_out, "settings.ini"))
+    # also keep binary instead of trying to track source
+    shutil.copy('/appl/tbd/tbd', os.path.join(dir_out, "tbd"))
     # "current" results folder to update based on new run data
     dir_current = os.path.join(tbd.DIR_OUTPUT, f"current_{run_prefix}")
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
@@ -802,7 +812,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     totaltime = (t1 - t0)
     logging.info("Took %ds to run fires", totaltime)
     logging.info("Successful simulations used %ds", sim_time)
-    logging.info("Shortest simulation took %ds, longest too %ds",
+    logging.info("Shortest simulation took %ds, longest took %ds",
                  min(sim_times), max(sim_times))
     logging.getLogger().removeHandler(log_run)
     return dir_out, dir_current, results, dates_out, totaltime

@@ -12,18 +12,12 @@ import geopandas as gpd
 
 from osgeo import gdal
 
-# none of this works, so maybe it's another package that's causing issues?
+# still getting messages that look like they're from gdal when debug is on, but
+# maybe they're from a package that's using it?
 gdal.UseExceptions()
 gdal.SetConfigOption('CPL_LOG', '/dev/null')
 gdal.SetConfigOption('CPL_DEBUG', 'OFF')
 gdal.SetErrorHandler('CPLLoggingErrorHandler')
-# # gdal.PushErrorHandler('CPLLoggingErrorHandler')
-# gdal.SetConfigOption('CPL_LOG', '/dev/null')
-# gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-# # # HACK: seems to pick up on logging level and set debug output otherwise
-# # logging.getLogger('gdal').setLevel(logging.getLogger().handlers[0].level)
-# # # # HACK: seems to pick up on logging level and set debug output otherwise
-# # # gdal.ConfigurePythonLogging(enable_debug=False)
 
 
 # WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0'
@@ -75,66 +69,16 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
                                         ignore_existing=False),
                     request_url)
 
-# def get_fire():
-#     'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typename=fireops:m3_polygons'
-#     '&outputFormat=application/json&srsName=EPSG:3978&propertyName=&CQL_FILTER=%22maxdate%22%3E=%2720230606%27'
-#     poly_table = 'fireops:m3_polygons'
-#     cql_filter = f'BBOX(geometry, {xmin}, {ymin}, {xmax}, {ymax})'
-#     # cql_filter1 = cql_filter
-#     cql_filter1 = cql_filter + " and maxdate=%sT12:00:00Z" % (bf.maxformdate) # Turn this on to extract the most recent polygon for the AOI.
-#     log_this(self.loghandle, ("Getting patch from " + poly_table + cql_filter1))
-#     pastburn_out = os.path.join(self.curdir, "pastburn.json")
-#     pastburn_table = query_geoserver(bf.poly_table, pastburn_out, filter=cql_filter1)
-#     log_this(self.loghandle, ("Convert " + pastburn_table + " to shapefile "))
-#     pastburn_shpf = getShapeFromGeoJSON(pastburn_table)
-#     log_this(self.loghandle, ("Created " + pastburn_shpf))
-#     pastburn_csv = os.path.join(self.curdir, "patch_poly.csv")
-#     shapeToCSV(pastburn_shpf,pastburn_csv) # Make sure layers match our file names.
-#     log_this(self.loghandle, ("Created " + pastburn_csv))
-#     self.pastburn_shpf = pastburn_shpf
-#     pastburn_count = getFeatureCount(pastburn_shpf)
-
-# seems okay with cwfis if that's working
-# def test():
-#     f_out = '/home/bfdata/test.json'
-#     features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
-#     table_name = 'fireops:m3_polygons'
-#     today = datetime.datetime.now().strftime('%Y%m%d')
-#     yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
-#     filter = f'"maxdate">=\'{today}\''
-#     # filter = urllib.parse.quote(filter)
-#     # cql_filter = f'BBOX(geometry, {xmin}, {ymin}, {xmax}, {ymax})'
-#     # # cql_filter1 = cql_filter
-#     # cql_filter1 = cql_filter + " and maxdate=%sT12:00:00Z" % (bf.maxformdate) # Turn this on to extract the most recent polygon for the AOI.
-#     # pastburn_table = query_geoserver(poly_table, f_out, features=features, filter=cql_filter)
-#     fires = query_geoserver(table_name, f_out, features=features, filter=filter)
-#     return fires
-
-
-# # different layers with sahal
-# def test():
-#     f_out = '/home/bfdata/m3_polygons_current.json'
-#     features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
-#     table_name = 'public:m3_polygons_current'
-#     today = datetime.datetime.now().strftime('%Y%m%d')
-#     yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
-#     filter = f'"maxdate">=\'{today}\''
-#     # filter = urllib.parse.quote(filter)
-#     # cql_filter = f'BBOX(geometry, {xmin}, {ymin}, {xmax}, {ymax})'
-#     # # cql_filter1 = cql_filter
-#     # cql_filter1 = cql_filter + " and maxdate=%sT12:00:00Z" % (bf.maxformdate) # Turn this on to extract the most recent polygon for the AOI.
-#     # pastburn_table = query_geoserver(poly_table, f_out, features=features, filter=cql_filter)
-#     fires = query_geoserver(table_name, f_out, features=features, filter=filter)
-#     return fires
-
 
 def get_fires_m3(dir_out):
     f_out = f'{dir_out}/m3_polygons_current.json'
     features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
     table_name = 'public:m3_polygons_current'
-    today = datetime.datetime.now().strftime('%Y%m%d')
-    yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
-    filter = f'"maxdate">=\'{today}\''
+    # NOTE: no need to filter since current?
+    # today = datetime.datetime.now().strftime('%Y%m%d')
+    # yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
+    # filter = f'"maxdate">=\'{today}\''
+    filter = None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)
     return gdf, f_json

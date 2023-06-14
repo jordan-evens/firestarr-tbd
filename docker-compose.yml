@@ -42,6 +42,9 @@ services:
         source: ./data
         target: /appl/data
       - type: bind
+        source: /mnt/publish
+        target: /appl/publish
+      - type: bind
         source: ./data/generated/grid
         target: /appl/100m/default
       - type: bind
@@ -50,9 +53,6 @@ services:
       - type: bind
         source: ./util
         target: /appl/util
-      - type: bind
-        source: ../bfdata
-        target: /home/bfdata
     restart: on-failure
     cap_add:
         - SYS_PTRACE

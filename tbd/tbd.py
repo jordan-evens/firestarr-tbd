@@ -160,8 +160,3 @@ if __name__ == "__main__":
         logging.info(f"Log file is {log_file}")
     else:
         logging.fatal("Must specify folder to run fire from")
-
-# python tbd.py /home/bfdata/session_20230604_084639_688567/outputs/canada/fires/54967
-# ./tbd "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542" 2023-06-05 48.92 -76.43 10:47 -v --output_date_offsets "{1, 2}" --wx "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/wx.csv" --perim "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/54967 unassigned 2023-Jun-04.tif" -v -v -v
-
-# make && ./tbd "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542" 2023-06-05 48.92 -76.43 10:47 -v --output_date_offsets "{1, 2}" --wx "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/wx.csv" --perim "/appl/data/sims/20230605/canada/54967 unassigned 2023-Jun-04/1542/54967 unassigned 2023-Jun-04.tif" -v -v

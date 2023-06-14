@@ -68,7 +68,7 @@ def ensure_dir(dir):
         sys.exit(-1)
     return dir
 
-DIR_OUT = '/home/bfdata'
+DIR_OUT = '/appl/data/sims'
 DIR_DEFAULT_DOWNLOAD = ensure_dir(f'{DIR_OUT}/download/')
 
 def to_utc(d):

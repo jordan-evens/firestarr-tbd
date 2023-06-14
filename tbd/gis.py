@@ -7,10 +7,12 @@ import logging
 import os
 
 from osgeo import gdal, ogr, osr
+# still getting messages that look like they're from gdal when debug is on, but
+# maybe they're from a package that's using it?
 gdal.UseExceptions()
-gdal.PushErrorHandler('CPLQuietErrorHandler')
 gdal.SetConfigOption('CPL_LOG', '/dev/null')
 gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+gdal.SetErrorHandler('CPLLoggingErrorHandler')
 
 import numpy as np
 import geopandas as gpd
