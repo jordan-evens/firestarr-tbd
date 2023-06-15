@@ -795,9 +795,13 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     sim_time = 0
     sim_times = []
     NUM_TRIES = 5
-    for result in sim_results:
+    for i in range(len(sim_results)):
+        result = sim_results[i]
+        # HACK: should be in the same order as dirs_fire
+        dir_fire = dirs_fire[i]
+        if isinstance(result, Exception):
+            logging.warning(f"Exception running {dir_fire} was {result}")
         tries = NUM_TRIES
-        dir_fire = os.path.dirname(result['dir_out'])
         # try again if failed
         while (isinstance(result, Exception) or result.get('failed', True)) and tries > 0:
             logging.warning("Retrying running %s", dir_fire)
