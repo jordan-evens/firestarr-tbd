@@ -88,20 +88,21 @@ def get_fires_m3(dir_out):
 
 
 # def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
-def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
+def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=datetime.date.today().year):
     f_out = f'{dir_out}/dip_current.json'
-    # seems to be 2018
-    # table_name = "ciffc:wildfire_current"
-    # 2017?
-    # table_name = "ciffc:wildfire_current_active"
-    # seems like it matches ciffc now, but the columns are different
-    table_name = "public:activefires_current"
+    table_name = "public:activefires"
     # features = "*"
     features = None
     # filter = None
     if status_ignore is None:
         status_ignore = []
-    filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
+    filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]
+                          + [
+                              "current=true",
+                              "agency<>'ak'",
+                              "agency<>'conus'",
+                              f"startdate during {year}-01-01T00:00:00Z/P1Y"
+                             ])
     # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)

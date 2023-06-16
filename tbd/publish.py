@@ -80,6 +80,7 @@ def symbolize(file_in, file_out):
 
 
 def publish_folder(dir_runid):
+    logging.info("Publishing %s", dir_runid)
     run_id = os.path.basename(dir_runid)
     dir_base = os.path.join(dir_runid, "combined")
     # find last date in directory
@@ -102,19 +103,30 @@ def publish_folder(dir_runid):
         # shutil.copy(file_in, file_prob_tif)
         symbolize(file_in, file_out)
     files_tif_service = [f for f in os.listdir(DIR_OUT) if REGEX_TIF.match(f)]
-    if ((len(files_tif_service) < len(files_tif))
+    if ((len(files_tif_service) > len(files_tif))
             or (files_tif[:len(files_tif_service)] != files_tif_service)):
-        logging.fatal(f"Files to be published do not match files that service is using\n{files_tif} != {files_tif_service}")
+        logging.fatal(f"Files to be published do not match files that service is using:\n%s != %s",
+                      str(files_tif), str(files_tif_service))
         raise RuntimeError("Files to be published do not match files that service is using")
     if len(files_tif_service) != len(files_tif):
-        logging.warning("Copying files to publish directory, but service will need to be republished with new length %d",
-                        len(files_tif_service))
+        logging.warning("Copying files to publish directory, but service will need to be republished to include:\n%s",
+                        str(files_tif))
     # HACK: copying seems to take a while, so try to do this without stopping before copy
     # logging.info("Stopping services")
     # server.stopServices()
     # HACK: using CopyRaster and CopyFeature fail, but this seems okay
     for file in tqdm(os.listdir(dir_tmp), desc=f"Copying to output directory {DIR_OUT}"):
         shutil.copy(os.path.join(dir_tmp, file), os.path.join(DIR_OUT, file))
+    # update metadata
+    f = files_tif[-1]
+    n = int(f[(f.rindex('_') + 1):f.rindex('.')])
+    summary = f"FireSTARR outputs for {n} day run {run_id}"
+    updates = {
+        'summary': summary,
+        'description': summary,
+    }
+    server.updateMetadata(updates, remove_keys=['extent'])
+    # restart whether or not update metadata worked
     logging.info("Restarting services")
     server.restartServices()
     logging.info("Done")
@@ -124,7 +136,7 @@ def publish_latest(dir_input="current_m3"):
     logging.info(f"Publishing latest files for {dir_input}")
     # dir_input = "current_home_bfdata_affes_latest"
     dir_main = os.path.join(DIR_ROOT, dir_input)
-    run_id = os.listdir(dir_main)[-1]
+    run_id = [x for x in os.listdir(dir_main) if os.path.isdir(os.path.join(dir_main, x))][-1]
     ##########################
     # run_id = '202306131555'
     #######################
