@@ -2,6 +2,10 @@ import os
 import sys
 import logging
 
+# makes groups that are too big because it joins mutiple groups into a chain
+# DEFAULT_GROUP_DISTANCE_KM = 60
+# also too big
+# DEFAULT_GROUP_DISTANCE_KM = 40
 DEFAULT_GROUP_DISTANCE_KM = 20
 
 # DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
@@ -325,6 +329,8 @@ def get_fires_active(dir_out):
     df_m3, m3_json = model_data.get_fires_m3(dir_out)
     df_m3['guess_id'] = df_m3['guess_id'].apply(fix_name)
     df_m3['fire_name'] = df_m3.apply(lambda x: fix_name(x['guess_id'] or x['id']), axis=1)
+    # this isn't an option, because it filters out fires
+    # df_dip = model_data.get_fires_dip(dir_out, status_ignore=None)
     df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
     df_ciffc['fire_name'] = df_ciffc['field_agency_fire_id'].apply(fix_name)
     df_ciffc_non_geo = df_ciffc.loc[:]

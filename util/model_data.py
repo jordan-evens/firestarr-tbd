@@ -90,7 +90,11 @@ def get_fires_m3(dir_out):
 # def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
 def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     f_out = f'{dir_out}/dip_current.json'
+    # seems to be 2018
     # table_name = "ciffc:wildfire_current"
+    # 2017?
+    # table_name = "ciffc:wildfire_current_active"
+    # seems like it matches ciffc now, but the columns are different
     table_name = "public:activefires_current"
     # features = "*"
     features = None
