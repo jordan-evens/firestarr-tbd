@@ -102,9 +102,13 @@ def publish_folder(dir_runid):
         # shutil.copy(file_in, file_prob_tif)
         symbolize(file_in, file_out)
     files_tif_service = [f for f in os.listdir(DIR_OUT) if REGEX_TIF.match(f)]
-    if files_tif != files_tif_service:
+    if ((len(files_tif_service) < len(files_tif))
+            or (files_tif[:len(files_tif_service)] != files_tif_service)):
         logging.fatal(f"Files to be published do not match files that service is using\n{files_tif} != {files_tif_service}")
         raise RuntimeError("Files to be published do not match files that service is using")
+    if len(files_tif_service) != len(files_tif):
+        logging.warning("Copying files to publish directory, but service will need to be republished with new length %d",
+                        len(files_tif_service))
     # HACK: copying seems to take a while, so try to do this without stopping before copy
     # logging.info("Stopping services")
     # server.stopServices()

@@ -379,10 +379,10 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     p_check = p_check.iloc[1:]
     # just check polygon proximity to start
     # logging.info("Grouping polygons")
-    # FIX: progress bar didn't work
     with tqdm(desc="Grouping fires", total=len(p_check), leave=False) as tq:
         p_done = []
         while 0 < len(p_check):
+            n_prev = len(p_check)
             compare_to = to_gdf(p_check.geometry)
             # distances should be in meters
             compare_to['dist'] = compare_to.apply(lambda x: min(x['geometry'].distance(y) for y in p.geometry), axis=1)
@@ -394,13 +394,13 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
                 p = to_gdf(g_pts + g_dissolve)
                 # need to check whatever was far away
                 p_check = compare_to[compare_to.dist > group_distance][['geometry']]
-                tq.update(len(group))
             else:
-                tq.update(1)
                 # nothing close to this, so done with it
                 p_done.append(p)
                 p = p_check.iloc[:1]
                 p_check = p_check.iloc[1:]
+            tq.update(n_prev - len(p_check))
+    tq.update(1)
     merged = [p] + p_done
     # NOTE: year should not be relevant, because we just care about the projection, not the data
     zone_rasters = gis.find_raster_meridians(YEAR)
@@ -542,6 +542,8 @@ def make_run_fire(dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_da
         'ffmc_old': ffmc_old,
         'dmc_old': dmc_old,
         'dc_old': dc_old,
+        # HACK: FIX: need to actually figure this out
+        'apcp_prev': 0,
         "lat": lat,
         "lon": lon,
         "perim": os.path.basename(file_fire),
@@ -610,15 +612,14 @@ def do_prep_fire(dir_fire):
         df_wx = df_fwi.rename(columns={
             "TIMESTAMP": "Date",
             "ID": "Scenario",
-            "RAIN": "APCP",
-            "TEMP": "TMP",
+            "RAIN": "PREC",
             "WIND": "WS"})
         df_wx = df_wx[
             [
                 "Scenario",
                 "Date",
-                "APCP",
-                "TMP",
+                "PREC",
+                "TEMP",
                 "RH",
                 "WS",
                 "WD",

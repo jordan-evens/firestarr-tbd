@@ -91,8 +91,17 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             shutil.copy(os.path.join(dir_fire, data['wx']), wx_file)
             # date_offsets = [1, 2]
             date_offsets = data['offsets']
-            args = "\"{}\" {} {} {} {:02d}:{:02d} -v --output_date_offsets \"{}\" --wx \"{}\"".format(
-                dir_out, start_date, lat, lon, hour, minute, "{" + ", ".join([str(x) for x in date_offsets]) + "}", wx_file)
+            fmt_offsets = "{" + ", ".join([str(x) for x in date_offsets]) + "}"
+            args = ' '.join([
+                    f"\"{dir_out}\" {start_date} {lat} {lon}",
+                    f"{hour:02d}:{minute:02d}",
+                    f"--ffmc {data['ffmc_old']}",
+                    f"--dmc {data['dmc_old']}",
+                    f"--dc {data['dc_old']}",
+                    f"--apcp_prev {data['apcp_prev']}",
+                    f"-v --output_date_offsets \"{fmt_offsets}\"",
+                    f" --wx \"{wx_file}\""
+            ])
             if perim is not None:
                 args = args + " --perim \"{}\"".format(perim)
             args = args.replace('\\', '/')
@@ -148,17 +157,26 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         data['sim_time'] = None
         data['dates_out'] = None
         data['sim_finished'] = False
+        # FIX: should we return e here?
     return data
 
 
 if __name__ == "__main__":
     if 1 < len(sys.argv):
         dir_fire = sys.argv[1]
-        dir_out, log_file, dates_out = run_fire_from_folder(dir_fire)
+        if 2 < len(sys.argv):
+            dir_current = sys.argv[2]
+        else:
+            run_folder = os.path.dirname(dir_fire)
+            run_prefix = run_folder[:run_folder.find('_')]
+            dir_current = os.path.join(DIR_OUTPUT, f"current_{run_prefix}")
+        data = run_fire_from_folder(dir_fire, dir_current, verbose=True)
         logging.info(f"Running fire in {dir_fire} completed")
-        dates = [datetime.datetime.strftime(x, '%Y-%m-%d') for x in dates_out]
+        if isinstance(data, Exception):
+            raise data
+        dates = [datetime.datetime.strftime(x, '%Y-%m-%d') for x in data['dates_out']]
         logging.info(f"Produced results for days: [{', '.join(dates)}]")
-        logging.info(f"Outputs are in {dir_out}")
-        logging.info(f"Log file is {log_file}")
+        logging.info(f"Outputs are in {data['dir_out']}")
+        logging.info(f"Log file is {data['log_file']}")
     else:
         logging.fatal("Must specify folder to run fire from")
