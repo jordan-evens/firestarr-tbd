@@ -132,7 +132,8 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
             extent = gis.project_raster(
                 os.path.join(dir_out, prob),
-                os.path.join(dir_region, d, fire_name + '.tif')
+                os.path.join(dir_region, d, fire_name + '.tif'),
+                nodata=None
             )
         perims = [x for x in outputs if (
             x.endswith('tif')
@@ -149,7 +150,9 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info(f"Adding raster to final outputs: {perim}")
             gis.project_raster(os.path.join(dir_out, perim),
                                             os.path.join(dir_region, 'perim', fire_name + '.tif'),
-                                            outputBounds=extent)
+                                            outputBounds=extent,
+                                            # HACK: if nodata is none then 0's should just show up as 0?
+                                            nodata=None)
         data['dates_out'] = dates_out
         data['sim_finished'] = True
     except Exception as e:

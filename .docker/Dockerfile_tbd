@@ -81,5 +81,5 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
   && echo source /appl/.venv/bin/activate >> /home/${user}/.bashrc \
   && echo cd /appl/tbd >> /home/${user}/.bashrc \
   && sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab \
-  && echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+  && echo "30 7,12 * * * user /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 ENTRYPOINT service ssh start && cron -f

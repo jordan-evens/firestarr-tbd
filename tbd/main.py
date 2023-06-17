@@ -61,7 +61,7 @@ from tbd import FILE_SIM
 
 DIR_DATA = "../data"
 DIR_SIMS = os.path.join(DIR_DATA, "sims")
-CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
+CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES", "NUM_THREADS=ALL_CPUS"]
 # CRS_NAD83 = 4269
 # CRS_NAD83_CSRS = 4617
 # want a projection that's NAD83 based, project, and units are degrees
@@ -143,7 +143,10 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
             else:
                 logging.info(f"Output {dir_tile} already exists")
                 return dir_tile
-        gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
+        # keep 0 as nodata
+        # gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
+        # keep 0's, but treat them as values. Set wherever nothing is to nodata
+        gm.main(["", "-a_nodata", "-1"] + co + ["-o", file_tmp] + files)
         # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
         shutil.move(file_tmp, file_base)
         file_out = file_base
@@ -155,6 +158,7 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
                     A=file_out,
                     outfile=file_tmp,
                     calc="A*100",
+                    # CHECK: how does this interact with using -1 as nodata above?
                     NoDataValue=0,
                     type="Byte",
                     creation_options=CREATION_OPTIONS,
@@ -725,7 +729,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
     log_run = add_log_file(os.path.join(dir_out, "firestarr.txt"),
                            level=DEFAULT_FILE_LOG_LEVEL)
-    logging.debug("Starting run for %s", dir_out)
+    logging.info("Starting run for %s", dir_out)
     today = run_start.date()
     yesterday = today - datetime.timedelta(days=1)
     # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances

@@ -147,14 +147,16 @@ def updateMetadata(updates, remove_keys=None, folder=FOLDER, whichServices=None)
             raise RuntimeError(f"Invalid service requested: {service}")
     for service in whichServices:
         logging.info(f"Updating service {service}")
-        url_info = f"{SERVER}/arcgis/rest/services/{folder}/{service}/MapServer/info/iteminfo?f=json"
+        url_info = f"{SERVER}/arcgis/rest/services/{folder}/{service.replace('.', '/')}/info/iteminfo?f=json"
+        logging.info(f"Getting metadata from {url_info}")
         metadata = json.loads(common.get_http(url_info))
         for k in remove_keys or []:
             if k in metadata:
                 del metadata[k]
         for k, v in updates.items():
             metadata[k] = v
-        url_edit = f"{SERVER}/arcgis/admin/services/{folder}/{service}.MapServer/iteminfo/edit"
+        url_edit = f"{SERVER}/arcgis/admin/services/{folder}/{service}/iteminfo/edit"
+        logging.info(f"Updating info via {url_edit}")
         params = {
             'token': token,
             'f': 'json',
