@@ -7,6 +7,8 @@ import logging
 # also too big
 # DEFAULT_GROUP_DISTANCE_KM = 40
 DEFAULT_GROUP_DISTANCE_KM = 20
+DEFAULT_NUM_DAYS = 3
+
 
 # DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 DEFAULT_FILE_LOG_LEVEL = logging.INFO
@@ -17,7 +19,8 @@ DIR_LOG = "./logs"
 os.makedirs(DIR_LOG, exist_ok=True)
 LOG_MAIN = add_log_rotating(os.path.join(DIR_LOG, "firestarr.log"),
                             level = DEFAULT_FILE_LOG_LEVEL)
-
+logging.info("Starting main.py")
+CRS_DEFAULT = 'EPSG:3347'
 
 import urllib.request as urllib2
 from bs4 import BeautifulSoup
@@ -26,6 +29,7 @@ import datetime
 
 import common
 from common import ensure_dir
+from common import list_dirs
 import publish
 import model_data
 import gis
@@ -44,7 +48,8 @@ sys.path.append(os.path.dirname(sys.executable))
 sys.path.append("/usr/local/bin")
 import osgeo
 import osgeo_utils
-import osgeo_utils.gdal_merge as gm
+from gdal_merge_max import gdal_merge_max
+# import osgeo_utils.gdal_merge as gm
 import osgeo_utils.gdal_retile as gr
 import osgeo_utils.gdal_calc as gdal_calc
 import itertools
@@ -82,17 +87,45 @@ def getPage(url):
     # parse the html using beautiful soup and return
     return BeautifulSoup(page, "html.parser")
 
+# ###################
+# import numpy as np
+# import rasterio
+# from rasterio.warp import calculate_default_transform, reproject, Resampling
+
+# def do_merge(file_out, files, dst_crs=CRS_DEFAULT):
+#     with rasterio.open('path/test.tif') as src:
+#         transform, width, height = calculate_default_transform(
+#             src.crs, dst_crs, src.width, src.height, *src.bounds)
+#         kwargs = src.meta.copy()
+#         kwargs.update({
+#             'crs': dst_crs,
+#             'transform': transform,
+#             'width': width,
+#             'height': height
+#         })
+#         with rasterio.open('path/test_wgs84.tif', 'w', **kwargs) as dst:
+#             for i in range(1, src.count + 1):
+#                 reproject(
+#                     source=rasterio.band(src, i),
+#                     destination=rasterio.band(dst, i),
+#                     src_transform=src.transform,
+#                     src_crs=src.crs,
+#                     dst_transform=transform,
+#                     dst_crs=dst_crs,
+#                     resampling=Resampling.nearest)
+# ###################
+
 
 def merge_dir(dir_in, run_id, force=False, do_tile=False):
     logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
-    import importlib
+    # import importlib
     from osgeo import gdal
     use_exceptions = gdal.GetUseExceptions()
     # HACK: if exceptions are on then gdal_merge throws one
     gdal.DontUseExceptions()
-    importlib.reload(gr)
-    TILE_SIZE = str(1024)
+    # importlib.reload(gr)
+    # TILE_SIZE = str(1024)
     co = list(
         itertools.chain.from_iterable(map(lambda x: ["-co", x], CREATION_OPTIONS))
     )
@@ -105,10 +138,10 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
                                              #  os.path.basename(dir_base),
                                              os.path.basename(dir_in)))
     files_by_for_what = {}
-    for region in os.listdir(dir_in):
+    for region in list_dirs(dir_in):
         dir_region = os.path.join(dir_in, region)
         if os.path.isdir(dir_region):
-            for for_what in os.listdir(dir_region):
+            for for_what in list_dirs(dir_region):
                 dir_for_what = os.path.join(dir_region, for_what)
                 files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
                     os.path.join(dir_for_what, x)
@@ -121,6 +154,7 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
     dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
     for_dates = [datetime.datetime.strptime(_, '%Y%m%d') for _ in dirs_what  if 'perim' != _]
     date_origin = min(for_dates)
+    # for_what, files = list(files_by_for_what.items())[-2]
     for for_what, files in files_by_for_what.items():
         dir_in_for_what = os.path.basename(for_what)
         if 'perim' == dir_in_for_what:
@@ -136,17 +170,17 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False):
         file_base = f"{file_root}.tif"
         file_int = f"{file_root}_int.tif"
         dir_tile = os.path.join(dir_out, dir_for_what)
-        if os.path.exists(dir_tile):
-            if force:
-                logging.info("Removing {}".format(dir_tile))
-                shutil.rmtree(dir_tile)
-            else:
-                logging.info(f"Output {dir_tile} already exists")
-                return dir_tile
+        # if os.path.exists(dir_tile):
+        #     if force:
+        #         logging.info("Removing {}".format(dir_tile))
+        #         shutil.rmtree(dir_tile)
+        #     else:
+        #         logging.info(f"Output {dir_tile} already exists")
+        #         return dir_tile
         # keep 0 as nodata
         # gm.main(["", "-n", "0", "-a_nodata", "0"] + co + ["-o", file_tmp] + files)
         # keep 0's, but treat them as values. Set wherever nothing is to nodata
-        gm.main(["", "-a_nodata", "-1"] + co + ["-o", file_tmp] + files)
+        gdal_merge_max(["", "-n", "0", "-a_nodata", "-1"] + co + ["-o", file_tmp] + files)
         # gm.main(['', '-n', '0', '-a_nodata', '0', '-co', 'COMPRESS=DEFLATE', '-co', 'ZLEVEL=9', '-co', 'TILED=YES', '-o', file_tmp] + files)
         shutil.move(file_tmp, file_base)
         file_out = file_base
@@ -206,7 +240,7 @@ def merge_dirs(dir_input=None, dates=None, do_tile=False):
     # NOTE: do_tile takes hours if run for the entire country with all polygons
     if dir_input is None:
         dir_default = os.path.join(tbd.DIR_OUTPUT, "current_m3")
-        dir_input = os.path.join(dir_default, os.listdir(dir_default)[-1])
+        dir_input = os.path.join(dir_default, list_dirs(dir_default)[-1])
         logging.info("Defaulting to directory %s", dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
@@ -214,7 +248,7 @@ def merge_dirs(dir_input=None, dates=None, do_tile=False):
     results = []
     # this expects folders to be '%Y%m%d' for start day for runs
     # NOTE: should really only have one folder in here if we're saving to dir_input for each run
-    for d in sorted(os.listdir(dir_initial)):
+    for d in sorted(list_dirs(dir_initial)):
         if dates is None or d in dates:
             dir_in = os.path.join(dir_initial, d)
             results.append(merge_dir(dir_in, run_id, do_tile=do_tile))
@@ -524,7 +558,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
 #     return results
 
 
-def get_fires_folder(dir_fires, crs='EPSG:3347'):
+def get_fires_folder(dir_fires, crs=CRS_DEFAULT):
     proj = pyproj.CRS(crs)
     df_fires = None
     for root, dirs, files in os.walk(dir_fires):
@@ -547,6 +581,7 @@ def make_run_fire(dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_da
     file_fire = os.path.join(dir_fire, '{}_NAD1983.geojson'.format(fire_name))
     df_fire.to_file(file_fire)
     data = {
+        # UTC time
         "job_date": run_start.strftime("%Y%m%d"),
         "job_time": run_start.strftime("%H%M"),
         'ffmc_old': ffmc_old,
@@ -578,6 +613,7 @@ def do_prep_fire(dir_fire):
     tzone = tf.timezone_at(lng=lon, lat=lat)
     timezone = pytz.timezone(tzone)
     if 'utc_offset_hours' not in data.keys():
+        # UTC time
         # HACK: America/Inuvik is giving an offset of 0 when applied directly, but says -6 otherwise
         run_start = datetime.datetime.strptime(
             f"{data['job_date']}{data['job_time']}", "%Y%m%d%H%M")
@@ -600,24 +636,31 @@ def do_prep_fire(dir_fire):
         df_wx_fire = df_wx_filled.rename(columns={
             'datetime': 'TIMESTAMP',
             'precip': 'PREC'
-        })
+        }).loc[:]
+        # HACK: just do the math for now, but don't apply a timezone
+        df_wx_fire.loc[:, 'TIMESTAMP'] = df_wx_fire['TIMESTAMP'] + utcoffset
         df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
-        df_wx_fire['YR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].year, axis=1)
-        df_wx_fire['MON'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].month, axis=1)
-        df_wx_fire['DAY'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].day, axis=1)
-        df_wx_fire['HR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].hour, axis=1)
+        df_wx_fire.loc[:, 'YR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].year, axis=1)
+        df_wx_fire.loc[:, 'MON'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].month, axis=1)
+        df_wx_fire.loc[:, 'DAY'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].day, axis=1)
+        df_wx_fire.loc[:, 'HR'] = df_wx_fire.apply(lambda x: x['TIMESTAMP'].hour, axis=1)
         # cols = df_wx_fire.columns
         # HACK: just get something for now
         have_noon = [x.date() for x in df_wx_fire[df_wx_fire['HR'] == 12]['TIMESTAMP']]
         df_wx_fire = df_wx_fire[[x.date() in have_noon for x in df_wx_fire['TIMESTAMP']]]
+        # # HACK: not 0 indexed if we don't reset_index()
+        # df_wx_fire =  df_wx_fire.reset_index(drop=True)
         # noon = datetime.datetime.fromordinal(today.toordinal()) + datetime.timedelta(hours=12)
         # df_wx_fire = df_wx_fire[df_wx_fire['TIMESTAMP'] >= noon].reset_index()[cols]
+        # NOTE: expects weather in localtime, but uses utcoffset to figure out local sunrise/sunset
         df_fwi = NG_FWI.hFWI(
             df_wx_fire,
             utcoffset_hours,
             ffmc_old,
             dmc_old,
             dc_old)
+        # HACK: get rid of missing values at end of period
+        df_fwi = df_fwi[~np.isnan(df_fwi['FWI'])].reset_index(drop=True)
         # COLUMN_SYNONYMS = {'WIND': 'WS', 'RAIN': 'PREC', 'YEAR': 'YR', 'HOUR': 'HR'}
         df_wx = df_fwi.rename(columns={
             "TIMESTAMP": "Date",
@@ -643,10 +686,12 @@ def do_prep_fire(dir_fire):
         ]
         file_wx = "wx.csv"
         df_wx.round(2).to_csv(os.path.join(dir_fire, file_wx), index=False, quoting=False)
-        start_time = min(df_wx['Date']).tz_localize(timezone)
-        # HACK: don't start right at midnight because the hour before is missing
-        if (6 > start_time.hour):
-            start_time = start_time.replace(hour=6, minute=0, second=0)
+        # HACK: make sure we're using the UTC date as the start day
+        start_time = min(df_wx[df_wx['Date'].apply(lambda x: x.date()) >= run_start.date()]['Date']).tz_localize(timezone)
+        # HACK: don't start right at start because the hour before is missing
+        start_time += datetime.timedelta(hours=1)
+        # if (6 > start_time.hour):
+        #     start_time = start_time.replace(hour=6, minute=0, second=0)
         days_available = (df_wx['Date'].max() - df_wx['Date'].min()).days
         max_days = data['max_days']
         want_dates = WANT_DATES
@@ -722,6 +767,7 @@ def do_prep_and_run_fire(for_what):
 # dir_fires = "/appl/data/affes/latest"
 def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     t0 = timeit.default_timer()
+    # UTC time
     run_start = datetime.datetime.now()
     run_prefix = 'm3' if dir_fires is None else dir_fires.replace('\\', '/').strip('/').replace('/', '_')
     run_id = run_start.strftime("%Y%m%d%H%M")
@@ -730,10 +776,11 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     log_run = add_log_file(os.path.join(dir_out, "firestarr.txt"),
                            level=DEFAULT_FILE_LOG_LEVEL)
     logging.info("Starting run for %s", dir_out)
+    # UTC time
     today = run_start.date()
     yesterday = today - datetime.timedelta(days=1)
     # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
-    crs = 'EPSG:3347'
+    crs = CRS_DEFAULT
     proj = pyproj.CRS(crs)
     # keep a copy of the settings for reference
     shutil.copy('/appl/tbd/settings.ini', os.path.join(dir_out, "settings.ini"))
@@ -841,7 +888,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
 
 # # FIX: need to update to work with new directory structure and return values
 # def merge_outputs(dir_out):
-#     for fire_name in [x for x in os.listdir(dir_out) if os.path.isdir(os.path.join(dir_out, x))]:
+#     for fire_name in list_dirs(dir_out))]:
 #         dir_fire = os.path.join(dir_out, fire_name)
 #         print(dir_fire)
 #         dir_out, log_name, dates_out = tbd.run_fire_from_folder(dir_fire)
@@ -849,13 +896,13 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
 
 
 def merge_latest(dir_root, do_tile=False):
-    dir_latest = [x for x in os.listdir(dir_root) if os.path.isdir(os.path.join(dir_root, x))][-1]
+    dir_latest = list_dirs(dir_root)[-1]
     return merge_dirs(os.path.join(dir_root, dir_latest), do_tile=do_tile)
 
 
 if __name__ == "__main__":
-    logging.debug("Called with args %s", str(sys.argv))
-    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    logging.info("Called with args %s", str(sys.argv))
+    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_NUM_DAYS
     dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
     dir_out, dir_current, results, dates_out, totaltime = run_all_fires(dir_fires, max_days)
     # simtimes, totaltime, dates = run_all_fires()

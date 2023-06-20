@@ -206,6 +206,8 @@ def get_wx_ensembles(lat, long):
     # have content, but now we need to see if we can parse it
     try:
         df_initial = pd.read_csv(io.StringIO(content))
+        if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
+            raise RuntimeError("Expected weather in UTC time")
         index = ['MODEL', 'LAT', 'LON', 'ISSUEDATE', 'UTC_OFFSET', 'DATETIME']
         all_cols =  np.unique([x[:x.index('_')] for x in df_initial.columns if '_' in x])
         cols = ['TMP', 'RH', 'WSPD', 'WDIR', 'PRECIP']

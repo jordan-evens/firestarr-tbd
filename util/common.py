@@ -71,6 +71,11 @@ def ensure_dir(dir):
 DIR_OUT = '/appl/data/sims'
 DIR_DEFAULT_DOWNLOAD = ensure_dir(f'{DIR_OUT}/download/')
 
+
+def list_dirs(path):
+    return [x for x in os.listdir(path) if os.path.isdir(os.path.join(path, x))]
+
+
 def to_utc(d):
     return pd.to_datetime(d, utc=True, infer_datetime_format=True)
 
