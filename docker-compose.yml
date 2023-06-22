@@ -8,6 +8,7 @@ services:
   gis:
     build:
       context: .
+      target: gis
       dockerfile: .docker/Dockerfile_gis
     volumes:
       - type: bind
@@ -23,9 +24,44 @@ services:
         source: ./util
         target: /appl/util
 
-  tbd:
+
+  # tbd_dev:
+  #   build:
+  #     context: .
+  #     target: tbd_dev
+  #     dockerfile: .docker/Dockerfile_tbd
+  #   security_opt:
+  #     - seccomp:unconfined
+  #   ports:
+  #     - "2222:22"
+  #   volumes:
+  #     - type: bind
+  #       source: ./settings.ini
+  #       target: /appl/settings.ini
+  #     - type: bind
+  #       source: ./data
+  #       target: /appl/data
+  #     - type: bind
+  #       source: /mnt/publish
+  #       target: /appl/publish
+  #     - type: bind
+  #       source: ./data/generated/grid
+  #       target: /appl/100m/default
+  #     - type: bind
+  #       source: ./tbd
+  #       target: /appl/tbd
+  #     - type: bind
+  #       source: ./util
+  #       target: /appl/util
+  #   restart: on-failure
+  #   cap_add:
+  #       - SYS_PTRACE
+
+
+  tbd_dev_svc:
     build:
       context: .
+      target: tbd_dev_svc
       dockerfile: .docker/Dockerfile_tbd
     security_opt:
       - seccomp:unconfined
@@ -35,9 +71,6 @@ services:
       - type: bind
         source: ./settings.ini
         target: /appl/settings.ini
-      - type: bind
-        source: /root/.ssh
-        target: /root/.ssh
       - type: bind
         source: ./data
         target: /appl/data
@@ -56,3 +89,56 @@ services:
     restart: on-failure
     cap_add:
         - SYS_PTRACE
+
+
+  firestarr:
+    build:
+      context: .
+      target: firestarr
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
+
+
+  tbd_build:
+    build:
+      context: .
+      target: tbd_build
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
+
+
+  perf:
+    build:
+      context: .
+      target: perf
+      dockerfile: .docker/Dockerfile_tbd
+
+  cmake:
+    build:
+      context: .
+      target: cmake
+      dockerfile: .docker/Dockerfile_tbd
+
+  cmake_install:
+    build:
+      context: .
+      target: cmake_install
+      dockerfile: .docker/Dockerfile_tbd
