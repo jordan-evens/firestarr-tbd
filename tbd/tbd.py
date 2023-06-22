@@ -105,6 +105,15 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             if perim is not None:
                 args = args + " --perim \"{}\"".format(perim)
             args = args.replace('\\', '/')
+            file_sh = os.path.join(dir_out, "sim.sh")
+            with open(file_sh, "w") as f_out:
+                f_out.writelines(
+                    [
+                        "#!/bin/bash\n",
+                        f"{cmd} {args}\n"
+                    ]
+                )
+            os.chmod(file_sh, "555")
             log_info(f'Running: {cmd} {args}')
             # run generated command for parsing data
             run_what = [cmd] + shlex.split(args)

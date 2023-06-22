@@ -191,61 +191,53 @@ def get_wx_spotwx(lat, long):
 def get_wx_ensembles(lat, long):
     SPOTWX_KEY =  get_spotwx_key()
     model = "geps"
-    url = f'http://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    print(url)
     # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
     content = None
-    try:
-        content = try_save(get_http, url)
+    def get_initial(url):
+        content = get_http(url)
         content = str(content, encoding='utf-8')
-    except KeyboardInterrupt as e:
-        raise e
-    except Exception as e:
-        # so retried but never got content, so url is not reachable at all
-        logging.fatal("Could not get wx from %s", url)
-        raise e
-    # have content, but now we need to see if we can parse it
-    try:
         df_initial = pd.read_csv(io.StringIO(content))
-        if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
-            raise RuntimeError("Expected weather in UTC time")
-        index = ['MODEL', 'LAT', 'LON', 'ISSUEDATE', 'UTC_OFFSET', 'DATETIME']
-        all_cols =  np.unique([x[:x.index('_')] for x in df_initial.columns if '_' in x])
-        cols = ['TMP', 'RH', 'WSPD', 'WDIR', 'PRECIP']
-        keep_cols = [x for x in df_initial.columns if x in index or np.any([x.startswith(f'{_}_') for _ in cols])]
-        df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
-        df_by_var['var'] = df_by_var['variable'].apply(lambda x: x[:x.rindex('_')])
-        df_by_var['id'] = [0 if 'CONTROL' == id else int(id) for id in df_by_var['variable'].apply(lambda x: x[x.rindex('_') + 1:])]
-        del df_by_var['variable']
-        df_wx = pd.pivot(df_by_var, index=index + ['id'], columns='var', values='value').reset_index()
-        df_wx.groupby(['id'])['PRECIP_ttl']
-        df = None
-        for i, g in df_wx.groupby(['id']):
-            g['PRECIP'] = (g['PRECIP_ttl'] - g['PRECIP_ttl'].shift(1)).fillna(0)
-            df = pd.concat([df, g])
-        # HACK: for some reason rain is less in subsequent hours sometimes, so make sure nothing is negative
-        df.loc[df['PRECIP'] < 0, 'PRECIP'] = 0
-        del df['PRECIP_ttl']
-        df = df.reset_index()
-        del df['index']
-        df.columns.name = ''
-        # make sure we're in UTC and use that for now
-        assert [0] == np.unique(df['UTC_OFFSET'])
-        df.columns = [x.lower() for x in df.columns]
-        df['datetime'] = pd.to_datetime(df['datetime'])
-        df = df.rename(columns={'lon': 'long', 'tmp': 'temp',
-                                'wdir': 'wd',
-                                'wspd': 'ws'})
-        df['issuedate'] = pd.to_datetime(df['issuedate'])
-        index_final = ['model', 'lat', 'long', 'issuedate', 'id']
-        df = df[index_final + ['datetime', 'temp', 'rh', 'wd', 'ws', 'precip']]
-        df = df.set_index(index_final)
-        return df
-    except KeyboardInterrupt as ex:
-        raise ex
-    except Exception:
-        # so we couldn't parse the content, but we have something
-        # logging.fatal("Could not parse content for %s", url)
-        raise ParseError(content)
+        if "UTC_OFFSET" not in df_initial.columns:
+            raise ParseError(content)
+        return df_initial
+    # HACK: wrap initial parse with this so it retries if we get a page that isn't what we want back
+    df_initial = try_save(get_initial, url)
+    if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
+        raise RuntimeError("Expected weather in UTC time")
+    index = ['MODEL', 'LAT', 'LON', 'ISSUEDATE', 'UTC_OFFSET', 'DATETIME']
+    all_cols =  np.unique([x[:x.index('_')] for x in df_initial.columns if '_' in x])
+    cols = ['TMP', 'RH', 'WSPD', 'WDIR', 'PRECIP']
+    keep_cols = [x for x in df_initial.columns if x in index or np.any([x.startswith(f'{_}_') for _ in cols])]
+    df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
+    df_by_var['var'] = df_by_var['variable'].apply(lambda x: x[:x.rindex('_')])
+    df_by_var['id'] = [0 if 'CONTROL' == id else int(id) for id in df_by_var['variable'].apply(lambda x: x[x.rindex('_') + 1:])]
+    del df_by_var['variable']
+    df_wx = pd.pivot(df_by_var, index=index + ['id'], columns='var', values='value').reset_index()
+    df_wx.groupby(['id'])['PRECIP_ttl']
+    df = None
+    for i, g in df_wx.groupby(['id']):
+        g['PRECIP'] = (g['PRECIP_ttl'] - g['PRECIP_ttl'].shift(1)).fillna(0)
+        df = pd.concat([df, g])
+    # HACK: for some reason rain is less in subsequent hours sometimes, so make sure nothing is negative
+    df.loc[df['PRECIP'] < 0, 'PRECIP'] = 0
+    del df['PRECIP_ttl']
+    df = df.reset_index()
+    del df['index']
+    df.columns.name = ''
+    # make sure we're in UTC and use that for now
+    assert [0] == np.unique(df['UTC_OFFSET'])
+    df.columns = [x.lower() for x in df.columns]
+    df['datetime'] = pd.to_datetime(df['datetime'])
+    df = df.rename(columns={'lon': 'long', 'tmp': 'temp',
+                            'wdir': 'wd',
+                            'wspd': 'ws'})
+    df['issuedate'] = pd.to_datetime(df['issuedate'])
+    index_final = ['model', 'lat', 'long', 'issuedate', 'id']
+    df = df[index_final + ['datetime', 'temp', 'rh', 'wd', 'ws', 'precip']]
+    df = df.set_index(index_final)
+    return df
 
 
 def wx_interpolate(df):

@@ -374,7 +374,15 @@ def rasterize_perim(run_output, perim, year, name, raster=None):
     #~ except:
         #~ return None, None
 
-def project_raster(filename, output_raster=None, outputBounds=None, nodata=0, options=['COMPRESS=LZW', 'TILED=YES']):
+def project_raster(
+        filename,
+        output_raster=None,
+        outputBounds=None,
+        nodata=0,
+        options=['COMPRESS=LZW', 'TILED=YES'],
+        crs="EPSG:4326",
+        resolution=None,
+        format=None):
     input_raster = gdal.Open(filename)
     if output_raster is None:
         output_raster = filename[:-4] + '.tif'
@@ -383,7 +391,10 @@ def project_raster(filename, output_raster=None, outputBounds=None, nodata=0, op
     warp = gdal.Warp(output_raster,
                      input_raster,
                      dstNodata=nodata,
-                     options=gdal.WarpOptions(dstSRS='EPSG:4326',
+                     options=gdal.WarpOptions(dstSRS=crs,
+                                              format=format,
+                                              xRes=resolution,
+                                              yRes=resolution,
                                               outputBounds=outputBounds,
                                               creationOptions=options))
     geoTransform = warp.GetGeoTransform()
