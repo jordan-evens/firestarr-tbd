@@ -106,6 +106,10 @@ def symbolize(file_in, file_out, empty=False, with_shp=False):
 
 
 def publish_folder(dir_runid, with_shp=False):
+    if not os.path.isdir(DIR_OUT):
+        logging.warning("Publish directory %s doesn't exist, so not publishing %s",
+                        DIR_OUT,
+                        dir_runid)
     logging.info("Publishing %s", dir_runid)
     run_id = os.path.basename(dir_runid)
     dir_base = os.path.join(dir_runid, "combined")

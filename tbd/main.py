@@ -10,8 +10,8 @@ DEFAULT_GROUP_DISTANCE_KM = 20
 DEFAULT_NUM_DAYS = 3
 
 
-# DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
-DEFAULT_FILE_LOG_LEVEL = logging.INFO
+DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
+# DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
 sys.path.append("../util")
 from log import *
@@ -747,7 +747,7 @@ def do_prep_fire(dir_fire):
 
 
 def do_run_fire(for_what):
-    dir_fire, dir_current = for_what
+    dir_fire, dir_current, verbose = for_what
     # HACK: in case do_prep_fire() failed
     if isinstance(dir_fire, Exception):
         return dir_fire
@@ -761,7 +761,7 @@ def do_run_fire(for_what):
         return ex
     # at this point everything should be in the sim file, and we can just run it
     try:
-        result = tbd.run_fire_from_folder(dir_fire, dir_current)
+        result = tbd.run_fire_from_folder(dir_fire, dir_current, verbose=verbose)
         t = result["sim_time"]
         if t is not None:
             logging.debug("Took {}s to run simulations".format(t))
@@ -799,9 +799,9 @@ def check_failure(dir_fire, result, stop_on_any_failure):
 
 
 def do_prep_and_run_fire(for_what):
-    dir_fire, dir_current = for_what
+    dir_fire, dir_current, verbose = for_what
     dir_ready = do_prep_fire(dir_fire)
-    return do_run_fire((dir_ready, dir_current))
+    return do_run_fire((dir_ready, dir_current, verbose))
 
 
 # dir_fires = "/appl/data/affes/latest"
@@ -893,7 +893,10 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     # for_what = list(zip(dirs_ready, [dir_current] * len(dirs_ready)))
     # sim_results = tqdm_pool.pmap(do_run_fire, for_what, desc="Running simulations")
     # running into API 180 requests/min limit
-    for_what = list(zip(dirs_fire, [dir_current] * len(dirs_fire)))
+    verbose = logging.DEBUG >= logging.getLogger().level
+    for_what = list(zip(dirs_fire,
+                        [dir_current] * len(dirs_fire),
+                        [verbose] * len(dirs_fire)))
     sim_results = tqdm_pool.pmap(
         do_prep_and_run_fire, for_what, desc="Running simulations"
     )
@@ -914,7 +917,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
             isinstance(result, Exception) or result.get("failed", True)
         ) and tries > 0:
             logging.warning("Retrying running %s", dir_fire)
-            result = do_run_fire([dir_fire, dir_current])
+            result = do_run_fire([dir_fire, dir_current, verbose])
             tries -= 1
         if isinstance(result, Exception) or result.get("failed", True):
             logging.warning("Could not run fire %s", dir_fire)

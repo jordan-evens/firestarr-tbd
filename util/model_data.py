@@ -19,47 +19,18 @@ gdal.SetConfigOption('CPL_LOG', '/dev/null')
 gdal.SetConfigOption('CPL_DEBUG', 'OFF')
 gdal.SetErrorHandler('CPLLoggingErrorHandler')
 
-
-# WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0'
-# WFS_ROOT = 'http://s-edm-sahal:8080/geoserver/ows?service=wfs&version=2.0.0'
-WFS_ROOT = 'http://s-edm-sahal.nrn.nrcan.gc.ca:8080/geoserver/ows?service=wfs&version=2.0.0'
+WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0'
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
 EPSG = 3978
 DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
 # DEFAULT_STATUS_KEEP = ["OC"]
 
-# def query_geoserver(table_name, f_out, features=None,filter=None):
-#     while True:
-#         try:
-#             #https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typenames=fireops:cwfis_allstn2022&outputFormat=application/json
-#             logging.debug(f'Getting table {table_name} in projection {str(EPSG)}')
-#             request_url = 'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms'
-#             request_url += "?service=wfs&request=GetFeature&version=2.0.0"
-#             request_url += "&typeName=%s" % (table_name)
-#             request_url += "&srsName=EPSG:%s" % (EPSG)
-#             if features != None:
-#                 request_url += "&propertyName=%s" % (features)
-#             if filter != None:
-#                 request_url += "&CQL_FILTER=%s" % (filter)
-#             request_url += "&outputFormat=application/json"
-#             f_out = get_input(request_url, f_out)
-#             return f_out
-#         except ConnectionResetError as e:
-#             print(e)
-#             t = 5
-#             print(f'Retrying in {t} seconds')
-#             time.sleep(t)
-
-
 def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT):
     logging.debug(f'Getting table {table_name} in projection {str(EPSG)}')
-    #https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typenames=fireops:cwfis_allstn2022&outputFormat=application/json
-    # request_url = f'https://cwfis.cfs.nrcan.gc.ca/service/data/fireops/wms?service=wfs&version=2.0.0&request=GetFeature&typename={table_name}&outputFormat=application/json&srsName=EPSG:{str(EPSG)}'
     request_url = f'{wfs_root}&request=GetFeature&typename={table_name}&outputFormat=application/json'
     if features is not None:
         request_url += f'&propertyName={features}'
     if filter is not None:
-        # request_url += f'&CQL_FILTER={filter}'
         request_url += f'&CQL_FILTER={urllib.parse.quote(filter)}'
     logging.debug(request_url)
     print(request_url)
@@ -72,7 +43,8 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
 
 def get_fires_m3(dir_out):
     f_out = f'{dir_out}/m3_polygons_current.json'
-    features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
+    # features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
+    features = 'uid,geometry,hcount,firstdate,lastdate,area'
     table_name = 'public:m3_polygons_current'
     # NOTE: no need to filter since current?
     # today = datetime.datetime.now().strftime('%Y%m%d')
@@ -98,7 +70,7 @@ def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=datetime.da
         status_ignore = []
     filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]
                           + [
-                              "current=true",
+                            #   "current=true",
                               "agency<>'ak'",
                               "agency<>'conus'",
                               f"startdate during {year}-01-01T00:00:00Z/P1Y"
@@ -127,14 +99,13 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
 
 def get_wx_cwfis(dir_out, dates):
     layer = 'public:firewx_stns_current'
-    # layer = 'public:firewx_stns_{:04d}'
-    # URL = "https://cwfis.cfs.nrcan.gc.ca/geoserver/wfs?service=WFS&request=GetFeature&typeNames=public:firewx_stns_{:04d}&cql_filter=rep_date=={:04d}-{:02d}-{:02d}T12:00:00&outputFormat=csv"
     df = pd.DataFrame()
     for date in dates:
         year = date.year
         month = date.month
         day = date.day
         url = WFS_ROOT + f'&request=GetFeature&typeNames={layer}&cql_filter=rep_date=={year:04d}-{month:02d}-{day:02d}T12:00:00&outputFormat=csv'
+        print(url)
         file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
         if not os.path.exists(file_out):
             save_http(url, file_out)

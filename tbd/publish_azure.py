@@ -2,6 +2,7 @@ import os
 import sys
 sys.path.append('../util')
 import common
+import logging
 import datetime
 import urllib.parse
 
@@ -13,6 +14,10 @@ from azure.storage.blob import BlobServiceClient
 from azure.storage.blob import ContainerClient
 
 
+AZURE_URL = None
+AZURE_TOKEN = None
+AZURE_CONTAINER = None
+
 
 def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
@@ -23,10 +28,18 @@ def get_token():
     return '&'.join(f"{k}={v}" for k, v in args_kv.items())
 
 
-AZURE_URL = common.CONFIG.get('azure', 'url')
-AZURE_TOKEN = get_token()
-AZURE_CONTAINER = common.CONFIG.get('azure', 'container')
-
+def read_config():
+    global AZURE_URL
+    global AZURE_TOKEN
+    global AZURE_CONTAINER
+    try:
+        AZURE_URL = common.CONFIG.get('azure', 'url')
+        AZURE_TOKEN = get_token()
+        AZURE_CONTAINER = common.CONFIG.get('azure', 'container')
+    except ValueError as ex:
+        logging.warning("Unable to read azure config")
+        return False
+    return True
 
 def get_blob_service_client():
     return BlobServiceClient(
@@ -67,6 +80,8 @@ def show_blobs(container):
 
 
 def upload_dir(dir_run):
+    if not read_config():
+        return False
     run_id = os.path.basename(dir_run)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
@@ -116,13 +131,16 @@ def upload_dir(dir_run):
                     metadata=metadata,
                     overwrite=True
                 )
-            with open(path, "rb") as data:
-                container.upload_blob(
-                    name=f"archive/{f}",
-                    data=data,
-                    metadata=metadata,
-                    overwrite=True
-                )
+            archived = f"archive/{f}"
+            if 0 == len([x for x in container.list_blobs(archived)]):
+                # don't upload if already in archive
+                with open(path, "rb") as data:
+                    container.upload_blob(
+                        name=archived,
+                        data=data,
+                        metadata=metadata,
+                        overwrite=True
+                    )
 
 
 def upload_from_zip(z):
@@ -144,3 +162,7 @@ def upload_latest(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
     zips = [x for x in os.listdir(dir_main) if x.endswith('.zip')]
     upload_from_zip(os.path.join(dir_main, zips[-1]))
+
+
+if "__main__" == __name__:
+    upload_latest()

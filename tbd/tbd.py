@@ -113,7 +113,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                         f"{cmd} {args}\n"
                     ]
                 )
-            os.chmod(file_sh, "555")
+            os.chmod(file_sh, 555)
             log_info(f'Running: {cmd} {args}')
             # run generated command for parsing data
             run_what = [cmd] + shlex.split(args)
