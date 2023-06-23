@@ -159,3 +159,21 @@ services:
       - type: bind
         source: ./data/generated/grid
         target: /appl/100m/default
+
+
+
+  py_gdal:
+    build:
+      context: .
+      target: py_gdal
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default

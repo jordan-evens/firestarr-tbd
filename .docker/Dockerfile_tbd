@@ -240,13 +240,94 @@ RUN apt-get remove -y gcc gcc-12 make git zip unzip \
     /usr/includes/* \
     /var/cache/apk/*
 
-# HACK: delete and then shrink instead of trying to build from minimal image for now
-FROM scratch AS tbd_prod
+# # HACK: delete and then shrink instead of trying to build from minimal image for now
+# FROM scratch AS tbd_prod
+# ARG user=user
+# ARG password=password
+# COPY --from=tbd_clean / /
+# COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+# WORKDIR /appl/tbd/
+# COPY ./settings.ini /appl/
+# COPY ./tbd/fuel.lut /appl/tbd/
+# # HACK: ./tbd/*.py takes forever
+# COPY ./tbd/gis.py /appl/tbd/
+# COPY ./tbd/main.py /appl/tbd/
+# COPY ./tbd/publish_azure.py /appl/tbd/
+# COPY ./tbd/publish.py /appl/tbd/
+# COPY ./tbd/tbd.py /appl/tbd/
+# COPY ./tbd/settings.ini /appl/tbd/
+# WORKDIR /appl/util
+# # COPY ./util/*.py .
+# COPY ./util/common.py .
+# COPY ./util/gdal_merge_max.py .
+# COPY ./util/log.py .
+# COPY ./util/model_data.py .
+# COPY ./util/server.py .
+# COPY ./util/tqdm_pool.py .
+# WORKDIR /appl/tbd/cffdrs-ng
+# COPY ./tbd/cffdrs-ng/NG_FWI.py .
+# COPY ./tbd/cffdrs-ng/util.py .
+# RUN chown -R ${user}:${user} /appl/tbd
+# USER user
+# ENTRYPOINT /bin/bash
+
+
+# FROM bitnami/minideb:bookworm AS py_gdal
+# WORKDIR /appl
+# RUN apt-get update \
+#   && apt-get install -y --no-install-recommends python3-pip libgdal-dev python3-venv \
+#   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+#   && apt-get install -y python3-numpy python3-gdal
+#   # && python -m venv /appl/.venv
+#   # #  \
+#   # # && . /appl/.venv/bin/activate \
+#   # # && python -m pip install numpy \
+#   # # && python -m pip install --global-option=build_ext gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
+
+
+FROM bitnami/minideb:bookworm AS py_gdal
 ARG user=user
 ARG password=password
-COPY --from=tbd_clean / /
+WORKDIR /appl/tbd
 COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+COPY ./tbd/fuel.lut /appl/tbd/
+RUN (useradd -m ${user} || echo User ${user} already exists) \
+  && (yes ${password} | passwd ${user}) \
+  && yes ${password} | passwd \
+  && yes ${password} | chsh --shell /bin/bash ${user} \
+  && chown -R ${user}:${user} /appl/tbd \
+  && echo cd /appl/tbd >> /home/${user}/.bashrc \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends python3-pip \
+      libgdal-dev libgeotiff5 \
+      python3-numpy python3-gdal \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+  && apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/*
+
+
+# RUN apt-get update \
+#   && apt-get install -y python3-pip libgdal-dev \
+#   && echo 'alias python=python3' >> ~/.bashrc \
+#   && echo 'alias pip=pip3' >> ~/.bashrc \
+#   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+#   && export C_INCLUDE_PATH=/usr/include/gdal \
+#   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
+
+
+# HACK: delete and then shrink instead of trying to build from minimal image for now
+FROM py_gdal AS tbd_prod
+ARG user=user
+ARG password=password
+RUN chown -R ${user}:${user} /appl/tbd \
+  && python -m pip install --no-warn-script-location --break-system-packages -r /appl/requirements_tbd.txt
+# COPY --from=tbd_clean / /
+WORKDIR /appl/
+COPY .docker/requirements_tbd.txt .
 WORKDIR /appl/tbd/
+COPY --from=tbd_build /appl/tbd/tbd .
 COPY ./settings.ini /appl/
 COPY ./tbd/fuel.lut /appl/tbd/
 # HACK: ./tbd/*.py takes forever
@@ -267,6 +348,5 @@ COPY ./util/tqdm_pool.py .
 WORKDIR /appl/tbd/cffdrs-ng
 COPY ./tbd/cffdrs-ng/NG_FWI.py .
 COPY ./tbd/cffdrs-ng/util.py .
-RUN chown -R ${user}:${user} /appl/tbd
 USER user
 ENTRYPOINT /bin/bash
