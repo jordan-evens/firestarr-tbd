@@ -149,3 +149,124 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
     /var/lib/apt/lists/* \
     /usr/share/man/*
 # USER ${user}
+
+
+
+# # FROM bitnami/minideb:bookworm AS python_prod
+# FROM thinkwhere/gdal-python AS python_prod
+# # FROM osgeo/gdal:ubuntu-small-3.6.3 AS python_prod
+# # FIX: don't want to set this in two different places
+# # NOTE: this doesn't have the .2 at the end like above
+# ARG user=user
+# ARG password=password
+# WORKDIR /appl/
+# COPY .docker/requirements_tbd.txt requirements_tbd.txt
+# RUN (useradd -m ${user} || echo User ${user} already exists) \
+#   && (yes ${password} | passwd ${user}) \
+#   && yes ${password} | passwd \
+#   && yes ${password} | chsh --shell /bin/bash ${user} \
+#   # && apt-get update \
+#   # && apt-get install -y python3-venv \
+#   && python -m pip install --upgrade pip \
+#   && python -m pip install virtualenv \
+#   # && apt-get install -y python3-pip \
+#   # && apt-get install -y gdal-bin libgeotiff5 python3-pip python3-venv \
+#   # && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+#   && python -m venv /appl/.venv \
+#   # # && . /appl/.venv/bin/activate \
+#   # # && apt-get install -y gcc make git curl zip unzip tar \
+#   # #   libtiff-dev libgeotiff-dev g++ \
+#   # #   libgdal-dev util-linux cron rsync openssh-server gdal-bin \
+#   # #   libgdal-dev gdb valgrind time \
+#   # #   libdwarf-dev libelf-dev libnuma-dev \
+#   # #   libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+#   # #   libdw-dev libbfb0-dev \
+#   # # && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+#   # # && export C_INCLUDE_PATH=/usr/include/gdal
+#   # # && apt-get install -y python3-pip libpython3-dev python3-venv \
+#   # # && python -m pip install numpy \
+#   # # # && python -m pip install --global-option=build_ext gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"` \
+#   # # && python -m pip install wheel \
+#   # && apt-get install -y python3-gdal \
+#   # # && python -m pip install --prefer-binary gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"` \
+#   # && . /appl/.venv/bin/activate \
+#   # && python -m pip install -r /appl/requirements_tbd.txt \
+#   && chown -R ${user}:${user} /appl/.venv \
+#   && echo source /appl/.venv/bin/activate >> /home/${user}/.bashrc \
+#   && echo cd /appl/tbd >> /home/${user}/.bashrc
+# USER ${user}
+# # # still do this even though no cron jobs so we can have ssh going
+# # ENTRYPOINT service ssh start \
+# #   # && su user \
+# #   && cron -f
+
+
+# FROM python_prod AS tbd_prod
+# WORKDIR /appl/tbd/
+# COPY ./settings.ini /appl/
+# COPY ./tbd/fuel.lut /appl/tbd/
+# # HACK: ./tbd/*.py takes forever
+# COPY ./tbd/gis.py /appl/tbd/
+# COPY ./tbd/main.py /appl/tbd/
+# COPY ./tbd/publish_azure.py /appl/tbd/
+# COPY ./tbd/publish.py /appl/tbd/
+# COPY ./tbd/tbd.py /appl/tbd/
+# COPY ./tbd/settings.ini /appl/tbd/
+# COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+# # COPY ./util/*.py /appl/util/
+# COPY ./util/common.py /appl/util/
+# COPY ./util/gdal_merge_max.py /appl/util/
+# COPY ./util/log.py /appl/util/
+# COPY ./util/model_data.py /appl/util/
+# COPY ./util/server.py /appl/util/
+# COPY ./util/tqdm_pool.py /appl/util/
+# # COPY ./tbd/fuel.lut /appl/tbd/
+
+FROM tbd_dev AS tbd_clean
+RUN apt-get remove -y gcc gcc-12 make git zip unzip \
+    libtiff-dev libgeotiff-dev g++ \
+    subversion mercurial \
+    libgdal-dev rsync openssh-server \
+    libgdal-dev gdb valgrind time \
+    libdwarf-dev libelf-dev libnuma-dev \
+    libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+    libdw-dev libbfb0-dev \
+  && apt-get remove -y `(apt list --installed | grep "dev" | grep -v "udev" | sed "s/\(^\/\)*\/.*/\1/g" | tr '\n' ' ')` \
+  && apt autoremove -y \
+  && apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/* \
+    /usr/includes/* \
+    /var/cache/apk/*
+
+# HACK: delete and then shrink instead of trying to build from minimal image for now
+FROM scratch AS tbd_prod
+ARG user=user
+ARG password=password
+COPY --from=tbd_clean / /
+COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+WORKDIR /appl/tbd/
+COPY ./settings.ini /appl/
+COPY ./tbd/fuel.lut /appl/tbd/
+# HACK: ./tbd/*.py takes forever
+COPY ./tbd/gis.py /appl/tbd/
+COPY ./tbd/main.py /appl/tbd/
+COPY ./tbd/publish_azure.py /appl/tbd/
+COPY ./tbd/publish.py /appl/tbd/
+COPY ./tbd/tbd.py /appl/tbd/
+COPY ./tbd/settings.ini /appl/tbd/
+WORKDIR /appl/util
+# COPY ./util/*.py .
+COPY ./util/common.py .
+COPY ./util/gdal_merge_max.py .
+COPY ./util/log.py .
+COPY ./util/model_data.py .
+COPY ./util/server.py .
+COPY ./util/tqdm_pool.py .
+WORKDIR /appl/tbd/cffdrs-ng
+COPY ./tbd/cffdrs-ng/NG_FWI.py .
+COPY ./tbd/cffdrs-ng/util.py .
+RUN chown -R ${user}:${user} /appl/tbd
+USER user
+ENTRYPOINT /bin/bash

@@ -142,3 +142,20 @@ services:
       context: .
       target: cmake_install
       dockerfile: .docker/Dockerfile_tbd
+
+
+  tbd_prod:
+    build:
+      context: .
+      target: tbd_prod
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
