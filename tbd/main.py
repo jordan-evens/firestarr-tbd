@@ -386,11 +386,12 @@ def get_fires_active(dir_out):
     missing = [
         x for x in list(set(np.unique(df_m3.guess_id)) - set(df_matched.fire_name)) if x
     ]
-    logging.error(
-        "M3 guessed polygons for %d fires that aren't listed on ciffc: %s",
-        len(missing),
-        str(missing),
-    )
+    if 0 < len(missing):
+        logging.error(
+            "M3 guessed polygons for %d fires that aren't listed on ciffc: %s",
+            len(missing),
+            str(missing),
+        )
     # Only want to run OC matched polygons, and everything else plus ciffc points
     id_matched = df_matched.id
     id_m3 = df_m3.id
