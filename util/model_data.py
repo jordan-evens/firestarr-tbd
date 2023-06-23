@@ -41,16 +41,17 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
                     request_url)
 
 
-def get_fires_m3(dir_out):
-    f_out = f'{dir_out}/m3_polygons_current.json'
+def get_fires_m3(dir_out, for_day=datetime.date.today()):
+    f_out = f'{dir_out}/m3_polygons.json'
     # features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
-    features = 'uid,geometry,hcount,firstdate,lastdate,area'
-    table_name = 'public:m3_polygons_current'
+    features = 'uid,geometry,hcount,firstdate,lastdate,area,guess_id'
+    table_name = 'public:m3_polygons'
     # NOTE: no need to filter since current?
     # today = datetime.datetime.now().strftime('%Y%m%d')
     # yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
     # filter = f'"maxdate">=\'{today}\''
-    filter = None
+    # filter = None
+    filter = f"lastdate during {for_day.strftime('%Y-%m-%d')}T00:00:00Z/P1D"
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)
     return gdf, f_json
@@ -98,7 +99,9 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
 
 
 def get_wx_cwfis(dir_out, dates):
-    layer = 'public:firewx_stns_current'
+    # layer = 'public:firewx_stns_current'
+    # HACK: use 2022 because it has 2023 in it right now
+    layer = 'public:firewx_stns_2022'
     df = pd.DataFrame()
     for date in dates:
         year = date.year
