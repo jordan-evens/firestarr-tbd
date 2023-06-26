@@ -53,6 +53,7 @@ def get_fires_m3(dir_out, for_day=datetime.date.today()):
     # filter = None
     filter = f"lastdate during {for_day.strftime('%Y-%m-%d')}T00:00:00Z/P1D"
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
+    logging.debug(f"Reading {f_json}")
     gdf = gpd.read_file(f_json)
     return gdf, f_json
     # fires_shp = f_out.replace('.json', '.shp')
@@ -111,7 +112,7 @@ def get_wx_cwfis(dir_out, dates):
         print(url)
         file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
         if not os.path.exists(file_out):
-            save_http(url, file_out)
+            file_out = try_save(lambda _: save_http(_, file_out), url)
         logging.debug("Reading {}".format(file_out))
         df_day = pd.read_csv(file_out)
         df = pd.concat([df, df_day])
