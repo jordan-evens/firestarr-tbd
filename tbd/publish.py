@@ -16,7 +16,7 @@ import sys
 sys.path.append("../util")
 import server
 
-# from osgeo_utils import gdal_calc
+from osgeo_utils import gdal_calc
 
 DIR_ROOT = r"/appl/data/output"
 DIR_TMP_ROOT = os.path.join(DIR_ROOT, "service")
@@ -107,9 +107,11 @@ def symbolize(file_in, file_out, empty=False, with_shp=False):
 
 def publish_folder(dir_runid, with_shp=False):
     if not os.path.isdir(DIR_OUT):
-        logging.warning("Publish directory %s doesn't exist, so not publishing %s",
-                        DIR_OUT,
-                        dir_runid)
+        logging.warning(
+            "Publish directory %s doesn't exist, so not publishing %s",
+            DIR_OUT,
+            dir_runid,
+        )
     logging.info("Publishing %s", dir_runid)
     run_id = os.path.basename(dir_runid)
     dir_base = os.path.join(dir_runid, "combined")
@@ -117,10 +119,9 @@ def publish_folder(dir_runid, with_shp=False):
     # redundant to use loop now that output structure is different,
     # but still works
     dir_date = [
-        x for x in os.listdir(dir_base)
-        if os.path.isdir(os.path.join(dir_base, x))
+        x for x in os.listdir(dir_base) if os.path.isdir(os.path.join(dir_base, x))
     ][-1]
-    dir_in = os.path.join(dir_base, dir_date, "rasters")
+    dir_in = os.path.join(dir_base, dir_date)
     REGEX_TIF_SIMPLE = re.compile("^firestarr_day_[0-9]*.tif$")
     PREFIX_DAY = f"firestarr_{run_id}_day_"
     FORMAT_DAY = PREFIX_DAY + "{:02d}"
@@ -130,9 +131,11 @@ def publish_folder(dir_runid, with_shp=False):
     f = files_tif_orig[-1]
     # need to lop off the date from the end for this service
     i = f.rindex("_")
-    n = int(f[(f[:i].rindex('_') + 1): i])
+    n = int(f[(f[:i].rindex("_") + 1) : i])
     dir_tmp = os.path.join(DIR_TMP_ROOT, dir_date, run_id)
-    files_tif = [f"{f[:f.rindex('_')]}.tif".replace(f"_{run_id}", "") for f in files_tif_orig]
+    files_tif = [
+        f"{f[:f.rindex('_')]}.tif".replace(f"_{run_id}", "") for f in files_tif_orig
+    ]
     #############################
     # dir_tmp += '_TEST'
     #############################
@@ -157,29 +160,39 @@ def publish_folder(dir_runid, with_shp=False):
         logging.warning("Will create empty files for %s", str(files_missing))
     file_template = os.path.join(dir_in, files_tif_orig[0])
     files_tif_simple = files_tif
-    # for f in files_missing:
-    #     logging.warning(f"Creating empty file for {f}")
-    #     args = [
-    #         "gdal_calc.py",
-    #         "--calc",
-    #         "0",
-    #         "-A",
-    #         f'{file_template}',
-    #         "--NoDataValue",
-    #         "0",
-    #         # '--overwrite'
-    #         "--outfile",
-    #         f'{os.path.join(dir_in, f)}',
-    #         "--quiet",
-    #         "--creation-option",
-    #         'COMPRESS=LZW',
-    #         '--creation-option',
-    #         'NUM_THREADS=ALL_CPUS',
-    #         '--creation-option',
-    #         'TILED=YES'
-    #     ]
-    #     logging.info(' '.join(args))
-    #     gdal_calc.main(args)
+    for f in files_missing:
+        logging.warning(f"Creating empty file for {f}")
+        args = [
+            "gdal_calc.py",
+            "--calc",
+            "0",
+            "-A",
+            f"{file_template}",
+            "--NoDataValue",
+            "0",
+            '--overwrite',
+            "--outfile",
+            f"{os.path.join(DIR_OUT, f)}",
+            "--quiet",
+            "--creation-option",
+            "COMPRESS=LZW",
+            "--creation-option",
+            "NUM_THREADS=ALL_CPUS",
+            "--creation-option",
+            "TILED=YES",
+            # "--format",
+            # "COG",
+            "--creation-option",
+            "NBITS=16",
+            # "--creation-option",
+            # "ADD_ALPHA=NO",
+            "--creation-option",
+            "SPARSE_OK=TRUE",
+            # "--creation-option",
+            # "PREDICTOR=YES",
+        ]
+        logging.info(" ".join(args))
+        gdal_calc.main(args)
     files_tif = [f for f in os.listdir(dir_in) if REGEX_TIF.match(f)]
     # for file in tqdm(files_tif + files_missing, desc="Symbolizing files"):
     #     file_out = os.path.join(dir_tmp, file)
@@ -196,11 +209,11 @@ def publish_folder(dir_runid, with_shp=False):
     #     os.listdir(dir_tmp), desc=f"Copying to output directory {DIR_OUT}"
     # ):
     #     shutil.copy(os.path.join(dir_tmp, file), os.path.join(DIR_OUT, file))
-    for i in tqdm(
-            range(len(files_tif)),
-            desc=f"Copying to output directory {DIR_OUT}"):
-        shutil.copy(os.path.join(dir_in, files_tif[i]),
-                    os.path.join(DIR_OUT, files_tif_simple[i]))
+    for i in tqdm(range(len(files_tif)), desc=f"Copying to output directory {DIR_OUT}"):
+        shutil.copy(
+            os.path.join(dir_in, files_tif[i]),
+            os.path.join(DIR_OUT, files_tif_simple[i]),
+        )
     # update metadata
     summary = f"FireSTARR outputs for {n} day run {run_id}"
     updates = {
@@ -219,7 +232,8 @@ def publish_latest(dir_input="current_m3", with_shp=False):
     # dir_input = "current_home_bfdata_affes_latest"
     dir_main = os.path.join(DIR_ROOT, dir_input)
     run_id = [
-        x for x in os.listdir(dir_main)
+        x
+        for x in os.listdir(dir_main)
         if os.path.isdir(os.path.join(dir_main, x, "combined"))
     ][-1]
     ##########################

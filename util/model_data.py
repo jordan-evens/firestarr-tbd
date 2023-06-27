@@ -38,7 +38,8 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
                                         save_as=f_out,
                                         check_modified=False,
                                         ignore_existing=False),
-                    request_url)
+                    request_url,
+                    check_code=False)
 
 
 def get_fires_m3(dir_out, for_day=datetime.date.today()):
@@ -112,7 +113,7 @@ def get_wx_cwfis(dir_out, dates):
         print(url)
         file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
         if not os.path.exists(file_out):
-            file_out = try_save(lambda _: save_http(_, file_out), url)
+            file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
         logging.debug("Reading {}".format(file_out))
         df_day = pd.read_csv(file_out)
         df = pd.concat([df, df_day])
@@ -178,7 +179,7 @@ def get_wx_ensembles(lat, long):
             raise ParseError(content)
         return df_initial
     # HACK: wrap initial parse with this so it retries if we get a page that isn't what we want back
-    df_initial = try_save(get_initial, url)
+    df_initial = try_save(get_initial, url, check_code=False)
     if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
         raise RuntimeError("Expected weather in UTC time")
     index = ['MODEL', 'LAT', 'LON', 'ISSUEDATE', 'UTC_OFFSET', 'DATETIME']

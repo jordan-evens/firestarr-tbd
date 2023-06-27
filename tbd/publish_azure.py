@@ -11,6 +11,7 @@ DIR_ROOT = "/appl/data/output"
 
 from azure.storage.blob import BlobClient
 from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import ExponentialRetry
 from azure.storage.blob import ContainerClient
 
 
@@ -42,9 +43,11 @@ def read_config():
     return True
 
 def get_blob_service_client():
+    retry = ExponentialRetry(initial_backoff=1, increment_base=3, retry_total=5)
     return BlobServiceClient(
         account_url=AZURE_URL,
-        credential=AZURE_TOKEN
+        credential=AZURE_TOKEN,
+        retry_policy=retry
     )
 
 def get_container():
@@ -88,9 +91,9 @@ def upload_dir(dir_run):
     dates = os.listdir(dir_combined)
     source = os.path.basename(os.path.dirname(dir_run))
     assert (1 == len(dates))
-    for dir_date in dates:
-        dir_rasters = os.path.join(dir_combined, dir_date, "rasters")
-        files = os.listdir(dir_rasters)
+    for date in dates:
+        dir_date = os.path.join(dir_combined, date)
+        files = os.listdir(dir_date)
         # HACK: ignore perim for now
         files = [f for f in files if 'perim' not in f]
         # assert ('perim.tif' in files)
@@ -105,9 +108,9 @@ def upload_dir(dir_run):
             "run_id": run_id,
             "source": source,
             "run_length": f"{run_length}",
-            "origin_date": dir_date,
+            "origin_date": date,
         }
-        origin = datetime.datetime.strptime(dir_date, "%Y%m%d").date()
+        origin = datetime.datetime.strptime(date, "%Y%m%d").date()
         if container is None:
             # wait until we know we need it
             container = get_container()
@@ -122,7 +125,7 @@ def upload_dir(dir_run):
             else:
                 for_date = origin + datetime.timedelta(days=(days[f] - 1))
             metadata['for_date'] = for_date.strftime('%Y%m%d')
-            path = os.path.join(dir_rasters, f)
+            path = os.path.join(dir_date, f)
             # HACK: just upload into archive too so we don't have to move later
             with open(path, "rb") as data:
                 container.upload_blob(

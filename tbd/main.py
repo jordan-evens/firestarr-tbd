@@ -1,14 +1,16 @@
 import os
 import sys
 import logging
+import math
 
 # makes groups that are too big because it joins mutiple groups into a chain
 # DEFAULT_GROUP_DISTANCE_KM = 60
 # also too big
 # DEFAULT_GROUP_DISTANCE_KM = 40
 DEFAULT_GROUP_DISTANCE_KM = 20
-DEFAULT_NUM_DAYS = 3
-
+# DEFAULT_NUM_DAYS = 3
+# DEFAULT_NUM_DAYS = 7
+DEFAULT_NUM_DAYS = 14
 
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
@@ -128,7 +130,7 @@ def getPage(url):
 # ###################
 
 
-def merge_dir(dir_in, run_id, force=False, do_tile=False, creation_options=CREATION_OPTIONS):
+def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
     logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
     # import importlib
@@ -143,14 +145,13 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False, creation_options=CREAT
     )
     dir_base = os.path.dirname(dir_in)
     dir_parent = os.path.dirname(dir_base)
-    dir_type = os.path.basename(dir_base)
+    # dir_type = os.path.basename(dir_base)
     # want to put probability and perims together
     dir_out = common.ensure_dir(
         os.path.join(
             dir_parent,
             "combined",
-            #  os.path.basename(dir_base),
-            os.path.basename(dir_in),
+            os.path.basename(dir_in)
         )
     )
     files_by_for_what = {}
@@ -187,7 +188,7 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False, creation_options=CREAT
             dir_for_what = f"day_{offset:02d}"
         dir_crs = ensure_dir(os.path.join(dir_parent,
                                "reprojected",
-                               os.path.basename(dir_in)))
+                               dir_in_for_what))
         files_crs = []
         for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}", leave=False):
             f_crs = os.path.join(dir_crs, os.path.basename(f))
@@ -200,6 +201,11 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False, creation_options=CREAT
         file_root = os.path.join(dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}")
         file_tmp = f"{file_root}_tmp.tif"
         file_base = f"{file_root}.tif"
+        # argv = (["", "-a_nodata", "-1"]
+        #     + co
+        #     + ["-o", file_tmp]
+        #     + files_crs)
+
         gdal_merge_max(
             (
                 ["",
@@ -222,28 +228,25 @@ def merge_dir(dir_in, run_id, force=False, do_tile=False, creation_options=CREAT
                                # shouldn't need much precision just for web display
                                "NBITS=16",
                                # shouldn't need alpha?
-                               "ADD_ALPHA=NO",
-                               "SPARSE_OK=TRUE",
+                               #"ADD_ALPHA=NO",
+                               #"SPARSE_OK=TRUE",
                                "PREDICTOR=YES"
                                ]
                             )
         os.remove(file_tmp)
-    dir_rasters = ensure_dir(os.path.join(dir_out, "rasters"))
-    logging.info(f"Moving rasters to {dir_rasters}")
-    for file in [x for x in os.listdir(dir_out) if not x.endswith(".html")]:
-        file_in = os.path.join(dir_out, file)
-        if os.path.isfile(file_in):
-            shutil.move(file_in, os.path.join(dir_rasters, file))
     if use_exceptions:
         gdal.UseExceptions()
     return dir_out
 
 
-def merge_dirs(dir_input=None, dates=None, do_tile=False):
+def merge_dirs(dir_input=None, dates=None):
     # NOTE: do_tile takes hours if run for the entire country with all polygons
     if dir_input is None:
         dir_default = os.path.join(tbd.DIR_OUTPUT, "current_m3")
-        dir_input = os.path.join(dir_default, list_dirs(dir_default)[-1])
+        dir_input = os.path.join(
+            dir_default,
+            [x for x in list_dirs(dir_default) if os.path.isdir(
+                os.path.join(dir_default, x, "initial"))][-1])
         logging.info("Defaulting to directory %s", dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
@@ -254,7 +257,7 @@ def merge_dirs(dir_input=None, dates=None, do_tile=False):
     for d in sorted(list_dirs(dir_initial)):
         if dates is None or d in dates:
             dir_in = os.path.join(dir_initial, d)
-            results.append(merge_dir(dir_in, run_id, do_tile=do_tile))
+            results.append(merge_dir(dir_in, run_id))
     if 0 == len(results):
         logging.warning("No directories merged from %s", dir_initial)
         return
@@ -288,74 +291,7 @@ def merge_dirs(dir_input=None, dates=None, do_tile=False):
     # shutil.copytree(result, dir_out)
 
 
-# def fix_name(name):
-#     if isinstance(name, str) or not (name is None or np.isnan(name)):
-#         return str(name).replace('-', '_')
-#     return ''
-
-
-# def get_fires_m3(dir_out):
-#     df_m3, m3_json = model_data.get_fires_m3(dir_out)
-#     df_m3['guess_id'] = df_m3['guess_id'].apply(fix_name)
-#     # df_m3['guess_id'] = df_m3['guess_id'].replace(np.nan, None)
-#     df_m3['fire_name'] = df_m3.apply(lambda x: fix_name(x['guess_id'] or x['id']), axis=1)
-#     # df_m3['guess_id'] = df_m3['guess_id'].fillna('')
-#     # df_m3['guess_id'] = df_m3['guess_id'].astype(str)
-#     # df_dip, dip_json = model_data.get_fires_dip(dir_out, status_ignore=None)
-#     df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
-#     df_ciffc['fire_name'] = df_ciffc['field_agency_fire_id'].apply(fix_name)
-#     del df_ciffc['id']
-#     df_join = pd.merge(df_m3, df_ciffc, left_on="fire_name", right_on="fire_name")
-#     # HACK: doing "x in df_m3.fire_name" isn't working, but == does
-#     no_join = [x for x in df_m3.guess_id if not np.any(df_join.guess_id.str.contains(str(x), regex=False))]
-#     # HACK: dumb comparison for now
-#     def find_index(x):
-#         m = df_ciffc.fire_name.str.contains(x)
-#         if np.any(m):
-#             return df_ciffc[m].index
-#         return None
-#     idx_maybe_join = [int(idx[0]) for idx in [find_index(x) for x in no_join] if idx is not None]
-#     maybe_join = df_ciffc.iloc[idx_maybe_join][:]
-#     # HACK: FIX: assume everything is this year
-#     year = datetime.date.today().year
-#     maybe_join['fire_name'] = maybe_join['fire_name'].apply(lambda x: x[5:] if x.startswith(f'{year}_') else x)
-#     df_join_maybe = pd.merge(df_m3, maybe_join, left_on="fire_name", right_on="fire_name")
-#     df_matched = pd.concat([df_join, df_join_maybe])
-#     id_matched = df_matched.id
-#     id_m3 = df_m3.id
-#     id_diff = list(set(id_m3) - set(id_matched))
-#     df_matched = df_matched.set_index(['id'])
-#     df_unmatched = df_m3.set_index(['id']).loc[id_diff]
-#     n_idx = len(list(df_unmatched.index) + list(df_matched.index))
-#     n_idx_set = len(set(df_unmatched.index).union(set(df_matched.index)))
-#     n_idx_orig = len(df_m3)
-#     if (n_idx != n_idx_set or n_idx != n_idx_orig):
-#         logging.error("Somehow lost or gained fires when trying to match m3 to ciffc")
-#         logging.error("Excpected %d fires after match, but had %d total and %d unique",
-#                       n_idx_orig, n_idx, n_idx_set)
-#         raise RuntimeError("Matching M3 polygons failed")
-#     df_OC = df_matched[df_matched.field_stage_of_control_status == "OC"]
-
-#     # # no_join = [x for x in df_m3.guess_id if x not in df_join.guess_id]
-#     # # # df_dip_proj = df_dip.to_crs(df_m3.crs)
-#     # # # df_within = df_dip_proj.sjoin(df_m3, how="left", predicate="within")
-#     # # # # FIX: ideally want to group nearby fires so they can interact in sims
-#     # # # m3_no_match =  [x for x in df_m3.fire_name if x not in df_within.fire_name]
-#     # # # name_no_match = [x for x in df_m3.fire_name if x not in df_dip.firename]
-#     # # # df_both = df_dip_proj.sjoin_nearest(df_m3, max_distance=0.1)
-#     # # # if there's a detection then the fire is active even if they say it's no OC?
-#     # df_no_guess = df_m3[df_m3['guess_id'] == '']
-#     # df_join = pd.merge(df_m3, df_dip, left_on="guess_id", right_on="firename")
-#     # df_OC = df_join[df_join.stage_of_control == "OC"]
-#     # del df_OC['geometry_y']
-#     # df_OC = df_OC.rename(columns={"geometry_x": "geometry"})
-#     # df_OC.set_geometry(df_OC["geometry"])
-#     # return df_OC
-#     # # # so group polygons and points into clusters and run that way so sims interact for nearby fires
-#     # # return df_m3
-
-
-def get_fires_active(dir_out):
+def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
     str_year = str(YEAR)
 
     def fix_name(name):
@@ -392,26 +328,39 @@ def get_fires_active(dir_out):
             len(missing),
             str(missing),
         )
-    # Only want to run OC matched polygons, and everything else plus ciffc points
+    # Only want to run matched polygons, and everything else plus ciffc points
     id_matched = df_matched.id
     id_m3 = df_m3.id
     id_diff = list(set(id_m3) - set(id_matched))
     df_matched = df_matched.set_index(["id"])
     df_unmatched = df_m3.set_index(["id"]).loc[id_diff]
     logging.info("M3 has %d polygons that are not tied to a fire", len(df_unmatched))
-    df_OC = df_matched[df_matched.field_stage_of_control_status == "OC"]
-    logging.info("M3 has %d polygons that are tied to OC fires", len(df_OC))
-    df_poly_m3 = pd.concat([df_OC, df_unmatched])
+    if status_include:
+        df_matched = df_matched[df_matched.field_stage_of_control_status.isin(status_include)]
+        logging.info("M3 has %d polygons that are tied to %s fires", len(df_matched), status_include)
+    if status_omit:
+        df_matched = df_matched[~df_matched.field_stage_of_control_status.isin(status_omit)]
+        logging.info("M3 has %d polygons that aren't tied to %s fires", len(df_matched), status_omit)
+    df_poly_m3 = pd.concat([df_matched, df_unmatched])
     logging.info("Using %d polygons as inputs", len(df_poly_m3))
-    # now find any OC fires that weren't matched to a polygon
+    # now find any fires that weren't matched to a polygon
     diff_ciffc = list((set(df_ciffc.fire_name) - set(df_matched.fire_name)))
     df_ciffc_pts = df_ciffc.set_index(["fire_name"]).loc[diff_ciffc]
-    df_ciffc_OC = df_ciffc_pts[df_ciffc_pts.field_stage_of_control_status == "OC"]
+    if status_include:
+        df_ciffc_pts = df_ciffc_pts[df_ciffc_pts.field_stage_of_control_status.isin(status_include)]
+    if status_omit:
+        df_ciffc_pts = df_ciffc_pts[~df_ciffc_pts.field_stage_of_control_status.isin(status_omit)]
     logging.info(
-        "Found %d OC fires that aren't matched with polygons", len(df_ciffc_OC)
+        "Found %d fires that aren't matched with polygons", len(df_ciffc_pts)
     )
     df_poly = df_poly_m3.reset_index()[["fire_name", "geometry"]]
-    df_pts = df_ciffc_OC.reset_index()[["fire_name", "geometry"]].to_crs(df_poly.crs)
+    def area_to_radius(a):
+        return math.sqrt(a / math.pi)
+    df_ciffc_pts = df_ciffc_pts.to_crs(df_poly.crs)
+    # HACK: put in circles of proper area if no perimeter
+    df_ciffc_pts['radius'] = df_ciffc_pts['field_fire_size'].apply(lambda x: max(0.1, area_to_radius(max(0, x))))
+    df_ciffc_pts['geometry'] = df_ciffc_pts.apply(lambda x: x.geometry.buffer(x.radius), axis=1)
+    df_pts = df_ciffc_pts.reset_index()[["fire_name", "geometry"]]
     df_fires = pd.concat([df_pts, df_poly])
     return df_fires
 
@@ -836,6 +785,12 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     dir_current = os.path.join(tbd.DIR_OUTPUT, f"current_{run_prefix}")
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
     dir_current = os.path.join(dir_current, run_id)
+    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
+    # we only want stations that have indices
+    for index in ["ffmc", "dmc", "dc"]:
+        df_wx_cwfis = df_wx_cwfis[~np.isnan(df_wx_cwfis[index])]
+    df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
+    df_wx = df_wx_cwfis_wgs
     if dir_fires is None:
         df_fires_active = get_fires_active(dir_out)
         df_fires_groups = group_fires(df_fires_active)
@@ -848,19 +803,19 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
         df_fires["lon"] = centroids.x
         df_fires["lat"] = centroids.y
         # df_fires = df_fires.to_crs(CRS)
+    # cut out the row as a DataFrame still so we can use crs and centroid
+    # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
+    file_bounds = common.BOUNDS['bounds']
+    if file_bounds:
+        logging.info(f"Using groups in boundaries defined by {file_bounds}")
+        bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
+        # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
+        df_fires = df_fires[df_fires.intersects(bounds.dissolve().iloc[0].geometry)]
     # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
     # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
     # takes the longest to run?
     # FIX: consider sorting by startup indices or overall DSR for period instead?
     fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(ascending=False)
-    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
-    # we only want stations that have indices
-    for index in ["ffmc", "dmc", "dc"]:
-        df_wx_cwfis = df_wx_cwfis[~np.isnan(df_wx_cwfis[index])]
-    df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
-    df_wx = df_wx_cwfis_wgs
-    # cut out the row as a DataFrame still so we can use crs and centroid
-    # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     dirs_fire = []
     # wx_failed = 0
     # for df_fire in tqdm(df_by_fire, desc='Separating fires', leave=False):
@@ -950,9 +905,9 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
 #     merge_dirs(dir_current)
 
 
-def merge_latest(dir_root, do_tile=False):
+def merge_latest(dir_root):
     dir_latest = list_dirs(dir_root)[-1]
-    return merge_dirs(os.path.join(dir_root, dir_latest), do_tile=do_tile)
+    return merge_dirs(os.path.join(dir_root, dir_latest))
 
 
 if __name__ == "__main__":
@@ -970,7 +925,7 @@ if __name__ == "__main__":
                 n, totaltime, totaltime / n
             )
         )
-        merge_dirs(dir_current, do_tile=False)
+        merge_dirs(dir_current)
         publish.publish_folder(dir_current)
         import publish_azure
         publish_azure.upload_dir(dir_current)

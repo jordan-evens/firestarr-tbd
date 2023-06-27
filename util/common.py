@@ -28,6 +28,7 @@ import requests
 import zipfile
 from tqdm import tqdm
 import sys
+import time
 import traceback
 
 ## So HTTPS transfers work properly
@@ -37,10 +38,14 @@ from urllib3.exceptions import InsecureRequestWarning
 # Suppress only the single warning from urllib3 needed.
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 # pretend to be something else so servers don't block requests
+VERIFY = False
+# VERIFY = True
 HEADERS = {
     'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
 }
 # HEADERS = {'User-Agent': 'WeatherSHIELD/0.93'}
+RETRY_MAX_ATTEMPTS = 10
+RETRY_DELAY = 2
 
 ## bounds to use for clipping data
 BOUNDS = None
@@ -57,13 +62,8 @@ def ensure_dir(dir):
     @param dir Directory to ensure existence of
     @return None
     """
-    if not os.path.exists(dir):
-        try:
-            os.makedirs(dir)
-        except:
-            # screws up when threaded sometimes
-            pass
-    if not os.path.exists(dir):
+    os.makedirs(dir, exist_ok=True)
+    if not os.path.isdir(dir):
         logging.fatal("Could not create directory {}".format(dir))
         sys.exit(-1)
     return dir
@@ -97,6 +97,7 @@ def read_config(force=False):
         CONFIG.set('tbd', 'latitude_max', '84')
         CONFIG.set('tbd', 'longitude_min', '-141')
         CONFIG.set('tbd', 'longitude_max', '-52')
+        CONFIG.set('tbd', 'bounds', "")
         try:
             with open(SETTINGS_FILE) as configfile:
                 CONFIG.readfp(configfile)
@@ -112,7 +113,8 @@ def read_config(force=False):
             'longitude': {
                 'min': int(CONFIG.get('tbd', 'longitude_min')),
                 'max': int(CONFIG.get('tbd', 'longitude_max'))
-            }
+            },
+            'bounds': CONFIG.get('tbd', 'bounds'),
         }
 
 
@@ -148,7 +150,7 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
     if save_as is None:
         logging.debug(f'Opening {url}')
         response = requests.get(url,
-                                verify=False,
+                                verify=VERIFY,
                                 headers=HEADERS)
         return response.content
     # logging.debug("Saving {}".format(url))
@@ -162,13 +164,13 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
     # req = urllib2.Request(url, headers=HEADERS)
     # response = urllib2.urlopen(req,
     #                            stream=True,
-    #                            verify=False)
+    #                            verify=VERIFY)
     modlocal = None
     try:
         logging.debug(f'Opening {url}')
         response = requests.get(url,
                                 stream=True,
-                                verify=False,
+                                verify=VERIFY,
                                 headers=HEADERS)
         if check_modified and 'last-modified' in response.headers.keys():
             mod = response.headers['last-modified']
@@ -264,7 +266,7 @@ def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
     return save_as
 
 
-def try_save(fct, url, max_save_retries=5, check_code=True):
+def try_save(fct, url, max_save_retries=RETRY_MAX_ATTEMPTS, check_code=False):
     """!
     Use callback fct to try saving up to a fixed number of retries
     @param fct Function to apply to url
@@ -283,9 +285,12 @@ def try_save(fct, url, max_save_retries=5, check_code=True):
                 if 403 == ex.errno:
                     logging.error(ex.reason)
                     raise ex
-                if 404 == ex.errno or save_tries >= max_save_retries:
+                if 404 == ex.errno:
                     raise ex
+            if save_tries >= max_save_retries:
+                raise ex
             logging.warning("Retrying save for {}".format(url))
+            time.sleep(RETRY_DELAY)
             save_tries += 1
 
 

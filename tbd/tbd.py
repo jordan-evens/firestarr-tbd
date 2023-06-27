@@ -24,6 +24,9 @@ DIR_DATA = common.ensure_dir('/appl/data')
 DIR_ROOT = common.ensure_dir(os.path.join(DIR_DATA, 'sims'))
 DIR_OUTPUT = common.ensure_dir(os.path.join(DIR_DATA, 'output'))
 FILE_SIM = "firestarr.json"
+# set to "" if want intensity grids
+NO_INTENSITY = "--no-intensity"
+# NO_INTENSITY = ""
 
 
 def run_fire_from_folder(dir_fire, dir_current, verbose=False):
@@ -95,6 +98,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             args = ' '.join([
                     f"\"{dir_out}\" {start_date} {lat} {lon}",
                     f"{hour:02d}:{minute:02d}",
+                    NO_INTENSITY,
                     f"--ffmc {data['ffmc_old']}",
                     f"--dmc {data['dmc_old']}",
                     f"--dc {data['dc_old']}",
@@ -139,6 +143,8 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             # want to put each probability raster into the right date so we can combine them
             d = prob[(prob.rindex('_') + 1):prob.rindex('.tif')].replace('-', '')
             dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
+            # FIX: want all of these to be output at the size of the largest?
+            # FIX: still doesn't show whole area that was simulated
             extent = gis.project_raster(
                 os.path.join(dir_out, prob),
                 os.path.join(dir_region, d, fire_name + '.tif'),
