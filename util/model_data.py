@@ -25,9 +25,9 @@ EPSG = 3978
 DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
 # DEFAULT_STATUS_KEEP = ["OC"]
 
-def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT):
+def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT, output_format="application/json"):
     logging.debug(f'Getting table {table_name} in projection {str(EPSG)}')
-    request_url = f'{wfs_root}&request=GetFeature&typename={table_name}&outputFormat=application/json'
+    request_url = f'{wfs_root}&request=GetFeature&typename={table_name}&outputFormat={output_format}'
     if features is not None:
         request_url += f'&propertyName={features}'
     if filter is not None:
@@ -100,7 +100,7 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     return gdf, f_json
 
 
-def get_wx_cwfis(dir_out, dates):
+def get_wx_cwfis(dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr"):
     # layer = 'public:firewx_stns_current'
     # HACK: use 2022 because it has 2023 in it right now
     layer = 'public:firewx_stns_2022'
@@ -109,24 +109,33 @@ def get_wx_cwfis(dir_out, dates):
         year = date.year
         month = date.month
         day = date.day
-        url = WFS_ROOT + f'&request=GetFeature&typeNames={layer}&cql_filter=rep_date=={year:04d}-{month:02d}-{day:02d}T12:00:00&outputFormat=csv'
-        print(url)
+        #https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0&request=GetFeature&typeNames=public:firewx_stns_2022&propertyName=FID,rep_date,prov,lat,lon,elev,temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr&cql_filter=rep_date%3D2023-06-27T12:00:00&outputFormat=csv
+        # url = WFS_ROOT + f'&request=GetFeature&typeNames={layer}&cql_filter=rep_date=={year:04d}-{month:02d}-{day:02d}T12:00:00&outputFormat=csv'
+        # print(url)
         file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
         if not os.path.exists(file_out):
-            file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
+            # file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
+            file_out = query_geoserver(layer,
+                                       file_out,
+                                       features=f"rep_date,prov,lat,lon,elev,the_geom,{indices}",
+                                       filter=f"rep_date={year:04d}-{month:02d}-{day:02d}T12:00:00",
+                                       output_format="csv")
         logging.debug("Reading {}".format(file_out))
         df_day = pd.read_csv(file_out)
         df = pd.concat([df, df_day])
-    df = df[['wmo', 'lat', 'lon', 'prov', 'rep_date', 'temp', 'rh', 'ws', 'precip', 'ffmc', 'dmc', 'dc', 'isi', 'bui', 'fwi']]
+    # df = df[['wmo', 'lat', 'lon', 'prov', 'rep_date', 'temp', 'rh', 'ws', 'precip', 'ffmc', 'dmc', 'dc', 'isi', 'bui', 'fwi']]
     df['date'] = df.apply(lambda x: datetime.datetime.strptime(x['rep_date'], '%Y-%m-%dT%H:00:00'), axis=1)
     df['year'] = df.apply(lambda x: x['date'].year, axis=1)
     df['month'] = df.apply(lambda x: "{:02d}".format(x['date'].month), axis=1)
     df['day'] = df.apply(lambda x: "{:02d}".format(x['date'].day), axis=1)
-    df = df[['wmo', 'lat', 'lon', 'prov', 'year', 'month', 'day', 'temp', 'rh', 'ws', 'precip', 'ffmc', 'dmc', 'dc', 'isi', 'bui', 'fwi']]
-    df = df.sort_values(['year', 'month', 'day', 'wmo'])
-    crs = 'WGS84'
-    # is there any reason to make actual geometry?
-    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['lon'], df['lat']), crs=crs)
+    # df = df[['wmo', 'lat', 'lon', 'prov', 'year', 'month', 'day', 'temp', 'rh', 'ws', 'precip', 'ffmc', 'dmc', 'dc', 'isi', 'bui', 'fwi']]
+    df = df.sort_values(['year', 'month', 'day', 'lat', 'lon'])
+    # crs = 'WGS84'
+    # from looking at wms capabilities
+    crs = 3978
+    # # is there any reason to make actual geometry?
+    # gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['lon'], df['lat']), crs=crs)
+    gdf = gpd.GeoDataFrame(df, geometry=df['the_geom'], crs=crs)
     return gdf
 
 

@@ -15,6 +15,9 @@ DEFAULT_NUM_DAYS = 14
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
+# FORMAT_OUTPUT = "COG"
+FORMAT_OUTPUT = "GTiff"
+
 sys.path.append("../util")
 from log import *
 
@@ -216,24 +219,25 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                 + files_crs
             )
         )
-        # HACK: reproject should basically just be copy?
-        # convert to COG
-        gis.project_raster(file_tmp,
-                           file_base,
-                           nodata=-1,
-                           resolution=100,
-                           format="COG",
-                           crs=f"EPSG:{CRS_OUTPUT}",
-                           options=creation_options + [
-                               # shouldn't need much precision just for web display
-                               "NBITS=16",
-                               # shouldn't need alpha?
-                               #"ADD_ALPHA=NO",
-                               #"SPARSE_OK=TRUE",
-                               "PREDICTOR=YES"
-                               ]
-                            )
-        os.remove(file_tmp)
+        shutil.move(file_tmp, file_base)
+        # # HACK: reproject should basically just be copy?
+        # # convert to COG
+        # gis.project_raster(file_tmp,
+        #                    file_base,
+        #                    nodata=-1,
+        #                    resolution=100,
+        #                    format=FORMAT_OUTPUT,
+        #                    crs=f"EPSG:{CRS_OUTPUT}",
+        #                    options=creation_options + [
+        #                        # shouldn't need much precision just for web display
+        #                        "NBITS=16",
+        #                        # shouldn't need alpha?
+        #                        #"ADD_ALPHA=NO",
+        #                        #"SPARSE_OK=TRUE",
+        #                        "PREDICTOR=YES"
+        #                        ]
+        #                     )
+        # os.remove(file_tmp)
     if use_exceptions:
         gdal.UseExceptions()
     return dir_out
@@ -785,7 +789,8 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     dir_current = os.path.join(tbd.DIR_OUTPUT, f"current_{run_prefix}")
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
     dir_current = os.path.join(dir_current, run_id)
-    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday])
+    # only care about startup indices
+    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday], indices="ffmc,dmc,dc")
     # we only want stations that have indices
     for index in ["ffmc", "dmc", "dc"]:
         df_wx_cwfis = df_wx_cwfis[~np.isnan(df_wx_cwfis[index])]
