@@ -4,6 +4,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Build the stack
-        run: docker-compose up -d
+    - name: Checkout repository
+      uses: actions/checkout@master
+    - name: Checkout submodules
+      uses: textbook/git-checkout-submodule-action@master
+    - name: Build the stack
+      run: docker-compose build
