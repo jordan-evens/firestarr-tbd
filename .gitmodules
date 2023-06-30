@@ -1,0 +1,3 @@
+[submodule "tbd/cffdrs-ng"]
+	path = tbd/cffdrs-ng
+	url = git@github.com:jordan-evens/cffdrs-ng.git
