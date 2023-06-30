@@ -29,16 +29,16 @@ class TestEnvironment
 public:
   /**
    * \brief Environment with the same data in every cell
-   * \param cells Constant cells 
+   * \param cells Constant cells
    */
   explicit TestEnvironment(data::ConstantGrid<topo::Cell>* cells) noexcept
     : Environment(cells, 0)
   {
   }
 };
-static const wx::Temperature TMP(20.0);
+static const wx::Temperature TEMP(20.0);
 static const wx::RelativeHumidity RH(30.0);
-static const wx::AccumulatedPrecipitation APCP(0.0);
+static const wx::Precipitation PREC(0.0);
 static vector<const wx::FwiWeather*>* make_weather(const wx::Dc& dc,
                                                    const wx::Bui& bui,
                                                    const wx::Dmc& dmc,
@@ -50,10 +50,10 @@ static vector<const wx::FwiWeather*>* make_weather(const wx::Dc& dc,
                 wx->end(),
                 [&wind, &ffmc, &dmc, &dc, &bui]() {
                   return make_unique<wx::FwiWeather>(
-                           TMP,
+                           TEMP,
                            RH,
                            wind,
-                           APCP,
+                           PREC,
                            ffmc,
                            dmc,
                            dc,
@@ -130,6 +130,7 @@ public:
     : Scenario(model,
                1,
                weather,
+               weather,
                start_date,
                start_cell,
                start_point,
@@ -178,7 +179,7 @@ int run_test(const char* output_directory,
     MAX_ROWS,
     MAX_COLUMNS,
     topo::Cell{},
-    -1,
+    topo::Cell{},
     TEST_XLLCORNER,
     TEST_YLLCORNER,
     TEST_XLLCORNER + TEST_GRID_SIZE * MAX_COLUMNS,
@@ -345,7 +346,7 @@ int test(const int argc, const char* const argv[])
   }
   catch (const runtime_error& err)
   {
-    logging::fatal(err.what());
+    logging::fatal(err);
   }
   return 0;
 }

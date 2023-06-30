@@ -44,13 +44,16 @@ public:
    * \brief Create a Perimeter of the given size at the given Location
    * \param location Location to center Perimeter on
    * \param size Size of Perimeter to create
-   * \param yesterday Weather from the day before
    * \param env Environment to apply Perimeter to
    */
   Perimeter(const Location& location,
             size_t size,
-            const wx::FwiWeather& yesterday,
             const Environment& env);
+  // /**
+  //  * \brief Map of all burned Locations
+  //  * \return All Locations burned by this Perimeter
+  //  */
+  // [[nodiscard]] const BurnedMap& burned_map() const noexcept;
   /**
    * \brief List of all burned Locations
    * \return All Locations burned by this Perimeter
@@ -62,9 +65,14 @@ public:
    */
   [[nodiscard]] const list<Location>& edge() const noexcept;
 private:
-  /**
-   * \brief List of all burned Locations
-   */
+  // /**
+  //  * @brief Map of burned cells
+  //  *
+  //  */
+  // const BurnedMap burned_map_;
+  // /**
+  //  * \brief List of all burned Locations
+  //  */
   list<Location> burned_;
   /**
    * \brief List of all Locations along the edge of this Perimeter

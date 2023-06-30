@@ -69,13 +69,29 @@ public:
   static int closeLogFile() noexcept;
 };
 /**
-   * \brief Output a message to the log
-   * \param log_level Log level to use for label
-   * \param format Format string for message
-   * \param args Arguments to use in format string
-   * \return None
-   */
-void output(int log_level, const char* format, va_list* args) noexcept;
+ * \brief Output a message to the log
+ * \param log_level Log level to use for label
+ * \param format Format string for message
+ * \param args Arguments to use in format string
+ * \return None
+ */
+void output(int log_level, const char* format, va_list* args)
+#ifdef NDEBUG
+noexcept
+#endif
+;
+/**
+ * \brief Output a message to the log
+ * \param log_level Log level to use for label
+ * \param format Format string for message
+ * \param ... Arguments to format message with
+ * \return None
+ */
+void output(int log_level, const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
+;
 /**
  * \brief Log with EXTENSIVE level
  * \param format Format string for message
@@ -124,13 +140,33 @@ void error(const char* format, ...) noexcept;
  * \param format Format string for message
  * \param ... Arguments to format message with
  */
-void check_fatal(bool condition, const char* format, ...) noexcept;
+void check_fatal(bool condition, const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
+;
 /**
  * \brief Log with FATAL level and exit
  * \param format Format string for message
  * \param ... Arguments to format message with
  */
-void fatal(const char* format, ...) noexcept;
+void fatal(const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
+;
+/**
+ * \brief Log with FATAL level and exit
+ * \param ex Exception that is causing fatal error
+ */
+void fatal(const std::exception& ex);
+/**
+ * \brief Log with FATAL level and exit
+ * \param ex Exception that is causing fatal error
+ * \param format Format string for message
+ * \param ... Arguments to format message with
+ */
+void fatal(const std::exception& ex, const char* format, ...);
 // templated so we can return it from any function and not get an error
 // about not returning on all paths
 /**
@@ -141,11 +177,19 @@ void fatal(const char* format, ...) noexcept;
  * \return Nothing, because this ends the program
  */
 template <class T>
-T fatal(const char* format, va_list* args) noexcept
+T fatal(const char* format, va_list* args)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   output(LOG_FATAL, format, args);
   Log::closeLogFile();
+#ifdef NDEBUG
   exit(EXIT_FAILURE);
+#else
+  // HACK: just throw the format for a start - just want to see stack traces when debugging
+  throw std::runtime_error(format);
+#endif
 }
 /**
  * \brief Log a fatal error and quit
@@ -155,7 +199,10 @@ T fatal(const char* format, va_list* args) noexcept
  * \return Nothing, because this ends the program
  */
 template <class T>
-T fatal(const char* format, ...) noexcept
+T fatal(const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   va_list args;
   va_start(args, format);
@@ -174,7 +221,15 @@ protected:
   void log_note(const char* format, ...) const noexcept;
   void log_warning(const char* format, ...) const noexcept;
   void log_error(const char* format, ...) const noexcept;
-  void log_check_fatal(bool condition, const char* format, ...) const noexcept;
-  void log_fatal(const char* format, ...) const noexcept;
+  void log_check_fatal(bool condition, const char* format, ...) const
+#ifdef NDEBUG
+noexcept
+#endif
+;
+  void log_fatal(const char* format, ...) const
+#ifdef NDEBUG
+noexcept
+#endif
+;
 };
 }

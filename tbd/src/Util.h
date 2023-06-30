@@ -19,7 +19,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-const int TIFFTAG_GDAL_NODATA = 42113;
+
+#ifndef TIFFTAG_GDAL_NODATA
+#define TIFFTAG_GDAL_NODATA 42113
+#endif
 
 /**
  * Open file and register GeoTIFF tags so we can read and write properly
@@ -172,7 +175,7 @@ static constexpr double RAD_180 = to_radians(180);
  * \param stream Stream to read from
  * \param str gstring to read into
  * \param delimiter Delimiter to stop at
- * \return 
+ * \return
  */
 template <class Elem,
           class Traits,
@@ -401,4 +404,11 @@ void month_and_day(const int year, const size_t day_of_year, size_t* month, size
  * \return Whether or not the given year is a leap year
  */
 [[nodiscard]] bool is_leap_year(const int year);
+/**
+ * Make a nicely formatted timestamp string for the given simulation time
+ * @param year Year time is for
+ * @param time Simulation time (fractional day of year)
+ * @return YYYY-mm-dd HH:00 time string for given time
+ */
+[[nodiscard]] string make_timestamp(const int year, const double time);
 }

@@ -59,7 +59,10 @@ int Log::closeLogFile() noexcept
 {
   return fclose(out_);
 }
-void output(const int log_level, const char* format, va_list* args) noexcept
+void output(const int log_level, const char* format, va_list* args)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   if (Log::getLogLevel() > log_level)
   {
@@ -90,10 +93,21 @@ void output(const int log_level, const char* format, va_list* args) noexcept
       }
     }
   }
-  catch (...)
+  catch (const std::exception& ex)
   {
+    logging::fatal(ex);
     std::terminate();
   }
+}
+void output(const int log_level, const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
+{
+  va_list args;
+  va_start(args, format);
+  output(log_level, format, &args);
+  va_end(args);
 }
 void extensive(const char* format, ...) noexcept
 {
@@ -165,12 +179,18 @@ void error(const char* format, ...) noexcept
     va_end(args);
   }
 }
-void fatal(const char* format, va_list* args) noexcept
+void fatal(const char* format, va_list* args)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   // HACK: call the other version
   fatal<int>(format, args);
 }
-void fatal(const char* format, ...) noexcept
+void fatal(const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   va_list args;
   va_start(args, format);
@@ -178,14 +198,37 @@ void fatal(const char* format, ...) noexcept
   // cppcheck-suppress va_end_missing
   // va_end(args);
 }
-void check_fatal(const bool condition, const char* format, va_list* args) noexcept
+void fatal(const std::exception& ex)
+{
+  output(LOG_FATAL, "%s", ex.what());
+  Log::closeLogFile();
+#ifdef NDEBUG
+  exit(EXIT_FAILURE);
+#endif
+}
+void fatal(const std::exception& ex, const char* format, ...)
+{
+  va_list args;
+  va_start(args, format);
+  output(LOG_FATAL, format, &args);
+  // cppcheck-suppress va_end_missing
+  // va_end(args);
+  fatal(ex);
+}
+void check_fatal(const bool condition, const char* format, va_list* args)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   if (condition)
   {
     fatal(format, args);
   }
 }
-void check_fatal(const bool condition, const char* format, ...) noexcept
+void check_fatal(const bool condition, const char* format, ...)
+#ifdef NDEBUG
+noexcept
+#endif
 {
   if (condition)
   {
@@ -255,7 +298,10 @@ void SelfLogger::log_error(const char* format, ...) const noexcept
   logging::output(LOG_ERROR, fmt.c_str(), &args);
   va_end(args);
 }
-void SelfLogger::log_check_fatal(bool condition, const char* format, ...) const noexcept
+void SelfLogger::log_check_fatal(bool condition, const char* format, ...) const
+#ifdef NDEBUG
+noexcept
+#endif
 {
   if (condition)
   {
@@ -267,7 +313,10 @@ void SelfLogger::log_check_fatal(bool condition, const char* format, ...) const 
   }
 }
 
-void SelfLogger::log_fatal(const char* format, ...) const noexcept
+void SelfLogger::log_fatal(const char* format, ...) const
+#ifdef NDEBUG
+noexcept
+#endif
 {
   va_list args;
   va_start(args, format);

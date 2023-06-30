@@ -70,6 +70,7 @@ public:
         if (value != perim_grid.noData() && !fuel::is_null_fuel(loc))
         {
           this->GridMap<unsigned char, unsigned char>::set(loc, value);
+          // logging::debug("(%d, %d) = (%d)", fixed_loc.column(), fixed_loc.row(), value);
           ++count;
         }
       }
@@ -101,7 +102,6 @@ Perimeter::Perimeter(const string& perim, const Point& point, const Environment&
 }
 Perimeter::Perimeter(const Location& location,
                      const size_t size,
-                     const wx::FwiWeather&,
                      const Environment& env)
 {
   // NOTE: FwiWeather is unused but could change this to try doing length to breadth ratio
@@ -137,10 +137,15 @@ Perimeter::Perimeter(const Location& location,
     }
     max_distance += 0.1;
   }
-  const BurnedMap burned(*perim_grid, env);
+  // burned_map_ = BurnedMap(*perim_grid, env);
+  auto burned = BurnedMap(*perim_grid, env);
   burned_ = burned.makeList();
   edge_ = burned.makeEdge();
 }
+// [[nodiscard]] const BurnedMap& Perimeter::burned_map() const noexcept
+// {
+//   return burned_map_;
+// }
 [[nodiscard]] const list<Location>& Perimeter::burned() const noexcept
 {
   return burned_;

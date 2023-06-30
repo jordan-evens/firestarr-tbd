@@ -195,7 +195,7 @@ public:
    * \param i Percentile to retrieve value for
    * \return Value for given percentile
    */
-  [[nodiscard]] double percentile(const uint8 i) const noexcept
+  [[nodiscard]] double percentile(const uint8_t i) const noexcept
   {
 #ifndef NDEBUG
     logging::check_fatal(static_cast<size_t>(i) >= percentiles_.size(),
@@ -319,7 +319,8 @@ public:
    * \param relative_error Relative Error to achieve to be confident
    * \return Number of runs still required
    */
-  [[nodiscard]] size_t runsRequired(const size_t cur_runs,
+  [[nodiscard]] size_t runsRequired(
+    // const size_t cur_runs,
                                     const double relative_error) const
   {
     const auto re = relative_error / (1 + relative_error);
@@ -327,6 +328,7 @@ public:
       return T_VALUES[std::min(T_VALUES.size(), i) - 1]
            * sqrt(sampleVariance() / i) / abs(mean());
     };
+    const auto cur_runs = n();
     return binary_find_checked(cur_runs, 10 * cur_runs, re, fct) - cur_runs;
   }
 private:

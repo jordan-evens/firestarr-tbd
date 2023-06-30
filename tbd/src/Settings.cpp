@@ -446,8 +446,9 @@ SettingsImplementation::SettingsImplementation(const char* filename) noexcept
       }
     }
   }
-  catch (...)
+  catch (const std::exception& ex)
   {
+    logging::fatal(ex);
     std::terminate();
   }
 }

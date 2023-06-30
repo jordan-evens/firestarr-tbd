@@ -70,9 +70,10 @@ vector<string> find_rasters(const string& dir, const int year)
   {
     read_directory(raster_root, &results, "fuel.*\\.tif");
   }
-  catch (const std::exception& e)
+  catch (const std::exception& ex)
   {
     logging::error("Unable to read directory %s", raster_root.c_str());
+    logging::error("%s", ex.what());
   }
   return results;
 }
@@ -133,6 +134,13 @@ void read_date(istringstream* iss, string* str, tm* t)
   t->tm_mon = stoi(ds) - 1;
   getline(dss, ds, ' ');
   t->tm_mday = stoi(ds);
+  getline(dss, ds, ':');
+  t->tm_hour = stoi(ds);
+  logging::verbose("Date is %4d-%02d-%02d %02d:00",
+                   t->tm_year + 1900,
+                   t->tm_mon + 1,
+                   t->tm_mday,
+                   t->tm_hour);
 }
 UsageCount::~UsageCount()
 {
@@ -174,4 +182,32 @@ bool tbd::is_leap_year(const int year)
     return false;
   }
   return (year % 4 == 0);
+}
+string tbd::make_timestamp(const int year, const double time)
+{
+  size_t day = floor(time);
+  size_t hour = (time - day) * static_cast<double>(DAY_HOURS);
+  size_t minute = round(((time - day) * static_cast<double>(DAY_HOURS) - hour) * HOUR_MINUTES);
+  if (60 == minute)
+  {
+    minute = 0;
+    hour += 1;
+  }
+  if (24 == hour)
+  {
+    day += 1;
+    hour = 0;
+  }
+  size_t month;
+  size_t day_of_month;
+  month_and_day(year, day, &month, &day_of_month);
+  char buffer[128];
+  sprintf(buffer,
+          "%4d-%02ld-%02ld %02ld:%02ld",
+          year,
+          month,
+          day_of_month,
+          hour,
+          minute);
+  return {buffer};
 }

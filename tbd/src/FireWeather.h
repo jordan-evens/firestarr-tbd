@@ -37,13 +37,6 @@ public:
    */
   virtual ~FireWeather();
   /**
-   * \brief Constructor
-   * \param used_fuels set of FuelTypes that are used in the simulation
-   * \param data map of Day to FwiWeather to use for weather stream
-   */
-  FireWeather(const set<const fuel::FuelType*>& used_fuels,
-              const map<Day, FwiWeather>& data);
-  /**
    * \brief Move constructor
    * \param rhs FireWeather to move from
    */
@@ -107,11 +100,11 @@ public:
    * \brief Weather by hour by day
    * \return Weather by hour by day
    */
-   [[nodiscard]] const vector<const FwiWeather*>* getWeather()
-   {
-     return weather_by_hour_by_day_;
-   }
-protected:
+  [[nodiscard]] const vector<const FwiWeather*>* getWeather()
+  {
+    return weather_by_hour_by_day_;
+  }
+
   /**
    * \brief Constructor
    * \param used_fuels set of FuelTypes that are used in the simulation

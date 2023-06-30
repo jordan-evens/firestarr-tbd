@@ -20,12 +20,14 @@
 #include "Perimeter.h"
 #include "ProbabilityMap.h"
 #include "ConvexHull.h"
+#include "IntensityMap.h"
 namespace tbd::sim
 {
 constexpr auto CELL_CENTER = 0.5;
 constexpr auto PRECISION = 0.001;
 static atomic<size_t> COUNT = 0;
 static atomic<size_t> COMPLETED = 0;
+static atomic<size_t> TOTAL_STEPS = 0;
 static std::mutex MUTEX_SIM_COUNTS;
 static map<size_t, size_t> SIM_COUNTS{};
 void IObserver_deleter::operator()(IObserver* ptr) const
@@ -50,6 +52,7 @@ void Scenario::clear() noexcept
 #endif
   model_->releaseBurnedVector(unburnable_);
   unburnable_ = nullptr;
+  step_ = 0;
 }
 size_t Scenario::completed() noexcept
 {
@@ -58,6 +61,10 @@ size_t Scenario::completed() noexcept
 size_t Scenario::count() noexcept
 {
   return COUNT;
+}
+size_t Scenario::total_steps() noexcept
+{
+  return TOTAL_STEPS;
 }
 Scenario::~Scenario()
 {
@@ -102,7 +109,8 @@ static void make_threshold(vector<double>* thresholds,
       // for the first days don't change
       const auto hourly = rand(*mt);
       // only save if we're going to use it
-      if (i <= last_date)
+      // HACK: +1 so if it's exactly at the end time there's something there
+      if (i <= static_cast<size_t>(last_date + 1))
       {
         // subtract from 1.0 because we want weight to make things more likely not less
         // ensure we stay between 0 and 1
@@ -130,42 +138,47 @@ static void make_threshold(vector<double>* thresholds,
 Scenario::Scenario(Model* model,
                    const size_t id,
                    wx::FireWeather* weather,
+                   wx::FireWeather* weather_daily,
                    const double start_time,
+                   //  const shared_ptr<IntensityMap>& initial_intensity,
                    const shared_ptr<topo::Perimeter>& perimeter,
                    const topo::StartPoint& start_point,
                    const Day start_day,
                    const Day last_date)
-  : Scenario(model, id, weather, start_time, start_point, start_day, last_date)
+  : Scenario(model,
+             id,
+             weather,
+             weather_daily,
+             start_time,
+             //  initial_intensity,
+             perimeter,
+             nullptr,
+             start_point,
+             start_day,
+             last_date)
 {
-  perimeter_ = perimeter;
-  start_cell_ = nullptr;
 }
 Scenario::Scenario(Model* model,
                    const size_t id,
                    wx::FireWeather* weather,
+                   wx::FireWeather* weather_daily,
                    const double start_time,
                    const shared_ptr<topo::Cell>& start_cell,
                    const topo::StartPoint& start_point,
                    const Day start_day,
                    const Day last_date)
-  : Scenario(model, id, weather, start_time, start_point, start_day, last_date)
+  : Scenario(model,
+             id,
+             weather,
+             weather_daily,
+             start_time,
+             // make_unique<IntensityMap>(*model, nullptr),
+             nullptr,
+             start_cell,
+             start_point,
+             start_day,
+             last_date)
 {
-  perimeter_ = nullptr;
-  start_cell_ = start_cell;
-  if (Settings::savePoints())
-  {
-    char log_name[2048];
-    sprintf(log_name, "%s/scenario_%05ld.txt", Settings::outputDirectory(), id);
-    log_points_ = fopen(log_name, "w");
-  }
-  else
-  {
-    log_points_ = NULL;
-  }
-  if (NULL != log_points_)
-  {
-    fprintf(log_points_, "scenario,step,time,action,column,row,x,y\n");
-  }
 }
 Scenario* Scenario::reset(mt19937* mt_extinction,
                           mt19937* mt_spread,
@@ -189,7 +202,8 @@ Scenario* Scenario::reset(mt19937* mt_extinction,
   //  last_date_(last_date);
   ran_ = false;
   // track this here because reset is always called before use
-  const auto num = (static_cast<size_t>(last_date_) - start_day_ + 1) * DAY_HOURS;
+  // HACK: +2 so there's something there if we land exactly on the end date
+  const auto num = (static_cast<size_t>(last_date_) - start_day_ + 2) * DAY_HOURS;
   clear();
   extinction_thresholds_.resize(num);
   spread_thresholds_by_ros_.resize(num);
@@ -217,6 +231,11 @@ Scenario* Scenario::reset(mt19937* mt_extinction,
   current_time_ = start_time_ - 1;
   points_ = {};
   // don't do this until we run so that we don't allocate memory too soon
+  // log_verbose("Applying initial intensity map");
+  // // HACK: if initial_intensity is null then perimeter must be too?
+  // intensity_ = (nullptr == initial_intensity_)
+  //   ? make_unique<IntensityMap>(model(), nullptr)
+  //   : make_unique<IntensityMap>(*initial_intensity_);
   intensity_ = make_unique<IntensityMap>(model());
   offsets_ = {};
   max_intensity_ = {};
@@ -269,7 +288,9 @@ void Scenario::evaluate(const Event& event)
                   event.time());
       if (!survives(event.time(), event.cell(), event.timeAtLocation()))
       {
-        const auto wx = weather(event.time());
+        // const auto wx = weather(event.time());
+        // HACK: show daily values since that's what survival uses
+        const auto wx = weather_daily(event.time());
         log_info("Didn't survive ignition in %s with weather %f, %f",
                  fuel::FuelType::safeName(fuel::check_fuel(event.cell())),
                  wx->ffmc(),
@@ -291,16 +312,24 @@ void Scenario::evaluate(const Event& event)
 Scenario::Scenario(Model* model,
                    const size_t id,
                    wx::FireWeather* weather,
+                   wx::FireWeather* weather_daily,
                    const double start_time,
+                   //  const shared_ptr<IntensityMap>& initial_intensity,
+                   const shared_ptr<topo::Perimeter>& perimeter,
+                   const shared_ptr<topo::Cell>& start_cell,
                    topo::StartPoint start_point,
                    const Day start_day,
                    const Day last_date)
   : current_time_(start_time),
     unburnable_(nullptr),
     intensity_(nullptr),
+    // initial_intensity_(initial_intensity),
+    perimeter_(perimeter),
     //surrounded_(nullptr),
     max_ros_(0),
+    start_cell_(start_cell),
     weather_(weather),
+    weather_daily_(weather_daily),
     model_(model),
     probabilities_(nullptr),
     final_sizes_(nullptr),
@@ -314,6 +343,29 @@ Scenario::Scenario(Model* model,
     step_(0)
 {
   last_save_ = weather_->minDate();
+  const auto wx = weather_->at(start_time_);
+  logging::check_fatal(nullptr == wx,
+                       "No weather for start time %s",
+                       make_timestamp(model->year(), start_time_).c_str());
+  const auto saves = Settings::outputDateOffsets();
+  const auto last_save = start_day_ + saves[saves.size() - 1];
+  logging::check_fatal(last_save > weather_->maxDate(),
+                       "No weather for last save time %s",
+                       make_timestamp(model->year(), last_save).c_str());
+  if (Settings::savePoints())
+  {
+    char log_name[2048];
+    sprintf(log_name, "%s/scenario_%05ld.txt", Settings::outputDirectory(), id);
+    log_points_ = fopen(log_name, "w");
+  }
+  else
+  {
+    log_points_ = NULL;
+  }
+  if (NULL != log_points_)
+  {
+    fprintf(log_points_, "scenario,step,time,action,column,row,x,y\n");
+  }
 }
 void Scenario::saveStats(const double time) const
 {
@@ -370,12 +422,14 @@ Scenario::Scenario(Scenario&& rhs) noexcept
     unburnable_(std::move(rhs.unburnable_)),
     scheduler_(std::move(rhs.scheduler_)),
     intensity_(std::move(rhs.intensity_)),
+    // initial_intensity_(std::move(rhs.initial_intensity_)),
     perimeter_(std::move(rhs.perimeter_)),
     offsets_(std::move(rhs.offsets_)),
     arrival_(std::move(rhs.arrival_)),
     max_ros_(rhs.max_ros_),
     start_cell_(std::move(rhs.start_cell_)),
     weather_(rhs.weather_),
+    weather_daily_(rhs.weather_daily_),
     model_(rhs.model_),
     probabilities_(rhs.probabilities_),
     final_sizes_(rhs.final_sizes_),
@@ -401,10 +455,12 @@ Scenario& Scenario::operator=(Scenario&& rhs) noexcept
     current_time_ = rhs.current_time_;
     scheduler_ = std::move(rhs.scheduler_);
     intensity_ = std::move(rhs.intensity_);
+    // initial_intensity_ = std::move(rhs.initial_intensity_);
     perimeter_ = std::move(rhs.perimeter_);
     //surrounded_ = rhs.surrounded_;
     start_cell_ = std::move(rhs.start_cell_);
     weather_ = rhs.weather_;
+    weather_daily_ = rhs.weather_daily_;
     model_ = rhs.model_;
     probabilities_ = rhs.probabilities_;
     final_sizes_ = rhs.final_sizes_;
@@ -470,6 +526,7 @@ Scenario* Scenario::run(map<double, ProbabilityMap*>* probabilities)
   CriticalSection _(Model::task_limiter);
   unburnable_ = model_->getBurnedVector();
   probabilities_ = probabilities;
+  log_verbose("Setting save points");
   for (auto time : save_points_)
   {
     // NOTE: these happen in this order because of the way they sort based on type
@@ -481,8 +538,11 @@ Scenario* Scenario::run(map<double, ProbabilityMap*>* probabilities)
   }
   else
   {
+    log_verbose("Applying perimeter");
     intensity_->applyPerimeter(*perimeter_);
+    log_verbose("Perimeter applied");
     const auto& env = model().environment();
+    log_verbose("Igniting points");
     for (const auto& location : perimeter_->edge())
     {
       //      const auto cell = env.cell(location.hash());
@@ -490,7 +550,8 @@ Scenario* Scenario::run(map<double, ProbabilityMap*>* probabilities)
 #ifndef NDEBUG
       log_check_fatal(fuel::is_null_fuel(cell), "Null fuel in perimeter");
 #endif
-      log_verbose("Adding point (%d, %d)",
+      // log_verbose("Adding point (%d, %d)",
+      log_verbose("Adding point (%f, %f)",
                   cell.column() + CELL_CENTER,
                   cell.row() + CELL_CENTER);
       points_[cell].emplace_back(cell.column() + CELL_CENTER, cell.row() + CELL_CENTER);
@@ -519,7 +580,13 @@ Scenario* Scenario::run(map<double, ProbabilityMap*>* probabilities)
   while (!cancelled_ && !scheduler_.empty())
   {
     evaluateNextEvent();
+    // // FIX: the timer thread can cancel these instead of having this check
+    // if (!evaluateNextEvent())
+    // {
+    //   cancel(true);
+    // }
   }
+  ++TOTAL_STEPS;
   model_->releaseBurnedVector(unburnable_);
   unburnable_ = nullptr;
   if (cancelled_)
@@ -540,18 +607,22 @@ Scenario* Scenario::run(map<double, ProbabilityMap*>* probabilities)
 #endif
   ran_ = true;
 #ifndef NDEBUG
-  static const size_t BufferSize = 64;
-  char buffer[BufferSize + 1] = {0};
-  sprintf(buffer,
-          "%03zu_%06ld_extinction",
-          id(),
-          simulation());
-  saveProbabilities(Settings::outputDirectory(), string(buffer), extinction_thresholds_);
-  sprintf(buffer,
-          "%03zu_%06ld_spread",
-          id(),
-          simulation());
-  saveProbabilities(Settings::outputDirectory(), string(buffer), spread_thresholds_by_ros_);
+  // nice to have this get output when debugging, but only need it in extreme cases
+  if (logging::Log::getLogLevel() <= logging::LOG_EXTENSIVE)
+  {
+    static const size_t BufferSize = 64;
+    char buffer[BufferSize + 1] = {0};
+    sprintf(buffer,
+            "%03zu_%06ld_extinction",
+            id(),
+            simulation());
+    saveProbabilities(Settings::outputDirectory(), string(buffer), extinction_thresholds_);
+    sprintf(buffer,
+            "%03zu_%06ld_spread",
+            id(),
+            simulation());
+    saveProbabilities(Settings::outputDirectory(), string(buffer), spread_thresholds_by_ros_);
+  }
 #endif
   return this;
 }
@@ -639,6 +710,7 @@ void Scenario::scheduleFireSpread(const Event& event)
   //note("time is %f", time);
   current_time_ = time;
   const auto wx = weather(time);
+  // const auto wx_daily = weather_daily(time);
   logging::check_fatal(nullptr == wx, "No weather available for time %f", time);
   //  log_note("%d points", points_->size());
   const auto this_time = util::time_index(time);
@@ -650,7 +722,9 @@ void Scenario::scheduleFireSpread(const Event& event)
   //     next_time,
   //     max_duration);
   const auto max_time = time + max_duration / DAY_MINUTES;
-  if (wx->ffmc().asDouble() < minimumFfmcForSpread(time))
+  // if (wx->ffmc().asDouble() < minimumFfmcForSpread(time))
+  // HACK: use the old ffmc for this check to be consistent with previous version
+  if (weather_daily(time)->ffmc().asDouble() < minimumFfmcForSpread(time))
   {
     addEvent(Event::makeFireSpread(max_time));
     log_verbose("Waiting until %f because of FFMC", max_time);
@@ -665,6 +739,7 @@ void Scenario::scheduleFireSpread(const Event& event)
     max_intensity_ = {};
     max_ros_ = 0.0;
   }
+  // size_t num_reused = 0;
   auto any_spread = false;
   for (const auto& kv : points_)
   {
@@ -674,23 +749,42 @@ void Scenario::scheduleFireSpread(const Event& event)
     const auto seek_spreading = offsets_.find(key);
     if (seek_spreading == offsets_.end())
     {
+      // FIX: don't calculate if no spread?
       // have not calculated spread for this cell yet
       const SpreadInfo origin(*this, time, location, nd(time), wx);
       // will be empty if invalid
       offsets_.emplace(key, origin.offsets());
       if (!origin.isNotSpreading())
+      // // HACK: check if spreading based on old daily indices
+      // if (SpreadInfo::is_spreading(*this, time, location, nd(time), wx_daily))
       {
+        // // HACK: only put these values in the offsets_ if daily says spreading
+        // // NOTE: use spread rate from new hourly indices
+        // // have not calculated spread for this cell yet
+        // const SpreadInfo origin(*this, time, location, nd(time), wx);
+        // // will be empty if invalid
+        // offsets_.emplace(key, origin.offsets());
         any_spread = true;
+        // HACK: still use calculated spread from hourly values
         max_ros_ = max(max_ros_, origin.headRos());
         max_intensity_[key] = max(max_intensity_[key], origin.maxIntensity());
       }
+      // else
+      // {
+      //   // no spread, so no offsets
+      //   offsets_.emplace(key, OffsetSet());
+      // }
     }
     else
     {
       // already did the lookup so use the result
       any_spread |= !seek_spreading->second.empty();
+      // ++num_reused;
     }
   }
+  // // seems like it's reusing SpreadInfo most of the time (so that's probably not the bottleneck?)
+  // logging::debug("Reused SpreadInfo %ld times out of %ld calculations (%0.2f%%)",
+  //   num_reused, points_.size(), num_reused / static_cast<float>(points_.size()));
   if (!any_spread || max_ros_ < Settings::minimumRos())
   {
     log_verbose("Waiting until %f", max_time);
@@ -812,7 +906,7 @@ void Scenario::scheduleFireSpread(const Event& event)
   {
     points_.erase(c);
   }
-  log_verbose("Spreading %d points until %f", points_.size(), new_time);
+  log_extensive("Spreading %d points until %f", points_.size(), new_time);
   addEvent(Event::makeFireSpread(new_time));
 }
 double Scenario::currentFireSize() const
@@ -843,8 +937,9 @@ void Scenario::endSimulation() noexcept
 }
 void Scenario::addSaveByOffset(const int offset)
 {
-  // +1 since yesterday is in here too
-  addSave(weather_->minDate() + offset + 1);
+  // offset is from begging of the day the simulation starts
+  // e.g. 1 is midnight, 2 is tomorrow at midnight
+  addSave(static_cast<Day>(startTime()) + offset);
 }
 vector<double> Scenario::savePoints() const
 {
@@ -860,6 +955,7 @@ void Scenario::addEvent(Event&& event)
 {
   scheduler_.insert(std::move(event));
 }
+// bool Scenario::evaluateNextEvent()
 void Scenario::evaluateNextEvent()
 {
   // make sure to actually copy it before we erase it
@@ -869,9 +965,19 @@ void Scenario::evaluateNextEvent()
   {
     scheduler_.erase(event);
   }
+  // return !model_->isOutOfTime();
+  // return cancelled_;
 }
-void Scenario::cancel() noexcept
+void Scenario::cancel(bool show_warning) noexcept
 {
-  cancelled_ = true;
+  // ignore if already cancelled
+  if (!cancelled_)
+  {
+    cancelled_ = true;
+    if (show_warning)
+    {
+      log_warning("Simulation cancelled");
+    }
+  }
 }
 }

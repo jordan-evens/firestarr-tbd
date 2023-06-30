@@ -1,8 +1,10 @@
-# About TBD
+# About FireSTARR
+
+<img alt="FireSTARR logo" src="img/FireSTARR.png" width=100 height=100/>
 
 ## Overview
 
-TBD (Threshold Based Distributions) is designed to support wildland fire response decicion-making. TBD is the based on the fire growth algorithm (FireSTARR) originally in the FireGUARD suite of programs.
+FireSTARR is designed to support wildland fire response decicion-making, and is the fire growth algorithm originally in the FireGUARD suite of programs.
 
 It focuses on the generation of burn probabilities from replicated simulation of fire growth, smouldering, and natural extinction under the weather and stochastic fire behaviour scenarios.
 

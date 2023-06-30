@@ -22,6 +22,8 @@
 #include <vector>
 #include "Grid.h"
 #include "Util.h"
+#include "Settings.h"
+#include "FuelType.h"
 namespace tbd::data
 {
 /**
@@ -88,7 +90,7 @@ public:
                const Idx rows,
                const Idx columns,
                const T no_data,
-               const int nodata,
+               const V nodata,
                const double xllcorner,
                const double yllcorner,
                const double xurcorner,
@@ -124,7 +126,7 @@ public:
                const Idx rows,
                const Idx columns,
                const T& no_data,
-               const int nodata,
+               const V nodata,
                const double xllcorner,
                const double yllcorner,
                const string& proj4,
@@ -154,18 +156,35 @@ public:
                                                     TIFF* tif,
                                                     GTIF* gtif,
                                                     const topo::Point& point,
-                                                    std::function<T(int, int)> convert)
+                                                    std::function<T(V, V)> convert)
   {
     logging::info("Reading file %s", filename.c_str());
 #ifndef NDEBUG
-    auto min_value = std::numeric_limits<int16>::max();
-    auto max_value = std::numeric_limits<int16>::min();
+    // auto min_value = std::numeric_limits<int16_t>::max();
+    // auto max_value = std::numeric_limits<int16_t>::min();
+    auto min_value = std::numeric_limits<V>::max();
+    auto max_value = std::numeric_limits<V>::min();
 #endif
-    const GridBase grid_info = read_header<T>(tif, gtif);
+    logging::debug("Reading a raster where T = %s, V = %s",
+                   typeid(T).name(),
+                   typeid(V).name());
+    logging::debug("Raster type V has limits %ld, %ld",
+                   std::numeric_limits<V>::min(),
+                   std::numeric_limits<V>::max());
+    const GridBase grid_info = read_header(tif, gtif);
     int tile_width;
     int tile_length;
     TIFFGetField(tif, TIFFTAG_TILEWIDTH, &tile_width);
     TIFFGetField(tif, TIFFTAG_TILELENGTH, &tile_length);
+    void* data;
+    uint32_t count;
+    TIFFGetField(tif, TIFFTAG_GDAL_NODATA, &count, &data);
+    logging::check_fatal(0 == count, "NODATA value is not set in input");
+    logging::debug("NODATA value is '%s'", static_cast<char*>(data));
+    const auto nodata_orig = stoi(string(static_cast<char*>(data)));
+    logging::debug("NODATA value is originally parsed as %d", nodata_orig);
+    const auto nodata = static_cast<V>(stoi(string(static_cast<char*>(data))));
+    logging::debug("NODATA value is parsed as %d", nodata);
     auto actual_rows = grid_info.calculateRows();
     auto actual_columns = grid_info.calculateColumns();
     const auto coordinates = grid_info.findFullCoordinates(point, true);
@@ -196,52 +215,86 @@ public:
     logging::check_fatal(max_row - min_row > MAX_ROWS, "Can't have more than %d rows but have %d", MAX_ROWS, max_row - min_row);
     logging::check_fatal(max_row > actual_rows, "Can't have more than actual %d rows", actual_rows);
 #endif
-    T no_data = convert(grid_info.nodata(), grid_info.nodata());
+    T no_data = convert(nodata, nodata);
     vector<T> values(static_cast<size_t>(MAX_ROWS) * MAX_COLUMNS, no_data);
     logging::verbose("%s: malloc start", filename.c_str());
-    const auto buf = _TIFFmalloc(TIFFTileSize(tif));
+    int bps = std::numeric_limits<V>::digits + (1 * std::numeric_limits<V>::is_signed);
+    int bps_file;
+    TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &bps_file);
+    logging::check_fatal(bps != bps_file,
+                         "Raster %s type is not expected type (%ld bits instead of %ld)",
+                         filename.c_str(),
+                         bps_file,
+                         bps);
+#ifndef NDEBUG
+    logging::debug("Raster %s calculated bps for type V is %ld; tif says bps is %ld; int16_t is %ld",
+                   filename.c_str(),
+                   bps,
+                   bps_file,
+                   bps_int16_t);
+    int bps_int16_t = std::numeric_limits<int16_t>::digits + (1 * std::numeric_limits<int16_t>::is_signed);
+    logging::debug("Size of pointer to int is %ld vs %ld", sizeof(int16_t*), sizeof(V*));
+#endif
+    const auto tile_size = TIFFTileSize(tif);
+    logging::debug("Tile size for reading %s is %ld", filename.c_str(), tile_size);
+    const auto buf = _TIFFmalloc(tile_size);
     logging::verbose("%s: read start", filename.c_str());
     const tsample_t smp{};
-    logging::debug("Want to clip grid to (%d, %d) => (%d, %d)", min_row, min_column, max_row, max_column);
+    logging::debug("Want to clip grid to (%d, %d) => (%d, %d) for a %dx%d raster",
+                   min_row,
+                   min_column,
+                   max_row,
+                   max_column,
+                   actual_rows,
+                   actual_columns);
     for (auto h = tile_row; h <= max_row; h += tile_length)
     {
-      //      const auto y_min = static_cast<FullIdx>(max(static_cast<FullIdx>(0), min_row - h));
-      //      const auto y_limit = min(static_cast<FullIdx>(tile_length),
-      //                               min(static_cast<FullIdx>(actual_rows), max_row) - h);
       for (auto w = tile_column; w <= max_column; w += tile_width)
       {
-        TIFFReadTile(tif, buf, static_cast<uint32>(w), static_cast<uint32>(h), 0, smp);
-        //        const auto x_min = static_cast<FullIdx>(max(static_cast<FullIdx>(0), min_column - w));
-        //        const auto x_limit = min(static_cast<FullIdx>(tile_width),
-        //                                 min(actual_columns,
-        //                                     max_column)
-        //                                   - w);
-        //        for (auto y = y_min; y < y_limit; ++y)
+        TIFFReadTile(tif, buf, static_cast<uint32_t>(w), static_cast<uint32_t>(h), 0, smp);
         for (auto y = 0; (y < tile_length) && (y + h <= max_row); ++y)
         {
           // read in so that (0, 0) has a hash of 0
-          //          const FullIdx cur_row = (static_cast<FullIdx>(h) + y);
-          //          const FullIdx i = static_cast<FullIdx>(MAX_ROWS) - (cur_row - min_row + 1);
-          //          for (auto x = x_min; x < x_limit; ++x)
           const auto y_row = static_cast<HashSize>((h - min_row) + y);
           const auto actual_row = (max_row - min_row) - y_row;
           if (actual_row >= 0 && actual_row < MAX_ROWS)
           {
             for (auto x = 0; (x < tile_width) && (x + w <= max_column); ++x)
             {
-              //            const auto cur_hash = static_cast<HashSize>(i) * MAX_COLUMNS + (w - min_column + 1) + x;
-              //            const auto offset = (y - (static_cast<HashSize>(y / tile_length) * tile_length)) + x;
               const auto offset = y * tile_width + x;
               const auto actual_column = ((w - min_column) + x);
               if (actual_column >= 0 && actual_column < MAX_ROWS)
               {
                 const auto cur_hash = actual_row * MAX_COLUMNS + actual_column;
-                auto cur = *(static_cast<int16*>(buf) + offset);
+                auto cur = *(static_cast<V*>(buf) + offset);
 #ifndef NDEBUG
                 min_value = min(cur, min_value);
                 max_value = max(cur, max_value);
 #endif
-                values.at(cur_hash) = convert(cur, grid_info.nodata());
+                // try
+                // {
+                values.at(cur_hash) = convert(cur, nodata);
+                // logging::check_fatal(Settings::fuelLookup().values.at(cur_hash));
+                // }
+                // // catch (const std::out_of_range& err)
+                // catch (const std::exception& err)
+                // {
+                //   logging::error("Error trying to read tiff");
+                //   logging::debug("cur = %d", cur);
+                //   logging::debug("nodata = %d", nodata);
+                //   logging::debug("T = %s, V = %s", typeid(T).name(), typeid(V).name());
+                //   if constexpr (std::is_same_v<T, const tbd::fuel::FuelType*>)
+                //   {
+                //     auto f = static_cast<const tbd::fuel::FuelType*>(values.at(cur_hash));
+                //     logging::debug("fuel %s has code %d",
+                //         tbd::fuel::FuelType::safeName(f),
+                //         tbd::fuel::FuelType::safeCode(f));
+                //   }
+                //   logging::warning(err.what());
+                //   // logging::fatal(err.what());
+                //   tbd::sim::Settings::fuelLookup().listFuels();
+                //   throw err;
+                // }
               }
             }
           }
@@ -270,7 +323,7 @@ public:
                                          num_rows,
                                          num_columns,
                                          no_data,
-                                         grid_info.nodata(),
+                                         nodata,
                                          new_xll,
                                          new_yll,
                                          new_xll + (static_cast<double>(num_columns) + 1) * grid_info.cellSize(),
@@ -303,7 +356,7 @@ public:
    */
   [[nodiscard]] static ConstantGrid<T, V>* readTiff(const string& filename,
                                                     const topo::Point& point,
-                                                    std::function<T(int, int)> convert)
+                                                    std::function<T(V, V)> convert)
   {
     return with_tiff<ConstantGrid<T, V>*>(
       filename,
@@ -328,7 +381,7 @@ public:
   void saveToAsciiFile(const string& dir,
                        const string& base_name) const
   {
-    saveToAsciiFile<V>(dir, base_name, [](V value) { return value; });
+    saveToAsciiFile(dir, base_name, [](V value) { return value; });
   }
   /**
    * \brief Save contents to .asc file
@@ -337,10 +390,9 @@ public:
    * \param base_name File base name to use
    * \param convert Function to convert from V to R
    */
-  template <class R>
   void saveToAsciiFile(const string& dir,
                        const string& base_name,
-                       std::function<R(T)> convert) const
+                       std::function<V(T)> convert) const
   {
     Idx min_row = 0;
     Idx num_rows = this->rows();
@@ -383,7 +435,7 @@ public:
   void saveToTiffFile(const string& dir,
                       const string& base_name) const
   {
-    saveToTiffFile<V>(dir, base_name, [](V value) { return value; });
+    saveToTiffFile(dir, base_name, [](V value) { return value; });
   }
   /**
    * \brief Save contents to .tif file
@@ -392,10 +444,9 @@ public:
    * \param base_name File base name to use
    * \param convert Function to convert from V to R
    */
-  template <class R>
   void saveToTiffFile(const string& dir,
                       const string& base_name,
-                      std::function<R(T)> convert) const
+                      std::function<V(T)> convert) const
   {
     Idx min_row = 0;
     //    Idx num_rows = this->rows();
@@ -405,13 +456,13 @@ public:
     // offset is different for y since it's flipped
     const double yll = this->yllcorner() + (min_row) * this->cellSize();
     logging::extensive("Lower left corner is (%f, %f)", xll, yll);
-    constexpr uint32 tileWidth = 256;
-    constexpr uint32 tileHeight = 256;
+    constexpr uint32_t tileWidth = 256;
+    constexpr uint32_t tileHeight = 256;
     // ensure this is always divisible by tile size
     static_assert(0 == MAX_ROWS % tileWidth);
     static_assert(0 == MAX_COLUMNS % tileHeight);
-    uint32 width = this->columns();
-    uint32 height = this->rows();
+    uint32_t width = this->columns();
+    uint32_t height = this->rows();
     string filename = dir + base_name + ".tif";
     TIFF* tif = GeoTiffOpen(filename.c_str(), "w");
     auto gtif = GTIFNew(tif);
@@ -429,8 +480,7 @@ public:
       this->cellSize(),
       this->cellSize(),
       0.0};
-    // HACK: why does this have to be +1?
-    uint32 bps = std::numeric_limits<R>::digits + 1;
+    uint32_t bps = std::numeric_limits<V>::digits + (1 * std::numeric_limits<V>::is_signed);
     TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width);
     TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height);
     TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 1);
@@ -443,8 +493,9 @@ public:
     GTIFSetFromProj4(gtif, this->proj4().c_str());
     TIFFSetField(tif, TIFFTAG_GEOTIEPOINTS, 6, tiePoints);
     TIFFSetField(tif, TIFFTAG_GEOPIXELSCALE, 3, pixelScale);
-    size_t tileSize = tileWidth * tileHeight;
-    R* buf = (R*)_TIFFmalloc(tileSize * sizeof(R));
+    const auto tile_size = TIFFTileSize(tif);
+    logging::debug("Tile size for writing %s is %ld", base_name.c_str(), tile_size);
+    auto buf = (V*)_TIFFmalloc(tile_size);
     for (size_t i = 0; i < width; i += tileWidth)
     {
       for (size_t j = 0; j < height; j += tileHeight)
@@ -479,10 +530,13 @@ private:
    * \param no_data Value that represents no data
    * \param values Values to initialize grid with
    */
-  ConstantGrid(const GridBase& grid_info, const T& no_data, vector<T>&& values)
+  ConstantGrid(const GridBase& grid_info,
+               const T& no_data,
+               const V& nodata,
+               vector<T>&& values)
     : ConstantGrid(grid_info.cellSize(),
                    no_data,
-                   grid_info.nodata(),
+                   nodata,
                    grid_info.xllcorner(),
                    grid_info.yllcorner(),
                    grid_info.xurcorner(),

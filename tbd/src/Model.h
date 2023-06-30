@@ -23,7 +23,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <vector>
 #include "Environment.h"
 #include "Iteration.h"
 namespace tbd
@@ -116,8 +115,9 @@ public:
     {
       s_.notify();
     }
-    catch (...)
+    catch (const std::exception& ex)
     {
+      logging::fatal(ex);
       std::terminate();
     }
   }
@@ -131,18 +131,18 @@ public:
   /**
    * \brief Run Scenarios initialized from given inputs
    * \param weather_input Name of file to read weather from
-   * \param raster_root Directory to read raster inputs from
    * \param yesterday FwiWeather yesterday used for startup indices
+   * \param raster_root Directory to read raster inputs from
    * \param start_point StartPoint to use for sunrise/sunset
    * \param start_time Start time for simulation
    * \param save_intensity Whether or not to save all intensity files
    * \param perimeter Perimeter to initialize fire from, if there is one
    * \param size Size to start fire at if no Perimeter
-   * \return 
+   * \return
    */
   [[nodiscard]] static int runScenarios(const char* weather_input,
-                                        const char* raster_root,
                                         const wx::FwiWeather& yesterday,
+                                        const char* raster_root,
                                         const topo::StartPoint& start_point,
                                         const tm& start_time,
                                         bool save_intensity,
@@ -154,7 +154,12 @@ public:
    * \param column Column
    * \return Cell at the given row and column
    */
-  [[nodiscard]] constexpr topo::Cell cell(const Idx row, const Idx column) const
+  [[nodiscard]]
+#ifdef NDEBUG
+  constexpr
+#endif
+    topo::Cell
+    cell(const Idx row, const Idx column) const
   {
     return env_->cell(row, column);
   }
@@ -209,7 +214,7 @@ public:
     return *env_;
   }
   /**
-   * \brief Time to use for simulation start 
+   * \brief Time to use for simulation start
    * \return Time to use for simulation start
    */
   [[nodiscard]] constexpr Clock::time_point startTime() const
@@ -218,7 +223,7 @@ public:
   }
   /**
    * \brief Maximum amount of time simulation can run for before being stopped
-   * \return Maximum amount of time simulation can run for before being stopped
+   * \return Maximum amount of time simulation can run for  before being stopped
    */
   [[nodiscard]] constexpr Clock::duration timeLimit() const
   {
@@ -230,6 +235,14 @@ public:
    */
   [[nodiscard]] bool isOutOfTime() const noexcept;
   /**
+   * \brief What year the weather is for
+   * \return What year the weather is for
+   */
+  [[nodiscard]] int year() const noexcept
+  {
+    return year_;
+  }
+  /**
    * \brief Difference between date and the date of minimum foliar moisture content
    * \param time Date to get value for
    * \return Difference between date and the date of minimum foliar moisture content
@@ -238,6 +251,12 @@ public:
   {
     return nd_.at(static_cast<Day>(time));
   }
+  /**
+   * \brief Duration that model has run for
+   *
+   * @return std::chrono::seconds  Duration model has been running for
+   */
+  [[nodiscard]] std::chrono::seconds runTime() const;
   /**
    * \brief Create a ProbabilityMap with the same extent as this
    * \param time Time in simulation this ProbabilityMap represents
@@ -268,24 +287,22 @@ public:
   Model& operator=(const Model& rhs) = delete;
   /**
    * \brief Read weather used for Scenarios
-   * \param filename Weather file to read
    * \param yesterday FwiWeather for yesterday
-   * \param latitude to use for calculating DC & DMC
+   * \param latitude Latitude to calculate for
+   * \param filename Weather file to read
    */
-  void readWeather(const string& filename,
-                   const wx::FwiWeather& yesterday,
-                   double latitude);
+  void readWeather(const wx::FwiWeather& yesterday,
+                   const double latitude,
+                   const string& filename);
   /**
    * \brief Make starts based on desired point and where nearest combustible cells are
    * \param coordinates Coordinates in the Environment to try starting at
    * \param point Point Coordinates represent
-   * \param yesterday FwiWeather for yesterday
    * \param perim Perimeter to start from, if there is one
    * \param size Size of fire to create if no input Perimeter
    */
   void makeStarts(Coordinates coordinates,
                   const topo::Point& point,
-                  const wx::FwiWeather& yesterday,
                   const string& perim,
                   size_t size);
   /**
@@ -351,17 +368,25 @@ private:
    */
   map<size_t, shared_ptr<wx::FireWeather>> wx_{};
   /**
+   * \brief Map of scenario number to weather stream
+   */
+  map<size_t, shared_ptr<wx::FireWeather>> wx_daily_{};
+  /**
    * \brief Cell(s) that can burn closest to start Location
    */
   vector<shared_ptr<topo::Cell>> starts_{};
   /**
-   * \brief Time to use for simulation start 
+   * \brief Time to use for simulation start
    */
   Clock::time_point start_time_;
   /**
    * \brief Maximum amount of time simulation can run for before being stopped
    */
   Clock::duration time_limit_;
+  // /**
+  //  * @brief Initial intensity map based off perimeter
+  //  */
+  // shared_ptr<IntensityMap> initial_intensity_ = nullptr;
   /**
    * \brief Perimeter to use for initializing simulations
    */
@@ -370,14 +395,34 @@ private:
    * \brief Environment to use for Model
    */
   topo::Environment* env_;
+#ifndef NDEBUG
   /**
-   * \brief Write the hourly weather that was loaded to an output file
+   * \brief Write weather that was loaded to an output file
    */
   void outputWeather();
+  /**
+   * \brief Write weather that was loaded to an output file
+   * \param weather Weather to write
+   * \param file_name Name of file to write to
+   */
+  void outputWeather(
+    map<size_t, shared_ptr<wx::FireWeather>>& weather,
+    const char* file_name);
+#endif
   /**
    * \brief What year the weather is for
    */
   int year_;
+  /**
+   * @brief If simulation is out of time and should stop
+   *
+   */
+  bool is_out_of_time_ = false;
+  // /**
+  //  * @brief Time when we last checked if simulation should end
+  //  *
+  //  */
+  std::chrono::steady_clock::time_point last_checked_;
 };
 }
 }

@@ -1,44 +1,359 @@
+ARG GCC_VERSION=12.3
+
 # syntax=docker/dockerfile:1
-FROM gcc:10.3
+FROM gcc:${GCC_VERSION} AS gcc_base
+RUN (apt-get update || echo Ignoring update errors)
+
+
+FROM gcc_base AS gcc_with_libs
+# RUN apt-get install -y software-properties-common \
+#   && echo Adding ppa \
+#   && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable \
+#     || echo Ignoring add error) \
+#   && echo Added ppa \
+#   && (apt-get update || echo Ignoring update errors) \
+#   && echo Updated \
+RUN apt-get update \
+  && apt-get install -y gcc make git curl zip unzip tar \
+    libtiff-dev libgeotiff-dev g++ \
+    libgdal-dev util-linux cron rsync openssh-server gdal-bin \
+    libdwarf-dev libelf-dev libnuma-dev \
+    libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+    libdw-dev libbfb0-dev \
+  && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+  && export C_INCLUDE_PATH=/usr/include/gdal
+
+
+# shouldn't need any of those libraries to build cmake
+FROM gcc_base AS cmake
+ARG cmake_version=3.24.2
+ARG cmake_dir=https://github.com/Kitware/CMake/releases/download
+RUN cd ~ \
+  && wget --no-check-certificate ${cmake_dir}/v${cmake_version}/cmake-${cmake_version}.tar.gz \
+  && tar -zxvf cmake-${cmake_version}.tar.gz \
+  && mv cmake-${cmake_version} cmake \
+  && cd cmake \
+  && ./bootstrap \
+  && make
+
+# HACK: just don't want to rebuild cmake target right now
+FROM cmake AS cmake_install
+RUN cd ~/cmake \
+  && make install
+
+# shouldn't need any of those libraries to build perf
+FROM gcc_base AS perf
+ARG perf_version=6.3.0
+ARG perf_server=https://mirrors.edge.kernel.org
+ARG perf_dir=${perf_server}/pub/linux/kernel/tools/perf
+ARG perf_url=${perf_dir}/v${perf_version}/perf-${perf_version}.tar.gz
+RUN cd ~ \
+  && apt-get install -y flex bison \
+  && wget --no-check-certificate ${perf_url} \
+  && tar -xvf perf-${perf_version}.tar.gz \
+  && cd perf-${perf_version}/tools/perf \
+  && make install \
+  && cp perf /usr/local/bin
+
+FROM gcc_with_libs AS python_gcc
+WORKDIR /appl/
+RUN apt-get install -y python3-pip libpython3-dev python3-venv \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+  && python -m venv /appl/.venv \
+  && . /appl/.venv/bin/activate \
+  && python -m pip install numpy \
+  && python -m pip install --global-option=build_ext gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
+
+# FROM python_gcc as nodocs
+# RUN apt-get clean \
+#   && rm -rf \
+#     /var/lib/apt/lists/* \
+#     /usr/share/man/* \
+#     /usr/includes/* \
+#     /var/cache/apk/* \
+#     /root/.npm/* \
+#     /usr/lib/node_modules/npm/man/* \
+#     /usr/lib/node_modules/npm/doc/* \
+#     /usr/lib/node_modules/npm/html/* \
+#     /usr/lib/node_modules/npm/scripts/*
+
+FROM python_gcc AS tbd_dev
+# FIX: don't want to set this in two different places
+# NOTE: this doesn't have the .2 at the end like above
+ARG cmake_version=3.24
+ARG user=user
+ARG password=password
 WORKDIR /appl/
 COPY .docker/requirements_tbd.txt requirements_tbd.txt
 WORKDIR /appl/tbd/
-RUN (apt-get update || echo Ignoring update errors) \
-  && apt-get install -y software-properties-common \
-  && echo Adding ppa \
-  && (add-apt-repository ppa:ubuntugis/ubuntugis-unstable || echo Ignoring add error) \
-  && echo Added ppa \
-  && (apt-get update || echo Ignoring update errors) \
-  && echo Updated \
-  && apt-get install -y gcc make git curl zip unzip tar \
-    libtiff-dev libgeotiff-dev g++ cmake python3-pip \
-    libgdal-dev util-linux cron rsync openssh-server gdal-bin libgdal-dev gdb valgrind \
-  && apt-get install -y flex bison libdwarf-dev libelf-dev libnuma-dev libpython3-dev libunwind-dev libnewt-dev libdwarf++0 libelf++0 libdw-dev libbfb0-dev \
-  && cd /appl/ \
-  && wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/tools/perf/v5.10.0/perf-5.10.0.tar.gz \
-  && tar -xvf perf-5.10.0.tar.gz \
-  && cd perf-5.10.0/tools/perf \
-  && make install \
-  && cp perf /usr/local/bin \
-  && apt-get clean && rm -rf /var/lib/apt/lists/* \
-  && rm -rf \
-      /usr/share/man/* \
-      /usr/includes/* \
-      /var/cache/apk/* \
-      /root/.npm/* \
-      /usr/lib/node_modules/npm/man/* \
-      /usr/lib/node_modules/npm/doc/* \
-      /usr/lib/node_modules/npm/html/* \
-      /usr/lib/node_modules/npm/scripts/* \
-  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
-  && python -m pip install pip==21.0.1 \
-  && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
-  && export C_INCLUDE_PATH=/usr/include/gdal \
+COPY --from=perf /usr/local/bin/perf /usr/local/bin/
+COPY --from=cmake_install /usr/local/doc/cmake-${cmake_version} /usr/local/doc/cmake-${cmake_version}/
+COPY --from=cmake_install /root/cmake/bin/* /usr/local/bin/
+COPY --from=cmake_install /usr/local/share/cmake-${cmake_version} /usr/local/share/cmake-${cmake_version}/
+COPY --from=cmake_install /usr/local/share/aclocal/cmake.m4 /usr/local/share/aclocal/
+COPY --from=cmake_install /usr/local/share/bash-completion/completions/* /usr/local/share/bash-completion/completions/
+RUN (useradd -m ${user} || echo User ${user} already exists) \
+  && (yes ${password} | passwd ${user}) \
+  && yes ${password} | passwd \
+  && yes ${password} | chsh --shell /bin/bash ${user} \
+  && chown -R ${user}:${user} /appl/.venv \
+  && apt-get install -y gdb valgrind time \
+    nano \
+  && . /appl/.venv/bin/activate \
   && python -m pip install -r /appl/requirements_tbd.txt \
-  && ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"\
-  && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
-RUN (useradd -m user || echo User already exists) && (yes password | passwd user)
-RUN yes password | passwd
-RUN sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab
-RUN echo "*/5 * * * * root /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
-ENTRYPOINT service ssh start && cron -f
+  && python -m pip install ipython \
+  && echo source /appl/.venv/bin/activate >> /home/${user}/.bashrc \
+  && echo cd /appl/tbd >> /home/${user}/.bashrc
+# still do this even though no cron jobs so we can have ssh going
+ENTRYPOINT service ssh start \
+  # && su user \
+  && cron -f
+
+
+FROM tbd_dev AS tbd_dev_svc
+RUN sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab \
+  && echo "*/5 * * * * root ((/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') || rm -rf /tmp/update.lockfile) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh' || rm /tmp/update.lockfile) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "*/30 0-10 * * * root (/usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "* * * * * root (/usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+# this just clutters up the logs, but could be good for debugging
+# && echo "* * * * * root ((/usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh) || echo "`date`: Already running") > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+ENTRYPOINT service ssh start \
+  # && su user \
+  && cron -f
+
+
+FROM tbd_dev AS tbd_build
+WORKDIR /appl/tbd
+COPY ./tbd/src /appl/tbd/src/
+COPY ./tbd/CMakeLists.txt /appl/tbd/
+RUN rm -rf CMakeFiles \
+  && rm -f CMakeCache.txt \
+  && ls -l /appl/tbd \
+  && cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
+  && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
+
+
+# if this works we still need to fix it to compile in a container instead of in the local filesystem
+FROM bitnami/minideb:bookworm AS firestarr
+ARG user=user
+ARG password=password
+WORKDIR /appl/tbd
+COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+COPY ./tbd/fuel.lut /appl/tbd/
+RUN (useradd -m ${user} || echo User ${user} already exists) \
+  && (yes ${password} | passwd ${user}) \
+  && yes ${password} | passwd \
+  && yes ${password} | chsh --shell /bin/bash ${user} \
+  && chown -R ${user}:${user} /appl/tbd \
+  && echo cd /appl/tbd >> /home/${user}/.bashrc \
+  && apt-get update \
+  && apt-get install -y libgeotiff5 \
+  && apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/*
+# USER ${user}
+
+
+
+# # FROM bitnami/minideb:bookworm AS python_prod
+# FROM thinkwhere/gdal-python AS python_prod
+# # FROM osgeo/gdal:ubuntu-small-3.6.3 AS python_prod
+# # FIX: don't want to set this in two different places
+# # NOTE: this doesn't have the .2 at the end like above
+# ARG user=user
+# ARG password=password
+# WORKDIR /appl/
+# COPY .docker/requirements_tbd.txt requirements_tbd.txt
+# RUN (useradd -m ${user} || echo User ${user} already exists) \
+#   && (yes ${password} | passwd ${user}) \
+#   && yes ${password} | passwd \
+#   && yes ${password} | chsh --shell /bin/bash ${user} \
+#   # && apt-get update \
+#   # && apt-get install -y python3-venv \
+#   && python -m pip install --upgrade pip \
+#   && python -m pip install virtualenv \
+#   # && apt-get install -y python3-pip \
+#   # && apt-get install -y gdal-bin libgeotiff5 python3-pip python3-venv \
+#   # && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+#   && python -m venv /appl/.venv \
+#   # # && . /appl/.venv/bin/activate \
+#   # # && apt-get install -y gcc make git curl zip unzip tar \
+#   # #   libtiff-dev libgeotiff-dev g++ \
+#   # #   libgdal-dev util-linux cron rsync openssh-server gdal-bin \
+#   # #   libgdal-dev gdb valgrind time \
+#   # #   libdwarf-dev libelf-dev libnuma-dev \
+#   # #   libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+#   # #   libdw-dev libbfb0-dev \
+#   # # && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+#   # # && export C_INCLUDE_PATH=/usr/include/gdal
+#   # # && apt-get install -y python3-pip libpython3-dev python3-venv \
+#   # # && python -m pip install numpy \
+#   # # # && python -m pip install --global-option=build_ext gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"` \
+#   # # && python -m pip install wheel \
+#   # && apt-get install -y python3-gdal \
+#   # # && python -m pip install --prefer-binary gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"` \
+#   # && . /appl/.venv/bin/activate \
+#   # && python -m pip install -r /appl/requirements_tbd.txt \
+#   && chown -R ${user}:${user} /appl/.venv \
+#   && echo source /appl/.venv/bin/activate >> /home/${user}/.bashrc \
+#   && echo cd /appl/tbd >> /home/${user}/.bashrc
+# USER ${user}
+# # # still do this even though no cron jobs so we can have ssh going
+# # ENTRYPOINT service ssh start \
+# #   # && su user \
+# #   && cron -f
+
+
+# FROM python_prod AS tbd_prod
+# WORKDIR /appl/tbd/
+# COPY ./settings.ini /appl/
+# COPY ./tbd/fuel.lut /appl/tbd/
+# # HACK: ./tbd/*.py takes forever
+# COPY ./tbd/gis.py /appl/tbd/
+# COPY ./tbd/main.py /appl/tbd/
+# COPY ./tbd/publish_azure.py /appl/tbd/
+# COPY ./tbd/publish.py /appl/tbd/
+# COPY ./tbd/tbd.py /appl/tbd/
+# COPY ./tbd/settings.ini /appl/tbd/
+# COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+# # COPY ./util/*.py /appl/util/
+# COPY ./util/common.py /appl/util/
+# COPY ./util/gdal_merge_max.py /appl/util/
+# COPY ./util/log.py /appl/util/
+# COPY ./util/model_data.py /appl/util/
+# COPY ./util/server.py /appl/util/
+# COPY ./util/tqdm_pool.py /appl/util/
+# # COPY ./tbd/fuel.lut /appl/tbd/
+
+FROM tbd_dev AS tbd_clean
+RUN apt-get remove -y gcc gcc-12 make git zip unzip \
+    libtiff-dev libgeotiff-dev g++ \
+    subversion mercurial \
+    libgdal-dev rsync openssh-server \
+    libgdal-dev gdb valgrind time \
+    libdwarf-dev libelf-dev libnuma-dev \
+    libunwind-dev libnewt-dev libdwarf++0 libelf++0 \
+    libdw-dev libbfb0-dev \
+  && apt-get remove -y `(apt list --installed | grep "dev" | grep -v "udev" | sed "s/\(^\/\)*\/.*/\1/g" | tr '\n' ' ')` \
+  && apt autoremove -y \
+  && apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/* \
+    /usr/includes/* \
+    /var/cache/apk/*
+
+# # HACK: delete and then shrink instead of trying to build from minimal image for now
+# FROM scratch AS tbd_prod
+# ARG user=user
+# ARG password=password
+# COPY --from=tbd_clean / /
+# COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+# WORKDIR /appl/tbd/
+# COPY ./settings.ini /appl/
+# COPY ./tbd/fuel.lut /appl/tbd/
+# # HACK: ./tbd/*.py takes forever
+# COPY ./tbd/gis.py /appl/tbd/
+# COPY ./tbd/main.py /appl/tbd/
+# COPY ./tbd/publish_azure.py /appl/tbd/
+# COPY ./tbd/publish.py /appl/tbd/
+# COPY ./tbd/tbd.py /appl/tbd/
+# COPY ./tbd/settings.ini /appl/tbd/
+# WORKDIR /appl/util
+# # COPY ./util/*.py .
+# COPY ./util/common.py .
+# COPY ./util/gdal_merge_max.py .
+# COPY ./util/log.py .
+# COPY ./util/model_data.py .
+# COPY ./util/server.py .
+# COPY ./util/tqdm_pool.py .
+# WORKDIR /appl/tbd/cffdrs-ng
+# COPY ./tbd/cffdrs-ng/NG_FWI.py .
+# COPY ./tbd/cffdrs-ng/util.py .
+# RUN chown -R ${user}:${user} /appl/tbd
+# USER user
+# ENTRYPOINT /bin/bash
+
+
+# FROM bitnami/minideb:bookworm AS py_gdal
+# WORKDIR /appl
+# RUN apt-get update \
+#   && apt-get install -y --no-install-recommends python3-pip libgdal-dev python3-venv \
+#   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+#   && apt-get install -y python3-numpy python3-gdal
+#   # && python -m venv /appl/.venv
+#   # #  \
+#   # # && . /appl/.venv/bin/activate \
+#   # # && python -m pip install numpy \
+#   # # && python -m pip install --global-option=build_ext gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
+
+
+FROM bitnami/minideb:bookworm AS py_gdal
+ARG user=user
+ARG password=password
+WORKDIR /appl/tbd
+COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
+COPY ./tbd/fuel.lut /appl/tbd/
+RUN (useradd -m ${user} || echo User ${user} already exists) \
+  && (yes ${password} | passwd ${user}) \
+  && yes ${password} | passwd \
+  && yes ${password} | chsh --shell /bin/bash ${user} \
+  && chown -R ${user}:${user} /appl/tbd \
+  && echo cd /appl/tbd >> /home/${user}/.bashrc \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends python3-pip \
+      libgdal-dev libgeotiff5 \
+      python3-numpy python3-gdal \
+  && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
+  && apt-get clean \
+  && rm -rf \
+    /var/lib/apt/lists/* \
+    /usr/share/man/*
+
+
+# RUN apt-get update \
+#   && apt-get install -y python3-pip libgdal-dev \
+#   && echo 'alias python=python3' >> ~/.bashrc \
+#   && echo 'alias pip=pip3' >> ~/.bashrc \
+#   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
+#   && export C_INCLUDE_PATH=/usr/include/gdal \
+#   && python -m pip install gdal==`ogrinfo --version | sed "s/GDAL \(.*\),.*/\1/"`
+
+
+# HACK: delete and then shrink instead of trying to build from minimal image for now
+FROM py_gdal AS tbd_prod
+ARG user=user
+ARG password=password
+WORKDIR /appl/
+COPY .docker/requirements_tbd.txt .
+RUN chown -R ${user}:${user} /appl/tbd \
+  && python -m pip install --no-warn-script-location --break-system-packages -r /appl/requirements_tbd.txt
+# COPY --from=tbd_clean / /
+WORKDIR /appl/tbd/
+COPY --from=tbd_build /appl/tbd/tbd .
+COPY ./settings.ini /appl/
+COPY ./tbd/fuel.lut /appl/tbd/
+# HACK: ./tbd/*.py takes forever
+COPY ./tbd/gis.py /appl/tbd/
+COPY ./tbd/main.py /appl/tbd/
+COPY ./tbd/publish_azure.py /appl/tbd/
+COPY ./tbd/publish.py /appl/tbd/
+COPY ./tbd/tbd.py /appl/tbd/
+COPY ./tbd/settings.ini /appl/tbd/
+WORKDIR /appl/util
+# COPY ./util/*.py .
+COPY ./util/common.py .
+COPY ./util/gdal_merge_max.py .
+COPY ./util/log.py .
+COPY ./util/model_data.py .
+COPY ./util/server.py .
+COPY ./util/tqdm_pool.py .
+WORKDIR /appl/tbd/cffdrs-ng
+COPY ./tbd/cffdrs-ng/NG_FWI.py .
+COPY ./tbd/cffdrs-ng/util.py .
+USER user
+ENTRYPOINT /bin/bash
