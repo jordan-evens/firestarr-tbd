@@ -23,6 +23,7 @@ WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&versi
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
 EPSG = 3978
 DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
+CRS_LAMBERT = "EPSG:3347"
 # DEFAULT_STATUS_KEEP = ["OC"]
 
 def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT, output_format="application/json"):
@@ -93,11 +94,99 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     # filter = None
     if status_ignore is None:
         status_ignore = []
-    filter = " and ".join([f'"stage_of_control"<>\'{status}\'' for status in status_ignore]) or None
-    # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
+    filter = " and ".join([f'"field_stage_of_control_status"<>\'{status}\'' for status in status_ignore]) or None
+    # filter = " or ".join([f'"field_stage_of_control_status"=\'{status}\'' for status in status_keep]) or None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter, wfs_root=WFS_CIFFC)
     gdf = gpd.read_file(f_json)
     return gdf, f_json
+
+
+def get_m3_download(dir_out, df_fires):
+    def get_shp(filename):
+        for ext in ["dbf", "prj", "shx", "shp"]:
+            url = f"https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/{filename}.{ext}"
+            f_out = os.path.join(dir_out, os.path.basename(url))
+            f = try_save(lambda _: save_http(_, f_out), url)
+        gdf = gpd.read_file(f)
+        return gdf
+    datetime.date.today()
+    perimeters = get_shp("perimeters")
+    # perimeters['LASTDATE'] = perimeters['LASTDATE'].apply(lambda x: pd.to_datetime(x).to_pydatetime())
+    perimeters['LASTDATE'] = pd.to_datetime(perimeters['LASTDATE'])
+    perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(datetime.date.today())]
+    # hotspots = get_shp("hotspots")
+    # don't have guess_id
+    df_perims = perimeters.to_crs(CRS_LAMBERT)
+    perimeters = perimeters.to_crs(EPSG)
+    df_fires = df_fires.to_crs(df_perims.crs)
+    df_join = df_fires.sjoin_nearest(df_perims, max_distance=1)
+    groups = df_join.groupby(['UID'])
+    STATUS_RANK = ['OUT', 'UC', 'BH', 'OC', 'UNK']
+    perimeters['guess_id'] = None
+    def find_rank(x):
+        # rank is highest if unknown value
+        return STATUS_RANK.index(x) if x in STATUS_RANK else (len(STATUS_RANK) - 1)
+    # use fire with highest ranking status
+    for k, v in groups.groups.items():
+        g = groups.get_group(k)[:]
+        g['status'] = g['field_stage_of_control_status'].apply(find_rank)
+        f = g.sort_values(['status'], ascending=False).iloc[0]
+        perimeters.loc[perimeters['UID'] == k,'guess_id'] = f.field_agency_fire_id
+    # status = df_join.groupby(['UID'])['field_stage_of_control_status'].unique()
+    # max_status = status.apply(lambda _: STATUS_RANK[np.max([find_rank(x) for x in _])])
+    # df = pd.merge(perimeters, max_status, on=['UID'])
+    # g = df_join.groupby(['UID'])
+    # return df
+    perimeters.columns = [x.lower() for x in perimeters.columns]
+    perimeters = perimeters.rename(columns={'uid': 'id'})
+    return perimeters
+
+
+def get_wx_cwfis_download(dir_out, dates, indices=""):
+    url_stns = "https://cwfis.cfs.nrcan.gc.ca/downloads/fwi_obs/cwfis_allstn2022.csv"
+    stns = try_save(lambda _: save_http(_,
+                                         os.path.join(dir_out,
+                                                      os.path.basename(url_stns))),
+                    url_stns)
+    gdf_stns = gpd.read_file(stns)
+    stns = gdf_stns[['aes', 'wmo', 'lat', 'lon']]
+    df = pd.DataFrame()
+    for date in dates:
+        ymd = date.strftime("%Y%m%d")
+        url = f"https://cwfis.cfs.nrcan.gc.ca/downloads/fwi_obs/current/cwfis_fwi_{ymd}.csv"
+        year = date.year
+        month = date.month
+        day = date.day
+        file_out = os.path.join(dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day))
+        if not os.path.exists(file_out):
+            # file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
+            file_out = try_save(lambda _: save_http(_, file_out), url)
+        logging.debug("Reading {}".format(file_out))
+        df_day = pd.read_csv(file_out, skipinitialspace=True)
+        # HACK: remove extra header rows in source
+        df_day = df_day[df_day['NAME'] != 'NAME']
+        df_day = df_day[~df_day['FFMC'].isna()]
+        df_day.columns = [x.lower() for x in df_day.columns]
+        df_day = df_day.drop(['name', 'agency', 'opts', 'calcstatus'], axis=1)
+        col_int = ['aes', 'wmo']
+        if [ymd] != np.unique(df_day['repdate']):
+            raise RuntimeError("Wrong day returned")
+        # df_day['repdate'] = df_day['repdate'].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d"))
+        df_day = pd.merge(df_day, stns, on=['aes', 'wmo'])
+        df_day = df_day.drop(['aes', 'wmo', 'repdate'], axis=1).astype(float)
+        df_day['date'] = date
+        df = pd.concat([df, df_day])
+    df['year'] = df.apply(lambda x: x['date'].year, axis=1)
+    df['month'] = df.apply(lambda x: "{:02d}".format(x['date'].month), axis=1)
+    df['day'] = df.apply(lambda x: "{:02d}".format(x['date'].day), axis=1)
+    df = df.sort_values(['year', 'month', 'day', 'lat', 'lon'])
+    # # from looking at wms capabilities
+    # crs = 3978
+    # gdf = gpd.GeoDataFrame(df, geometry=df['the_geom'], crs=crs)
+    crs = 'NAD83'
+    # is there any reason to make actual geometry?
+    gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df['lon'], df['lat']), crs=crs)
+    return gdf
 
 
 def get_wx_cwfis(dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr"):

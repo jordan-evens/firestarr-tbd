@@ -18,6 +18,8 @@ DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # FORMAT_OUTPUT = "COG"
 FORMAT_OUTPUT = "GTiff"
 
+USE_CWFIS = False
+
 sys.path.append("../util")
 from log import *
 
@@ -27,7 +29,8 @@ LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
 )
 logging.info("Starting main.py")
-CRS_DEFAULT = "EPSG:3347"
+CRS_LAMBERT = "EPSG:3347"
+CRS_DEFAULT = CRS_LAMBERT
 
 import urllib.request as urllib2
 from bs4 import BeautifulSoup
@@ -219,25 +222,27 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                 + files_crs
             )
         )
-        shutil.move(file_tmp, file_base)
-        # # HACK: reproject should basically just be copy?
-        # # convert to COG
-        # gis.project_raster(file_tmp,
-        #                    file_base,
-        #                    nodata=-1,
-        #                    resolution=100,
-        #                    format=FORMAT_OUTPUT,
-        #                    crs=f"EPSG:{CRS_OUTPUT}",
-        #                    options=creation_options + [
-        #                        # shouldn't need much precision just for web display
-        #                        "NBITS=16",
-        #                        # shouldn't need alpha?
-        #                        #"ADD_ALPHA=NO",
-        #                        #"SPARSE_OK=TRUE",
-        #                        "PREDICTOR=YES"
-        #                        ]
-        #                     )
-        # os.remove(file_tmp)
+        if "GTiff" == FORMAT_OUTPUT:
+            shutil.move(file_tmp, file_base)
+        else:
+            # HACK: reproject should basically just be copy?
+            # convert to COG
+            gis.project_raster(file_tmp,
+                            file_base,
+                            nodata=-1,
+                            resolution=100,
+                            format=FORMAT_OUTPUT,
+                            crs=f"EPSG:{CRS_OUTPUT}",
+                            options=creation_options + [
+                                # shouldn't need much precision just for web display
+                                "NBITS=16",
+                                # shouldn't need alpha?
+                                #"ADD_ALPHA=NO",
+                                #"SPARSE_OK=TRUE",
+                                "PREDICTOR=YES"
+                                ]
+                                )
+            os.remove(file_tmp)
     if use_exceptions:
         gdal.UseExceptions()
     return dir_out
@@ -297,24 +302,27 @@ def merge_dirs(dir_input=None, dates=None):
 
 def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
     str_year = str(YEAR)
-
     def fix_name(name):
         if isinstance(name, str) or not (name is None or np.isnan(name)):
             s = str(name).replace("-", "_")
             if s.startswith(str_year):
                 s = s[len(str_year) :]
+            if s.endswith(str_year):
+                s = s[:-len(str_year)]
             s = s.strip("_")
             return s
         return ""
-
-    df_m3, m3_json = model_data.get_fires_m3(dir_out)
+    # this isn't an option, because it filters out fires
+    # df_dip = model_data.get_fires_dip(dir_out, status_ignore=None)
+    df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
+    if USE_CWFIS:
+        df_m3, m3_json = model_data.get_fires_m3(dir_out)
+    else:
+        df_m3 = model_data.get_m3_download(dir_out, df_ciffc)
     df_m3["guess_id"] = df_m3["guess_id"].apply(fix_name)
     df_m3["fire_name"] = df_m3.apply(
         lambda x: fix_name(x["guess_id"] or x["id"]), axis=1
     )
-    # this isn't an option, because it filters out fires
-    # df_dip = model_data.get_fires_dip(dir_out, status_ignore=None)
-    df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
     df_ciffc["fire_name"] = df_ciffc["field_agency_fire_id"].apply(fix_name)
     df_ciffc_non_geo = df_ciffc.loc[:]
     del df_ciffc_non_geo["id"]
@@ -790,12 +798,15 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     # HACK: want to keep all the runs and not just overwrite them, so use subfolder
     dir_current = os.path.join(dir_current, run_id)
     # only care about startup indices
-    df_wx_cwfis = model_data.get_wx_cwfis(dir_out, [today, yesterday], indices="ffmc,dmc,dc")
+    if USE_CWFIS:
+        df_wx_startup = model_data.get_wx_cwfis(dir_out, [today, yesterday], indices="ffmc,dmc,dc")
+    else:
+        df_wx_startup = model_data.get_wx_cwfis_download(dir_out, [today, yesterday])
     # we only want stations that have indices
     for index in ["ffmc", "dmc", "dc"]:
-        df_wx_cwfis = df_wx_cwfis[~np.isnan(df_wx_cwfis[index])]
-    df_wx_cwfis_wgs = df_wx_cwfis.to_crs(proj)
-    df_wx = df_wx_cwfis_wgs
+        df_wx_startup = df_wx_startup[~np.isnan(df_wx_startup[index])]
+    df_wx_startup_wgs = df_wx_startup.to_crs(proj)
+    df_wx = df_wx_startup_wgs
     if dir_fires is None:
         df_fires_active = get_fires_active(dir_out)
         df_fires_groups = group_fires(df_fires_active)

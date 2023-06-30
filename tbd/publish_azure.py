@@ -115,7 +115,7 @@ def upload_dir(dir_run):
             # wait until we know we need it
             container = get_container()
         # delete old blobs
-        blob_list = [x for x in container.list_blobs(name_starts_with="firestarr")]
+        blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
         for blob in blob_list:
             container.delete_blob(blob.name)
         # archive_current(container)
@@ -129,7 +129,7 @@ def upload_dir(dir_run):
             # HACK: just upload into archive too so we don't have to move later
             with open(path, "rb") as data:
                 container.upload_blob(
-                    name=f,
+                    name=f"current/{f}",
                     data=data,
                     metadata=metadata,
                     overwrite=True
