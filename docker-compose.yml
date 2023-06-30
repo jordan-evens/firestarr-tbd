@@ -5,147 +5,175 @@ volumes:
   postgis-data:
 
 services:
-  db:
-    build:
-      context: .
-      dockerfile: .docker/Dockerfile_db
-    image: kartoza/postgis:13-3.1
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgis-data:/var/lib/postgresql
-      - dbbackups:/backups
-    environment:
-      # If you need to create multiple database you can add coma separated databases eg gis,data
-      - POSTGRES_DB=FireGUARD
-      - POSTGRES_USER=docker
-      - POSTGRES_PASS=docker
-      - ALLOW_IP_RANGE=0.0.0.0/0
-      # Add extensions you need to be enabled by default in the DB. Default are the five specified below
-      - POSTGRES_MULTIPLE_EXTENSIONS=postgis,hstore,postgis_topology,postgis_raster,pgrouting
-    restart: on-failure
-    healthcheck:
-      test: "exit 0"
-
-  db-backups:
-    image: kartoza/pg-backup:13.0
-    volumes:
-      - dbbackups:/backups
-    environment:
-      - DUMPPREFIX=PG_db
-      - POSTGRES_USER=docker
-      - POSTGRES_PASS=docker
-      - POSTGRES_PORT=5432
-      - POSTGRES_HOST=db
-      - POSTGRES_DBNAME=FireGUARD
-    restart: on-failure
-    depends_on:
-      - db
-
-  wxshield:
-    build:
-      context: .
-      dockerfile: .docker/Dockerfile_gui
-    image: "webdevops/php-nginx"
-    ports:
-      - "8080:80"
-      - "8443:443"
-    environment:
-      - WEB_DOCUMENT_INDEX=index.html
-    restart: on-failure
-    volumes:
-      - type: bind
-        source: ./settings.ini
-        target: /app/settings.ini
-      - type: bind
-        source: ./WeatherSHIELD/gui
-        target: /app/wxshield/
-      - type: bind
-        source: ./FireSTARR/www
-        target: /app/firestarr/
-      - type: bind
-        source: ./documentation/html
-        target: /app/documentation/
-      - type: bind
-        source: ./data
-        target: /app/data
-    depends_on:
-      - db
-
-  wxcli:
-    build:
-      context: .
-      dockerfile: .docker/Dockerfile_wxcli
-    image: python:3.6-slim
-    environment:
-      # do threading in python but wgrib2 tries to also so stop that
-      - OMP_NUM_THREADS=1
-    volumes:
-      - type: bind
-        source: ./settings.ini
-        target: /FireGUARD/settings.ini
-      - type: bind
-        source: ./data
-        target: /FireGUARD/data
-      - type: bind
-        source: ./WeatherSHIELD
-        target: /FireGUARD/WeatherSHIELD
-      - type: bind
-        source: ./util
-        target: /FireGUARD/util
-    restart: on-failure
-    depends_on:
-      - db
-
   gis:
     build:
       context: .
+      target: gis
       dockerfile: .docker/Dockerfile_gis
-    image: thinkwhere/gdal-python
     volumes:
       - type: bind
         source: ./settings.ini
-        target: /FireGUARD/settings.ini
+        target: /appl/settings.ini
       - type: bind
         source: ./data
-        target: /FireGUARD/data
+        target: /appl/data
       - type: bind
-        source: ./GIS
-        target: /FireGUARD/GIS
+        source: ./gis
+        target: /appl/gis
       - type: bind
         source: ./util
-        target: /FireGUARD/util
+        target: /appl/util
 
-  firestarr:
+
+  # tbd_dev:
+  #   build:
+  #     context: .
+  #     target: tbd_dev
+  #     dockerfile: .docker/Dockerfile_tbd
+  #   security_opt:
+  #     - seccomp:unconfined
+  #   ports:
+  #     - "2222:22"
+  #   volumes:
+  #     - type: bind
+  #       source: ./settings.ini
+  #       target: /appl/settings.ini
+  #     - type: bind
+  #       source: ./data
+  #       target: /appl/data
+  #     - type: bind
+  #       source: /mnt/publish
+  #       target: /appl/publish
+  #     - type: bind
+  #       source: ./data/generated/grid
+  #       target: /appl/100m/default
+  #     - type: bind
+  #       source: ./tbd
+  #       target: /appl/tbd
+  #     - type: bind
+  #       source: ./util
+  #       target: /appl/util
+  #   restart: on-failure
+  #   cap_add:
+  #       - SYS_PTRACE
+
+
+  tbd_dev_svc:
     build:
       context: .
-      dockerfile: .docker/Dockerfile_firestarr
+      target: tbd_dev_svc
+      dockerfile: .docker/Dockerfile_tbd
     security_opt:
       - seccomp:unconfined
-    image: gcc:10.3
     ports:
       - "2222:22"
     volumes:
       - type: bind
         source: ./settings.ini
-        target: /FireGUARD/settings.ini
-      - type: bind
-        source: /root/.ssh
-        target: /root/.ssh
+        target: /appl/settings.ini
       - type: bind
         source: ./data
-        target: /FireGUARD/data
+        target: /appl/data
+      - type: bind
+        source: /mnt/publish
+        target: /appl/publish
       - type: bind
         source: ./data/generated/grid
-        target: /FireGUARD/100m/default
+        target: /appl/100m/default
       - type: bind
-        source: ./FireSTARR
-        target: /FireGUARD/FireSTARR
+        source: ./tbd
+        target: /appl/tbd
       - type: bind
         source: ./util
-        target: /FireGUARD/util
+        target: /appl/util
     restart: on-failure
-    depends_on:
-      - wxshield
     cap_add:
         - SYS_PTRACE
+
+
+  firestarr:
+    build:
+      context: .
+      target: firestarr
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
+
+
+  tbd_build:
+    build:
+      context: .
+      target: tbd_build
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
+
+
+  perf:
+    build:
+      context: .
+      target: perf
+      dockerfile: .docker/Dockerfile_tbd
+
+  cmake:
+    build:
+      context: .
+      target: cmake
+      dockerfile: .docker/Dockerfile_tbd
+
+  cmake_install:
+    build:
+      context: .
+      target: cmake_install
+      dockerfile: .docker/Dockerfile_tbd
+
+
+  tbd_prod:
+    build:
+      context: .
+      target: tbd_prod
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default
+
+
+
+  py_gdal:
+    build:
+      context: .
+      target: py_gdal
+      dockerfile: .docker/Dockerfile_tbd
+    volumes:
+      - type: bind
+        source: ./tbd/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./data
+        target: /appl/data
+      - type: bind
+        source: ./data/generated/grid
+        target: /appl/100m/default

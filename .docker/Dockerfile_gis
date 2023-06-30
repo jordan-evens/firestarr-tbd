@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM thinkwhere/gdal-python:3.6
-WORKDIR /FireGUARD
+FROM thinkwhere/gdal-python:3.6 AS gis
+WORKDIR /appl
 COPY .docker/requirements_gis.txt requirements_gis.txt
-WORKDIR /FireGUARD/GIS/
+WORKDIR /appl/gis/
 RUN python -m pip install --upgrade pip \
-	&& pip uninstall -y gdal \
-  && pip install -r /FireGUARD/requirements_gis.txt \
-  && pip install "gdal==`gdal-config --version`" \
+	# && pip uninstall -y gdal \
+  # && pip install "gdal==`gdal-config --version`" \
+  && pip install -r /appl/requirements_gis.txt \
   && rm -rf \
       /usr/share/man/* \
       /usr/includes/* \

@@ -3,11 +3,9 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 cd ${SCRIPT_DIR}
 
-cd ../FireSTARR
-doxygen firestarr.conf
-cd ../GIS
+cd ../tbd
+doxygen tbd.conf
+cd ../gis
 doxygen gis.conf
-cd ../WeatherSHIELD
-doxygen weathershield.conf
 cd ../documentation
-doxygen fireguard.conf
+doxygen main.conf

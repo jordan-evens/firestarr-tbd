@@ -1,5 +1,8 @@
 import os
-
+import requests
+import json
+import datetime
+import dateutil
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
 import numpy as np
 import rasterio
@@ -7,11 +10,12 @@ from rasterio import features
 from rasterio.mask import mask
 import rasterio as rio
 from rasterio.plot import show
-
+import pandas as pd
 import subprocess
-
+from timezonefinder import TimezoneFinder
 import tkinter as tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import urllib.parse
 
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
@@ -22,12 +26,15 @@ import matplotlib.pyplot as plt
 import shutil
 import glob
 
-DIR_OUT = 'Data/output.pyfire'
+tf = TimezoneFinder()
+DIR_OUT = 'data/output.pyfire'
 FILES = None
 GEOMS = None
 ax = None
 root = tk.Tk()
-frmMap = tk.Frame()
+frmTop = tk.Frame()
+frmMap = tk.Frame(frmTop)
+frmHist = tk.Frame(frmTop)
 frmLocation = tk.Frame()
 frmFWI = tk.Frame()
 frmSettings = tk.Frame()
@@ -39,14 +46,20 @@ canvas1.draw()
 
 toolbar = NavigationToolbar2Tk(canvas1, frmMap)
 toolbar.update()
-toolbar.pack(side=tk.TOP, fill=tk.X, padx=8)
+toolbar.pack(side=tk.TOP, fill=tk.BOTH, padx=8)
 
 canvas1.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
 canvas1._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1, padx=0, pady=0)
 
-frmMap.pack(fill=tk.BOTH, expand=1)
-
+frmMap.grid(row=0, column=0, sticky='nsew')
+f = Figure(figsize=(5, 4), dpi=100)
+canvas2 = FigureCanvasTkAgg(f, master=frmHist)
+canvas2.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=1, padx=0, pady=0)
+frmHist.grid(row=0, column=1, sticky='ns')
+frmTop.columnconfigure(tuple([0]), weight=1)
+frmTop.rowconfigure(tuple([0]), weight=1)
+frmTop.pack(fill=tk.BOTH, expand=1)
 
 def add_entry(master, name, value, upper, lower=0, increment=1):
     var = tk.StringVar()
@@ -91,8 +104,10 @@ def handle_click(event):
 btnRun.bind("<Button-1>", handle_click)
 
 def do_run():
-    if os.path.exists(DIR_OUT):
-        shutil.rmtree(DIR_OUT)
+    dir = r'../tbd/{}'.format(DIR_OUT)
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    os.makedirs(dir)
     ffmc = float(varFFMC.get())
     dmc = float(varDMC.get())
     dc = float(varDC.get())
@@ -100,22 +115,58 @@ def do_run():
     lat = float(varLat.get())
     lon = float(varLon.get())
     confidence = float(varConfidence.get())
-    args = './{} 2017-08-27 {} {} 12:15 --wx test/wx.csv --ffmc {} --dmc {} --dc {} --apcp_0800 {} --confidence {}--no-intensity -v -v'.format(
-        DIR_OUT, lat, lon, ffmc, dmc, dc, apcp_0800, confidence)
+    # tz = 'America%2FYellowknife'
+    # tz = 'America%2FToronto'
+    tz = '-5'
+    # tz = tf.certain_timezone_at(lat=lat, lng=lon)
+    # print(tz)
+    start_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    url = 'http://localhost:3501/api/preprocessing/weather/forecast?lat={}&lon={}&model=rdps&format=json&duration=48&timezone={}&startDate={}&provider=hss'.format(
+        lat, lon, urllib.parse.quote_plus(tz), start_date)
+    txt = requests.get(url).text
+    data = json.loads(txt)
+    print(data)
+    start = dateutil.parser.parse(data['start'])
+    start_date = start.strftime('%Y-%m-%d')
+    start_time = start.strftime('%H:%M')
+    data = data['data']
+    # HACK: do some stuff to make weather more fire relevant for now
+    K_TO_C = 273.15 - 45
+    rows = []
+    for h in data:
+        print(h)
+        row = [-1, datetime.timedelta(hours=h['hour']) + start]
+        if 'ACC_PRECIPITATION' in h.keys():
+            row.append(h['ACC_PRECIPITATION'])
+        else:
+            row.append(0)
+        row = row + [round(h['TEMPERATURE_TGL_2'] - K_TO_C, 1), int(h['RELATIVE_HUMIDITY_TGL_2'] / 2), round(h['WIND_SPEED_TGL_10'], 1), int(h['WIND_DIRECTION_TGL_10'])]
+        rows.append(row)
+    df = pd.DataFrame(rows, columns=['Scenario', 'Date', 'APCP', 'TMP', 'RH', 'WS', 'WD'])
+    # just do noon EDT for now
+    df = df[12 == df['Date'].apply(lambda x: x.hour)]
+    df['Date'] = df['Date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    wx_file = dir + '/wx.csv'
+    df.to_csv(wx_file, index=False)
+    # run until the day before the end of the weather stream for now
+    output_date_offsets = '{' + ','.join(map(str, list(range(1, len(df))))) + '}'
+    args = f'./{DIR_OUT} {start_date} {lat} {lon} {start_time} --wx {wx_file} --ffmc {ffmc} --dmc {dmc} --dc {dc} --apcp_0800 {apcp_0800} --confidence {confidence} --no-intensity -v -v --output_date_offsets "{output_date_offsets}"'
+    print(args)
     cmd = [
         'wsl',
         'bash',
         '-c',
-        'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec firestarr cmake-build-release/FireSTARR {}'.format(
+        'DOCKER_HOST="unix:///mnt/wsl/shared-docker/docker.sock" /usr/bin/docker-compose exec tbd cmake-build-release/tbd {}'.format(
             args)
     ]
+    print(' '.join(cmd))
     subprocess.run(cmd)
 
 def update_menu():
     global FILES
     global GEOMS
-    dir = r'../FireSTARR/{}'.format(DIR_OUT)
-    FILES = glob.glob("{}/*.tif".format(dir))
+    dir = r'../tbd/{}'.format(DIR_OUT)
+    FILES = glob.glob("{}/probability_*.tif".format(dir))
     print(FILES)
     menu = optFile["menu"]
     menu.delete(0, "end")
@@ -231,6 +282,13 @@ def do_draw():
     ax.spines["left"].set_visible(False)
     ax.spines["bottom"].set_visible(False)
     canvas1.draw()
+    p = f.gca()
+    sizes = pd.read_csv(fp.replace('probability', 'sizes').replace('.tif', '.csv'), names=['size'])
+    print(sizes)
+    p.hist(list(sizes['size']), 20, log=True)
+    p.set_xlabel('Fire Size (ha)', fontsize=15)
+    p.set_ylabel('Frequency (log)', fontsize=15)
+    canvas2.draw()
 
 def on_pick_file(self, name='', index='', mode=''):
     do_draw()

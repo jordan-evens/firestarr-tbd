@@ -1,0 +1,14 @@
+pandas
+numpy
+rasterio
+ConfigParser
+shapely
+geopandas
+pycrs
+scipy
+bs4
+requests
+timezonefinder
+tqdm
+multiprocess
+azure-storage-blob
