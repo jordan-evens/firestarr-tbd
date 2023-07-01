@@ -43,7 +43,7 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
                     check_code=False)
 
 
-def get_fires_m3(dir_out, for_day=datetime.date.today()):
+def get_fires_m3(dir_out, last_active_since=datetime.date.today()):
     f_out = f'{dir_out}/m3_polygons.json'
     # features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
     features = 'uid,geometry,hcount,firstdate,lastdate,area,guess_id'
@@ -53,7 +53,8 @@ def get_fires_m3(dir_out, for_day=datetime.date.today()):
     # yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
     # filter = f'"maxdate">=\'{today}\''
     # filter = None
-    filter = f"lastdate during {for_day.strftime('%Y-%m-%d')}T00:00:00Z/P1D"
+    if last_active_since:
+        filter = f"lastdate >= {last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     logging.debug(f"Reading {f_json}")
     gdf = gpd.read_file(f_json)
@@ -101,7 +102,7 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     return gdf, f_json
 
 
-def get_m3_download(dir_out, df_fires):
+def get_m3_download(dir_out, df_fires, last_active_since=datetime.date.today()):
     def get_shp(filename):
         for ext in ["dbf", "prj", "shx", "shp"]:
             url = f"https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/{filename}.{ext}"
@@ -109,11 +110,11 @@ def get_m3_download(dir_out, df_fires):
             f = try_save(lambda _: save_http(_, f_out), url)
         gdf = gpd.read_file(f)
         return gdf
-    datetime.date.today()
     perimeters = get_shp("perimeters")
     # perimeters['LASTDATE'] = perimeters['LASTDATE'].apply(lambda x: pd.to_datetime(x).to_pydatetime())
     perimeters['LASTDATE'] = pd.to_datetime(perimeters['LASTDATE'])
-    perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(datetime.date.today())]
+    if last_active_since:
+        perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(last_active_since)]
     # hotspots = get_shp("hotspots")
     # don't have guess_id
     df_perims = perimeters.to_crs(CRS_LAMBERT)

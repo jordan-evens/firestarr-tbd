@@ -11,6 +11,8 @@ DEFAULT_GROUP_DISTANCE_KM = 20
 # DEFAULT_NUM_DAYS = 3
 # DEFAULT_NUM_DAYS = 7
 DEFAULT_NUM_DAYS = 14
+# DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 7
+DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
 
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
@@ -315,10 +317,14 @@ def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
     # this isn't an option, because it filters out fires
     # df_dip = model_data.get_fires_dip(dir_out, status_ignore=None)
     df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
-    if USE_CWFIS:
-        df_m3, m3_json = model_data.get_fires_m3(dir_out)
+    if DEFAULT_M3_LAST_ACTIVE_IN_DAYS:
+        last_active_since = datetime.date.today() - datetime.timedelta(days=DEFAULT_M3_LAST_ACTIVE_IN_DAYS)
     else:
-        df_m3 = model_data.get_m3_download(dir_out, df_ciffc)
+        last_active_since = None
+    if USE_CWFIS:
+        df_m3, m3_json = model_data.get_fires_m3(dir_out, last_active_since)
+    else:
+        df_m3 = model_data.get_m3_download(dir_out, df_ciffc, last_active_since)
     df_m3["guess_id"] = df_m3["guess_id"].apply(fix_name)
     df_m3["fire_name"] = df_m3.apply(
         lambda x: fix_name(x["guess_id"] or x["id"]), axis=1
@@ -809,10 +815,12 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     df_wx = df_wx_startup_wgs
     if dir_fires is None:
         df_fires_active = get_fires_active(dir_out)
+        df_fires_active.to_file(os.path.join(dir_out, "df_fires_active.shp"))
         df_fires_groups = group_fires(df_fires_active)
         df_fires = df_fires_groups
     else:
         df_fires = get_fires_folder(dir_fires, crs)
+        df_fires.to_file(os.path.join(dir_out, "df_fires_folder.shp"))
         df_fires = df_fires.to_crs(crs)
         # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
         centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
@@ -822,11 +830,15 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     # cut out the row as a DataFrame still so we can use crs and centroid
     # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     file_bounds = common.BOUNDS['bounds']
+    df_fires.to_file(os.path.join(dir_out, "df_fires_groups.shp"))
     if file_bounds:
-        logging.info(f"Using groups in boundaries defined by {file_bounds}")
+        n_initial = len(df_fires)
         bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
+        bounds.to_file(os.path.join(dir_out, "bounds.shp"))
         # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
         df_fires = df_fires[df_fires.intersects(bounds.dissolve().iloc[0].geometry)]
+        logging.info(f"Using groups in boundaries defined by {file_bounds} filters fires from {n_initial} to {len(df_fires)}")
+        df_fires.to_file(os.path.join(dir_out, "df_fires_groups_bounds.shp"))
     # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
     # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
     # takes the longest to run?

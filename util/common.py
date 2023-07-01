@@ -288,6 +288,7 @@ def try_save(fct, url, max_save_retries=RETRY_MAX_ATTEMPTS, check_code=False):
                 if 404 == ex.errno:
                     raise ex
             if save_tries >= max_save_retries:
+                logging.error(f"Tried {save_tries} times, but failed to save {url}")
                 raise ex
             logging.warning("Retrying save for {}".format(url))
             time.sleep(RETRY_DELAY)
