@@ -658,7 +658,12 @@ def do_prep_fire(dir_fire):
         # noon = datetime.datetime.fromordinal(today.toordinal()) + datetime.timedelta(hours=12)
         # df_wx_fire = df_wx_fire[df_wx_fire['TIMESTAMP'] >= noon].reset_index()[cols]
         # NOTE: expects weather in localtime, but uses utcoffset to figure out local sunrise/sunset
-        df_fwi = NG_FWI.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old)
+        try:
+            df_fwi = NG_FWI.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old)
+        except Exception as ex:
+            logging.error(ex)
+            logging.error(dir_fire)
+            raise ex
         # HACK: get rid of missing values at end of period
         df_fwi = df_fwi[~np.isnan(df_fwi["FWI"])].reset_index(drop=True)
         # COLUMN_SYNONYMS = {'WIND': 'WS', 'RAIN': 'PREC', 'YEAR': 'YR', 'HOUR': 'HR'}
@@ -771,7 +776,6 @@ def do_prep_and_run_fire(for_what):
     return do_run_fire((dir_ready, dir_current, verbose))
 
 
-# dir_fires = "/appl/data/affes/latest"
 def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=True):
     t0 = timeit.default_timer()
     # UTC time
@@ -869,7 +873,7 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=True):
         dirs_fire.append(dir_fire)
     # small limit due to amount of disk access
     # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
-    logging.info("Getting weather for {len(dirs_fire)} fires")
+    logging.info(f"Getting weather for {len(dirs_fire)} fires")
     dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
     dirs_fire = dirs_ready
     # for i in range(len(dirs_fire)):
