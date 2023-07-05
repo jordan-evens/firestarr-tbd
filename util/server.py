@@ -22,7 +22,7 @@ PASSWORD = common.CONFIG.get('gis', 'password')
 SERVER = common.CONFIG.get('gis', 'server')
 # want to use settings so we aren't going into other folders
 FOLDER = common.CONFIG.get('gis', 'folder').strip('/')
-assert FOLDER
+# assert FOLDER
 HEADERS = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
 
 

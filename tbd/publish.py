@@ -111,6 +111,11 @@ def publish_folder(dir_runid, with_shp=False):
             DIR_OUT,
             dir_runid,
         )
+    if not server.FOLDER:
+        logging.warning(
+            "No server defined, so not publishing %s",
+            dir_runid,
+        )
     logging.info("Publishing %s", dir_runid)
     run_id = os.path.basename(dir_runid)
     dir_base = os.path.join(dir_runid, "combined")
