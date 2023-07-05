@@ -9,15 +9,18 @@ import datetime
 import json
 import numpy as np
 import geopandas as gpd
+from ratelimit import limits, RateLimitException, sleep_and_retry
 
 from osgeo import gdal
+
+ONE_MINUTE=60
 
 # still getting messages that look like they're from gdal when debug is on, but
 # maybe they're from a package that's using it?
 gdal.UseExceptions()
 gdal.SetConfigOption('CPL_LOG', '/dev/null')
 gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-gdal.SetErrorHandler('CPLLoggingErrorHandler')
+gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0'
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
@@ -231,7 +234,7 @@ def get_wx_cwfis(dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui
 
 def get_spotwx_key():
     try:
-        key = CONFIG.get('keys', 'spotwx')
+        key = CONFIG.get('spotwx', 'key')
     except configparser.NoSectionError:
         key = None
     if key is None or 0 == len(key):
@@ -241,8 +244,12 @@ def get_spotwx_key():
     return key
 
 
+def get_spotwx_limit():
+    return int(CONFIG.get('spotwx', 'api_limit'))
+
+
 def get_wx_spotwx(lat, long):
-    SPOTWX_KEY =  get_spotwx_key()
+    SPOTWX_KEY = get_spotwx_key()
     metmodel = "gem_reg_10km" if lat > 67 else "gem_lam_continental"
     # HACK: can't figure out a way to just get a csv directly, so parsing html javascript array for data
     url = f'https://spotwx.com/products/grib_index.php?key={SPOTWX_KEY}&model={metmodel}&lat={round(lat, 3)}&lon={round(long, 3)}&display=table_prometheus'
@@ -263,6 +270,8 @@ def get_wx_spotwx(lat, long):
     return df_spotwx
 
 
+@sleep_and_retry
+@limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
 def get_wx_ensembles(lat, long):
     SPOTWX_KEY =  get_spotwx_key()
     model = "geps"

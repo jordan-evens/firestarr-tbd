@@ -12,7 +12,7 @@ from osgeo import gdal, ogr, osr
 gdal.UseExceptions()
 gdal.SetConfigOption('CPL_LOG', '/dev/null')
 gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-gdal.SetErrorHandler('CPLLoggingErrorHandler')
+gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 import numpy as np
 import geopandas as gpd

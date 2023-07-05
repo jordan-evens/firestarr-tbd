@@ -13,9 +13,9 @@ def initializer():
 def init_pool():
     # ignore Ctrl+C in workers
     return mp.Pool(initializer=initializer,
-                   #processes=mp.cpu_count())
-                   # HACK: trying to keep things from freezing all the time lately
-                   processes=max(1, int(mp.cpu_count() / 4)))
+                   processes=mp.cpu_count())
+                #    # HACK: trying to keep things from freezing all the time lately
+                #    processes=max(1, int(mp.cpu_count() / 4)))
 
 
 def pmap(fct, values, *args, **kwargs):

@@ -183,8 +183,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
     date_origin = min(for_dates)
     # for_what, files = list(files_by_for_what.items())[-2]
     for for_what, files in tqdm(files_by_for_what.items(),
-                                desc=f"Merging {dir_in}",
-                                leave=False):
+                                desc=f"Merging {dir_in}"):
         dir_in_for_what = os.path.basename(for_what)
         # HACK: forget about tiling and just do what we need now
         if "perim" == dir_in_for_what:
@@ -198,7 +197,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                                "reprojected",
                                dir_in_for_what))
         files_crs = []
-        for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}", leave=False):
+        for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}"):
             f_crs = os.path.join(dir_crs, os.path.basename(f))
             files_crs.append(f_crs)
             gis.project_raster(f,
@@ -407,7 +406,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     p_check = p_check.iloc[1:]
     # just check polygon proximity to start
     # logging.info("Grouping polygons")
-    with tqdm(desc="Grouping fires", total=len(p_check), leave=False) as tq:
+    with tqdm(desc="Grouping fires", total=len(p_check)) as tq:
         p_done = []
         while 0 < len(p_check):
             n_prev = len(p_check)
@@ -443,7 +442,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
                 best = i
         return zone_rasters[best]
 
-    for i in tqdm(range(len(merged)), desc="Naming groups", leave=False):
+    for i in tqdm(range(len(merged)), desc="Naming groups"):
         df_group = merged[i]
         # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
         df_dissolve = df_group.dissolve()
@@ -491,7 +490,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
 #     pts_keep = [p for p in pts if not np.any(df_polys.contains(p))]
 #     # just check polygon proximity to start
 #     # logging.info("Grouping polygons")
-#     with tqdm(desc="Grouping polygons", total=len(polys), leave=False) as tq:
+#     with tqdm(desc="Grouping polygons", total=len(polys)) as tq:
 #         p_done = []
 #         while 1 < len(polys):
 #             p = polys.pop(0)
@@ -773,7 +772,7 @@ def do_prep_and_run_fire(for_what):
 
 
 # dir_fires = "/appl/data/affes/latest"
-def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
+def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=True):
     t0 = timeit.default_timer()
     # UTC time
     run_start = datetime.datetime.now()
@@ -845,9 +844,14 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
     # FIX: consider sorting by startup indices or overall DSR for period instead?
     fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(ascending=False)
     dirs_fire = []
-    # wx_failed = 0
-    # for df_fire in tqdm(df_by_fire, desc='Separating fires', leave=False):
-    for fire_name in tqdm(fire_areas.index, desc="Separating fires", leave=False):
+    wx_failed = 0
+    # n = len(fire_areas.index)
+    # API_LIMIT=180
+    # API_LIMIT=150
+    # if n < API_LIMIT:
+    #     logging.info(f"Collecting weather right away since only {n} groups")
+    # for df_fire in tqdm(df_by_fire, desc='Separating fires'):
+    for fire_name in tqdm(fire_areas.index, desc="Separating fires"):
         # fire_name = df_fire.iloc[0]['fire_name']
         df_fire = df_fires[df_fires["fire_name"] == fire_name]
         # NOTE: lat/lon are for centroid of group, not individual geometry
@@ -859,20 +863,24 @@ def run_all_fires(dir_fires=None, max_days=None, stop_on_any_failure=False):
         dir_fire = make_run_fire(
             dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days
         )
-        # wx_failed += check_failure(dir_fire, do_prep_fire(dir_fire), stop_on_any_failure)
+        # get weather right away if not going to go over API limit
+        # if n < API_LIMIT:
+        #     wx_failed += check_failure(dir_fire, do_prep_fire(dir_fire), stop_on_any_failure)
         dirs_fire.append(dir_fire)
     # small limit due to amount of disk access
     # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
-    # dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
+    logging.info("Getting weather for {len(dirs_fire)} fires")
+    dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
+    dirs_fire = dirs_ready
     # for i in range(len(dirs_fire)):
     #     result = dirs_ready[i]
     #     dir_fire = dirs_fire[i]
     #     wx_failed += check_failure(dir_fire, result, stop_on_any_failure)
     # if 0 < wx_failed:
     #     logging.warning("%d fires could not get weather")
-    # # if stop_on_any_failure and 0 < wx_failed:
-    # #     logging.fatal("Stopping becase %d fires could not find weather", wx_failed)
-    # #     raise RuntimeError("Could not prepare weather for all fires")
+    # if stop_on_any_failure and 0 < wx_failed:
+    #     logging.fatal("Stopping becase %d fires could not find weather", wx_failed)
+    #     raise RuntimeError("Could not prepare weather for all fires")
     # # HACK: weird mess to ensure thread has proper objects to call function
     # for_what = list(zip(dirs_ready, [dir_current] * len(dirs_ready)))
     # sim_results = tqdm_pool.pmap(do_run_fire, for_what, desc="Running simulations")

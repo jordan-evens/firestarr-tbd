@@ -559,7 +559,7 @@ def zip_folder(zip_name, path):
             for f in files:
                 all_files.append(os.path.join(root, f))
         logging.info("Zipping")
-        for f in tqdm(all_files, desc=os.path.basename(zip_name), leave=False):
+        for f in tqdm(all_files, desc=os.path.basename(zip_name)):
             f_relative = f.replace(path, '').lstrip('/')
             zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name

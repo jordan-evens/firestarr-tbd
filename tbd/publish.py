@@ -69,8 +69,7 @@ def symbolize(file_in, file_out, empty=False, with_shp=False):
                     for ji, window in tqdm(
                         src.block_windows(1),
                         total=n,
-                        desc=f"Processing {os.path.basename(file_in)}",
-                        leave=False,
+                        desc=f"Processing {os.path.basename(file_in)}"
                     ):
                         # NOTE: should only be 1 band, but use all of them if more
                         d = src.read(window=window)

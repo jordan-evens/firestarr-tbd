@@ -12,3 +12,4 @@ timezonefinder
 tqdm
 multiprocess
 azure-storage-blob
+ratelimit
