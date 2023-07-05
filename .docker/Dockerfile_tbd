@@ -136,7 +136,7 @@ RUN rm -rf CMakeFiles \
   && ls -l /appl/tbd \
   && cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
   && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
-
+ENTRYPOINT /bin/bash
 
 # if this works we still need to fix it to compile in a container instead of in the local filesystem
 FROM bitnami/minideb:bookworm AS firestarr
