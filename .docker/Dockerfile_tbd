@@ -111,8 +111,10 @@ ENTRYPOINT service ssh start \
 
 
 FROM tbd_dev AS tbd_dev_svc
+# NOTE: DO NOT DELETE THE LOCKFILE BECAUSE THEN THE NEXT TIME IT RUNS IT MAKES A NEW ONE AND CONTINUES
 RUN sed -i "/\/appl\/tbd\/update.sh/d" /etc/crontab \
-  && echo "*/5 * * * * root ((/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') || rm -rf /tmp/update.lockfile) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+  && echo "*/15 * * * * root (/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
+#  && echo "*/5 * * * * root ((/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') || rm -rf /tmp/update.lockfile) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 #  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh' || rm /tmp/update.lockfile) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 #  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile su user /bin/bash -c '/appl/tbd/update.sh') > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
 #  && echo "*/5 * * * * root (/usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh) > /proc/1/fd/1 2>/proc/1/fd/2" >> /etc/crontab
