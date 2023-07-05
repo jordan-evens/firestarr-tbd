@@ -19,7 +19,6 @@ AZURE_URL = None
 AZURE_TOKEN = None
 AZURE_CONTAINER = None
 
-
 def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
     token = common.CONFIG.get('azure', 'token')
@@ -38,9 +37,9 @@ def read_config():
         AZURE_TOKEN = get_token()
         AZURE_CONTAINER = common.CONFIG.get('azure', 'container')
     except ValueError as ex:
+        logging.error(ex)
         logging.warning("Unable to read azure config")
-        return False
-    return True
+    return (AZURE_URL and AZURE_TOKEN and AZURE_CONTAINER)
 
 def get_blob_service_client():
     retry = ExponentialRetry(initial_backoff=1, increment_base=3, retry_total=5)

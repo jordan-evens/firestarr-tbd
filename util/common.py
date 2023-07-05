@@ -98,6 +98,18 @@ def read_config(force=False):
         CONFIG.set('tbd', 'longitude_min', '-141')
         CONFIG.set('tbd', 'longitude_max', '-52')
         CONFIG.set('tbd', 'bounds', "")
+        CONFIG.add_section("spotwx")
+        CONFIG.set("spotwx", "key", "")
+        CONFIG.set("spotwx", "api_limit", "100")
+        CONFIG.add_section("gis")
+        CONFIG.set("gis", "server", "")
+        CONFIG.set("gis", "username", "")
+        CONFIG.set("gis", "password", "")
+        CONFIG.set("gis", "folder", "")
+        CONFIG.add_section("azure")
+        CONFIG.set("azure", "url", "")
+        CONFIG.set("azure", "token", "")
+        CONFIG.set("azure", "container", "")
         try:
             with open(SETTINGS_FILE) as configfile:
                 CONFIG.readfp(configfile)

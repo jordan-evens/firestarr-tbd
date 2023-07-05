@@ -23,6 +23,9 @@ FORMAT_OUTPUT = "GTiff"
 USE_CWFIS = False
 
 sys.path.append("../util")
+import common
+from common import ensure_dir
+from common import list_dirs
 from log import *
 
 DIR_LOG = "./logs"
@@ -39,9 +42,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import datetime
 
-import common
-from common import ensure_dir
-from common import list_dirs
 import publish
 import model_data
 import gis

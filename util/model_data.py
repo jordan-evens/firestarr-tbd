@@ -273,7 +273,7 @@ def get_wx_spotwx(lat, long):
 @sleep_and_retry
 @limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
 def get_wx_ensembles(lat, long):
-    SPOTWX_KEY =  get_spotwx_key()
+    SPOTWX_KEY = get_spotwx_key()
     model = "geps"
     url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
     print(url)
