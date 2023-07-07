@@ -989,8 +989,6 @@ def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=Tr
 def publish_all(dir_current=None):
     dir_current = find_latest(dir_current)
     merge_dirs(dir_current)
-    import publish
-    publish.publish_folder(dir_current)
     import publish_azure
     publish_azure.upload_dir(dir_current)
     import publish_geoserver
