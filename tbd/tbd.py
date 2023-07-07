@@ -21,6 +21,7 @@ import gis
 import numpy as np
 import shutil
 
+
 DIR_DATA = common.ensure_dir('/appl/data')
 DIR_ROOT = common.ensure_dir(os.path.join(DIR_DATA, 'sims'))
 DIR_OUTPUT = common.ensure_dir(os.path.join(DIR_DATA, 'output'))
@@ -34,8 +35,13 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
     def nolog(*args, **kwargs):
         pass
     log_info = logging.info if verbose else nolog
-    with open(os.path.join(dir_fire, FILE_SIM)) as f:
-      data = json.load(f)
+    try:
+        with open(os.path.join(dir_fire, FILE_SIM)) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as ex:
+        logging.error(f"Can't read config for {dir_fire}")
+        logging.error(ex)
+        raise ex
     region = os.path.basename(os.path.dirname(os.path.dirname(dir_fire)))
     dir_out = data['dir_out']
     job_date = data['job_date']
@@ -44,6 +50,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
     done_already = os.path.exists(dir_out)
     log_file = os.path.join(dir_out, "log.txt")
     data['log_file'] = log_file
+    data["ran"] = False
     try:
         if not done_already:
             lat = data['lat']
@@ -65,7 +72,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                 out_name = '{}.geojson'.format(fire_name)
                 out_file = os.path.join(dir_out, out_name)
                 lyr = gpd.read_file(perim)
-                lyr.to_file(out_file)
+                lyr.to_crs("WGS84").to_file(out_file)
                 year = start_time.year
                 reference = gis.find_best_raster(lon, year)
                 raster = os.path.join(dir_out, "{}.tif".format(fire_name))
@@ -131,6 +138,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info("Took {}s to run simulations".format(sim_time))
             with open(log_file, 'w') as f_log:
                 f_log.write(stdout.decode('utf-8'))
+            data["ran"] = True
         else:
             log_info("Simulation already ran")
             data['sim_time'] = None
@@ -147,10 +155,12 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated
-            extent = gis.project_raster(
-                os.path.join(dir_out, prob),
-                os.path.join(dir_region, d, fire_name + '.tif'),
-                nodata=None
+            file_out = os.path.join(dir_region, d, fire_name + '.tif')
+            if data["ran"] or not os.path.isfile(file_out):
+                extent = gis.project_raster(
+                    os.path.join(dir_out, prob),
+                    file_out,
+                    nodata=None
             )
         perims = [x for x in outputs if (
             x.endswith('tif')
@@ -163,17 +173,21 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         )]
         if len(perims) > 0:
             # FIX: maybe put the perims used for the run and the outputs in the same root directory?
-            perim = perims[0]
-            log_info(f"Adding raster to final outputs: {perim}")
-            gis.project_raster(os.path.join(dir_out, perim),
-                                            os.path.join(dir_region, 'perim', fire_name + '.tif'),
-                                            outputBounds=extent,
-                                            # HACK: if nodata is none then 0's should just show up as 0?
-                                            nodata=None)
+            file_out = os.path.join(dir_region, 'perim', fire_name + '.tif')
+            if data["ran"] or not os.path.isfile(file_out):
+                perim = perims[0]
+                log_info(f"Adding raster to final outputs: {perim}")
+                gis.project_raster(os.path.join(dir_out, perim),
+                                                file_out,
+                                                outputBounds=extent,
+                                                # HACK: if nodata is none then 0's should just show up as 0?
+                                                nodata=None)
         data['dates_out'] = dates_out
         data['sim_finished'] = True
-    except Exception as e:
-        logging.warning(e)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.warning(ex)
         data['sim_time'] = None
         data['dates_out'] = None
         data['sim_finished'] = False
