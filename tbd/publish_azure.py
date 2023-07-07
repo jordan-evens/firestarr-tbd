@@ -1,8 +1,9 @@
-import os
 import sys
 sys.path.append('../util')
+from log import *
 import common
-import logging
+
+import os
 import datetime
 import urllib.parse
 

@@ -1,6 +1,8 @@
-import os
 import sys
-import logging
+sys.path.append("../util")
+from log import *
+
+import os
 import math
 
 # makes groups that are too big because it joins mutiple groups into a chain
@@ -22,11 +24,9 @@ FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS = False
 
-sys.path.append("../util")
 import common
 from common import ensure_dir
 from common import list_dirs
-from log import *
 
 DIR_LOG = "./logs"
 os.makedirs(DIR_LOG, exist_ok=True)
@@ -47,7 +47,6 @@ import model_data
 import gis
 import tbd
 import timeit
-import logging
 import shutil
 import shlex
 import sys

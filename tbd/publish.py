@@ -1,8 +1,12 @@
+import sys
+
+sys.path.append("../util")
+from log import *
+
 import os
 import re
 import numpy as np
 import shutil
-import logging
 import rasterio
 from rasterio.enums import Resampling
 import rasterio.features
@@ -11,9 +15,7 @@ import pandas as pd
 import geopandas as gpd
 import shapely
 import shapely.geometry
-import sys
 
-sys.path.append("../util")
 import server
 
 from osgeo_utils import gdal_calc
@@ -23,11 +25,11 @@ DIR_TMP_ROOT = os.path.join(DIR_ROOT, "service")
 FILE_LOG = os.path.join(DIR_TMP_ROOT, "log.txt")
 CREATION_OPTIONS = ["COMPRESS=LZW", "TILED=YES"]
 
-logging.basicConfig(
-    filename=FILE_LOG,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+# logging.basicConfig(
+#     filename=FILE_LOG,
+#     level=logging.INFO,
+#     format="%(asctime)s - %(levelname)s - %(message)s",
+# )
 
 DIR_OUT = r"/appl/publish"
 FACTORS = [2, 4, 8, 16]
@@ -69,7 +71,7 @@ def symbolize(file_in, file_out, empty=False, with_shp=False):
                     for ji, window in tqdm(
                         src.block_windows(1),
                         total=n,
-                        desc=f"Processing {os.path.basename(file_in)}"
+                        desc=f"Processing {os.path.basename(file_in)}",
                     ):
                         # NOTE: should only be 1 band, but use all of them if more
                         d = src.read(window=window)
@@ -174,7 +176,7 @@ def publish_folder(dir_runid, with_shp=False):
             f"{file_template}",
             "--NoDataValue",
             "0",
-            '--overwrite',
+            "--overwrite",
             "--outfile",
             f"{os.path.join(DIR_OUT, f)}",
             "--quiet",

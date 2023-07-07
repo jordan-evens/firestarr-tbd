@@ -1,9 +1,9 @@
 """Non-ArcGIS GIS utility code"""
 
 import sys
-sys.path.append('../util')
+sys.path.append("../util")
+from log import *
 import common
-import logging
 import os
 
 from osgeo import gdal, ogr, osr

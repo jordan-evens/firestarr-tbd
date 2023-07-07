@@ -3,10 +3,8 @@
 # https://community.esri.com/thread/186020-start-stop-map-service-arcpy
 # Demonstrates how to stop or start all services in a folder
 
-import sys
+from log import *
 import common
-import log
-import logging
 
 # For Http calls
 import urllib

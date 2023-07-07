@@ -1,8 +1,9 @@
 import sys
 sys.path.append('../util')
+from log import *
+
 import common
 import json
-import logging
 import sys
 import pandas as pd
 import geopandas as gpd
