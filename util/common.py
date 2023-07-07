@@ -484,7 +484,8 @@ def download(url, suppress_exceptions=True):
     """
     try:
         # HACK: check this to make sure url completion has worked properly
-        assert('{}' not in url)
+        if ('{}' in url):
+            raise RuntimeError(f"Url still has format string in it: {url}")
         response = urllib2.urlopen(url)
         # logging.debug("Saving {}".format(url))
         return response.read()
