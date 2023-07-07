@@ -98,7 +98,7 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
   && yes ${password} | chsh --shell /bin/bash ${user} \
   && chown -R ${user}:${user} /appl/.venv \
   && apt-get install -y gdb valgrind time \
-    nano \
+    nano ministat \
   && . /appl/.venv/bin/activate \
   && python -m pip install -r /appl/requirements_tbd.txt \
   && python -m pip install ipython \
