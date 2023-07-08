@@ -10,3 +10,6 @@ documentation/html
 log*.txt
 pyfire/venv
 *.whl
+**/logs
+**/build
+
