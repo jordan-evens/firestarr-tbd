@@ -606,9 +606,7 @@ def make_run_fire(
     fire_name, lat, lon = df_fire[["fire_name", "lat", "lon"]].iloc[0]
     dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
     logging.debug("Saving %s to %s", fire_name, dir_fire)
-    file_fire = os.path.join(dir_fire, "{}WGS84.geojson".format(fire_name))
-    # HACK: geojson must be WGS84
-    df_fire.to_crs("WGS84").to_file(file_fire)
+    file_fire = gis.save_geojson(df_fire, os.path.join(dir_fire, fire_name))
     data = {
         # UTC time
         "job_date": run_start.strftime("%Y%m%d"),
@@ -625,8 +623,7 @@ def make_run_fire(
         "fire_name": fire_name,
         "max_days": max_days,
     }
-    with open(os.path.join(dir_fire, FILE_SIM), "w") as f:
-        json.dump(data, f)
+    dump_json(data, os.path.join(dir_fire, FILE_SIM))
     return dir_fire
 
 
@@ -754,8 +751,7 @@ def do_prep_fire(dir_fire):
         data["start_time"] = start_time.isoformat()
         data["offsets"] = offsets
         data["wx"] = file_wx
-    with open(os.path.join(dir_fire, FILE_SIM), "w") as f:
-        json.dump(data, f)
+    dump_json(data, os.path.join(dir_fire, FILE_SIM))
     return dir_fire
 
 
@@ -1056,7 +1052,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
         max_processes=CONCURRENT_SIMS,
         desc="Running simulations",
     )
-    dates_out = []
+    dates_out = set([])
     results = {}
     sim_time = 0
     sim_times = []
@@ -1086,7 +1082,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
                     cur_time = int(cur_time)
                     sim_time += cur_time
                     sim_times.append(cur_time)
-                dates_out = dates_out + [x for x in result["dates_out"]]
+                dates_out = dates_out.union(set(result.get("dates_out", [])))
     logging.info("Done")
     t1 = timeit.default_timer()
     totaltime = t1 - t0
@@ -1098,7 +1094,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
             min(sim_times),
             max(sim_times),
         )
-    return dir_out, dir_current, results, dates_out, totaltime
+    return dir_out, dir_current, results, list(dates_out), totaltime
 
 
 # # FIX: need to update to work with new directory structure and return values

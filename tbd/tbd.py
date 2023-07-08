@@ -72,10 +72,8 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             if perim is not None:
                 perim = os.path.join(dir_fire, data['perim'])
                 logging.debug(f'Perimeter input is {perim}')
-                out_name = '{}.geojson'.format(fire_name)
-                out_file = os.path.join(dir_out, out_name)
                 lyr = gpd.read_file(perim)
-                lyr.to_crs("WGS84").to_file(out_file)
+                out_file = gis.save_geojson(lyr, os.path.join(dir_out, fire_name))
                 year = start_time.year
                 reference = gis.find_best_raster(lon, year)
                 raster = os.path.join(dir_out, "{}.tif".format(fire_name))
@@ -139,8 +137,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             sim_time = t1 - t0
             data['sim_time'] = sim_time
             data['sim_finished'] = True
-            with open(file_json, "w") as f:
-                json.dump(data, f)
+            file_json = dump_json(data, file_json)
             data["ran"] = True
             log_info("Took {}s to run simulations".format(sim_time))
             with open(log_file, 'w') as f_log:
@@ -158,7 +155,9 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             logging.debug(f"Adding raster to final outputs: {prob}")
             # want to put each probability raster into the right date so we can combine them
             d = prob[(prob.rindex('_') + 1):prob.rindex('.tif')].replace('-', '')
-            dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
+            # NOTE: json doesn't work with datetime, so don't parse
+            # dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
+            dates_out.append(d)
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated
             file_out = os.path.join(dir_region, d, fire_name + '.tif')
@@ -190,8 +189,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                                                 nodata=None)
         data['dates_out'] = dates_out
         data['postprocessed'] = True
-        with open(file_json, "w") as f:
-            json.dump(data, f)
+        file_json = dump_json(data, file_json)
     except KeyboardInterrupt as ex:
         raise ex
     except Exception as ex:

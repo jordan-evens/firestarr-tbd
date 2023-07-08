@@ -30,6 +30,7 @@ from tqdm import tqdm
 import sys
 import time
 import traceback
+import json
 
 
 # still getting messages that look like they're from gdal when debug is on, but
@@ -592,6 +593,24 @@ def zip_folder(zip_name, path):
             f_relative = f.replace(path, '').lstrip('/')
             zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name
+
+
+def dump_json(data, path):
+    try:
+        dir = os.path.dirname(path)
+        base = os.path.splitext(os.path.basename(path))[0]
+        file = os.path.join(dir, f"{base}.json")
+        # NOTE: json.dumps() first and then write string so
+        #      file is okay if dump fails
+        s = json.dumps(data)
+        with open(file, "w") as f:
+            f.write(s)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n{str(ex)}\n{data}")
+        raise ex
+    return file
 
 
 # so we can throw an exception and include the content that didn't parse plus

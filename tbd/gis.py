@@ -391,3 +391,18 @@ def project_raster(
     miny = maxy + geoTransform[5] * warp.RasterYSize
     warp = None
     return [minx, miny, maxx, maxy]
+
+
+def save_geojson(df, path):
+    dir = os.path.dirname(path)
+    base = os.path.splitext(os.path.basename(path))[0]
+    file = os.path.join(dir, f"{base}.geojson")
+    try:
+        # HACK: geojson must be WGS84
+        df.to_crs("WGS84").to_file(file)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
+        raise ex
+    return file
