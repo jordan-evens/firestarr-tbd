@@ -226,7 +226,6 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
 # COPY ./util/gdal_merge_max.py /appl/util/
 # COPY ./util/log.py /appl/util/
 # COPY ./util/model_data.py /appl/util/
-# COPY ./util/server.py /appl/util/
 # COPY ./util/tqdm_pool.py /appl/util/
 # # COPY ./tbd/fuel.lut /appl/tbd/
 
@@ -269,7 +268,6 @@ RUN apt-get remove -y gcc gcc-12 make git zip unzip \
 # COPY ./util/gdal_merge_max.py .
 # COPY ./util/log.py .
 # COPY ./util/model_data.py .
-# COPY ./util/server.py .
 # COPY ./util/tqdm_pool.py .
 # WORKDIR /appl/tbd/cffdrs-ng
 # COPY ./tbd/cffdrs-ng/NG_FWI.py .
@@ -349,7 +347,6 @@ COPY ./util/common.py .
 COPY ./util/gdal_merge_max.py .
 COPY ./util/log.py .
 COPY ./util/model_data.py .
-COPY ./util/server.py .
 COPY ./util/tqdm_pool.py .
 WORKDIR /appl/tbd/cffdrs-ng
 COPY ./tbd/cffdrs-ng/NG_FWI.py .
