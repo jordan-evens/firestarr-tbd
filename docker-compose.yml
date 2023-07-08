@@ -12,8 +12,8 @@ services:
       dockerfile: .docker/Dockerfile_gis
     volumes:
       - type: bind
-        source: ./settings.ini
-        target: /appl/settings.ini
+        source: ./config
+        target: /appl/config
       - type: bind
         source: ./data
         target: /appl/data
@@ -36,8 +36,8 @@ services:
   #     - "2222:22"
   #   volumes:
   #     - type: bind
-  #       source: ./settings.ini
-  #       target: /appl/settings.ini
+  #       source: ./config
+  #       target: /appl/config
   #     - type: bind
   #       source: ./data
   #       target: /appl/data
@@ -67,8 +67,8 @@ services:
       - "2222:22"
     volumes:
       - type: bind
-        source: ./settings.ini
-        target: /appl/settings.ini
+        source: ./config
+        target: /appl/config
       - type: bind
         source: ./data
         target: /appl/data

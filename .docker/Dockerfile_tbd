@@ -212,7 +212,7 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
 
 # FROM python_prod AS tbd_prod
 # WORKDIR /appl/tbd/
-# COPY ./settings.ini /appl/
+# COPY ./config /appl/
 # COPY ./tbd/fuel.lut /appl/tbd/
 # # HACK: ./tbd/*.py takes forever
 # COPY ./tbd/gis.py /appl/tbd/
@@ -255,7 +255,7 @@ RUN apt-get remove -y gcc gcc-12 make git zip unzip \
 # COPY --from=tbd_clean / /
 # COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
 # WORKDIR /appl/tbd/
-# COPY ./settings.ini /appl/
+# COPY ./config /appl/
 # COPY ./tbd/fuel.lut /appl/tbd/
 # # HACK: ./tbd/*.py takes forever
 # COPY ./tbd/gis.py /appl/tbd/
@@ -335,7 +335,7 @@ RUN chown -R ${user}:${user} /appl/tbd \
 # COPY --from=tbd_clean / /
 WORKDIR /appl/tbd/
 COPY --from=tbd_build /appl/tbd/tbd .
-COPY ./settings.ini /appl/
+COPY ./config /appl/
 COPY ./tbd/fuel.lut /appl/tbd/
 # HACK: ./tbd/*.py takes forever
 COPY ./tbd/gis.py /appl/tbd/

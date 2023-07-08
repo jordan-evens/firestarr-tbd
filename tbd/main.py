@@ -196,8 +196,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                     f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_OUTPUT}"
                 )
                 changed = True
-                return f_crs
-
+            return f_crs
         files_crs = tqdm_pool.pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
         file_root = os.path.join(
             dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
@@ -1109,6 +1108,11 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
 def merge_latest(dir_root):
     dir_latest = list_dirs(dir_root)[-1]
     return merge_dirs(os.path.join(dir_root, dir_latest))
+
+
+# alias just so it's easy to know how to resume last run
+def resume():
+    run_fires_in_dir_by_priority()
 
 
 if __name__ == "__main__":

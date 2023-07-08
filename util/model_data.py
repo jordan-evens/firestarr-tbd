@@ -229,7 +229,7 @@ def get_wx_cwfis(dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui
 
 def get_spotwx_key():
     try:
-        key = CONFIG.get('spotwx', 'key')
+        key = CONFIG.get("SPOTWX_API_KEY", "")
     except configparser.NoSectionError:
         key = None
     if key is None or 0 == len(key):
@@ -240,7 +240,7 @@ def get_spotwx_key():
 
 
 def get_spotwx_limit():
-    return int(CONFIG.get('spotwx', 'api_limit'))
+    return int(CONFIG.get("SPOTWX_API_LIMIT"))
 
 
 def get_wx_spotwx(lat, long):

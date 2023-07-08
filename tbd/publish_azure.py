@@ -19,9 +19,10 @@ AZURE_URL = None
 AZURE_TOKEN = None
 AZURE_CONTAINER = None
 
+
 def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
-    token = CONFIG.get('azure', 'token')
+    token = CONFIG.get("AZURE_TOKEN", "")
     args = token.split('&')
     args_kv = {k: v for k, v in [(arg[:arg.index('=')], arg[(arg.index('=') + 1):]) for arg in args]}
     args_kv['sig'] = urllib.parse.quote(args_kv['sig'])
@@ -33,9 +34,9 @@ def read_config():
     global AZURE_TOKEN
     global AZURE_CONTAINER
     try:
-        AZURE_URL = CONFIG.get('azure', 'url')
+        AZURE_URL = CONFIG.get("AZURE_URL", "")
         AZURE_TOKEN = get_token()
-        AZURE_CONTAINER = CONFIG.get('azure', 'container')
+        AZURE_CONTAINER = CONFIG.get("AZURE_CONTAINER", "")
     except ValueError as ex:
         logging.error(ex)
         logging.warning("Unable to read azure config")
@@ -83,7 +84,9 @@ def show_blobs(container):
 
 def upload_dir(dir_run):
     if not read_config():
+        logging.info(f"Azure not configured so not publishing {dir_run}")
         return False
+    logging.info(f"Azure configured so publishing {dir_run}")
     run_id = os.path.basename(dir_run)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
@@ -162,7 +165,7 @@ def upload_from_zips(source="current_m3"):
 
 def upload_latest(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in os.listdir(dir_main) if x.endswith('.zip')]
+    zips = sorted([x for x in os.listdir(dir_main) if x.endswith('.zip')])
     upload_from_zip(os.path.join(dir_main, zips[-1]))
 
 
