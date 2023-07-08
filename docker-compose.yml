@@ -42,8 +42,6 @@ services:
   #       source: ./data
   #       target: /appl/data
   #     - type: bind
-  #       source: /mnt/publish
-  #       target: /appl/publish
   #     - type: bind
   #       source: ./data/generated/grid
   #       target: /appl/100m/default
@@ -74,9 +72,6 @@ services:
       - type: bind
         source: ./data
         target: /appl/data
-      - type: bind
-        source: /mnt/publish
-        target: /appl/publish
       - type: bind
         source: ./data/generated/grid
         target: /appl/100m/default

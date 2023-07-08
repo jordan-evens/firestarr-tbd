@@ -218,7 +218,6 @@ RUN (useradd -m ${user} || echo User ${user} already exists) \
 # COPY ./tbd/gis.py /appl/tbd/
 # COPY ./tbd/main.py /appl/tbd/
 # COPY ./tbd/publish_azure.py /appl/tbd/
-# COPY ./tbd/publish.py /appl/tbd/
 # COPY ./tbd/tbd.py /appl/tbd/
 # COPY ./tbd/settings.ini /appl/tbd/
 # COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
@@ -262,7 +261,6 @@ RUN apt-get remove -y gcc gcc-12 make git zip unzip \
 # COPY ./tbd/gis.py /appl/tbd/
 # COPY ./tbd/main.py /appl/tbd/
 # COPY ./tbd/publish_azure.py /appl/tbd/
-# COPY ./tbd/publish.py /appl/tbd/
 # COPY ./tbd/tbd.py /appl/tbd/
 # COPY ./tbd/settings.ini /appl/tbd/
 # WORKDIR /appl/util
@@ -343,7 +341,6 @@ COPY ./tbd/fuel.lut /appl/tbd/
 COPY ./tbd/gis.py /appl/tbd/
 COPY ./tbd/main.py /appl/tbd/
 COPY ./tbd/publish_azure.py /appl/tbd/
-COPY ./tbd/publish.py /appl/tbd/
 COPY ./tbd/tbd.py /appl/tbd/
 COPY ./tbd/settings.ini /appl/tbd/
 WORKDIR /appl/util
