@@ -948,6 +948,11 @@ def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=Tr
     dir_current = find_latest(dir_current)
     had_log = LOG_RUN is None
     if not had_log:
+        run_id = os.path.basename(dir_current)
+        prefix = os.path.basename(os.path.dirname(dir_current))
+        prefix = prefix[prefix.rindex("_") + 1 :]
+        run_name = f"{prefix}_{run_id}"
+        dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
         LOG_RUN = add_log_file(
             os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
         )
