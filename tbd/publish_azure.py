@@ -1,7 +1,6 @@
 import sys
 sys.path.append('../util')
-from log import *
-import common
+from common import *
 
 import os
 import datetime
@@ -22,7 +21,7 @@ AZURE_CONTAINER = None
 
 def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
-    token = common.CONFIG.get('azure', 'token')
+    token = CONFIG.get('azure', 'token')
     args = token.split('&')
     args_kv = {k: v for k, v in [(arg[:arg.index('=')], arg[(arg.index('=') + 1):]) for arg in args]}
     args_kv['sig'] = urllib.parse.quote(args_kv['sig'])
@@ -34,9 +33,9 @@ def read_config():
     global AZURE_TOKEN
     global AZURE_CONTAINER
     try:
-        AZURE_URL = common.CONFIG.get('azure', 'url')
+        AZURE_URL = CONFIG.get('azure', 'url')
         AZURE_TOKEN = get_token()
-        AZURE_CONTAINER = common.CONFIG.get('azure', 'container')
+        AZURE_CONTAINER = CONFIG.get('azure', 'container')
     except ValueError as ex:
         logging.error(ex)
         logging.warning("Unable to read azure config")

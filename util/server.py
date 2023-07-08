@@ -3,8 +3,7 @@
 # https://community.esri.com/thread/186020-start-stop-map-service-arcpy
 # Demonstrates how to stop or start all services in a folder
 
-from log import *
-import common
+from common import *
 
 # For Http calls
 import urllib
@@ -15,11 +14,11 @@ import requests
 # avoid proxy issues
 VERIFY = False
 ## Connection credentials for ArcGIS server
-USERNAME = common.CONFIG.get('gis', 'username')
-PASSWORD = common.CONFIG.get('gis', 'password')
-SERVER = common.CONFIG.get('gis', 'server')
+USERNAME = CONFIG.get('gis', 'username')
+PASSWORD = CONFIG.get('gis', 'password')
+SERVER = CONFIG.get('gis', 'server')
 # want to use settings so we aren't going into other folders
-FOLDER = common.CONFIG.get('gis', 'folder').strip('/')
+FOLDER = CONFIG.get('gis', 'folder').strip('/')
 # assert FOLDER
 HEADERS = {"Content-type": "application/x-www-form-urlencoded", "Accept": "text/plain"}
 
@@ -147,7 +146,7 @@ def updateMetadata(updates, remove_keys=None, folder=FOLDER, whichServices=None)
         logging.info(f"Updating service {service}")
         url_info = f"{SERVER}/arcgis/rest/services/{folder}/{service.replace('.', '/')}/info/iteminfo?f=json"
         logging.info(f"Getting metadata from {url_info}")
-        metadata = json.loads(common.get_http(url_info))
+        metadata = json.loads(get_http(url_info))
         for k in remove_keys or []:
             if k in metadata:
                 del metadata[k]

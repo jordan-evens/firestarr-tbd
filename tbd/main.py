@@ -1,6 +1,6 @@
 import sys
 sys.path.append("../util")
-from log import *
+from common import *
 
 import os
 import math
@@ -15,22 +15,14 @@ DEFAULT_GROUP_DISTANCE_KM = 20
 DEFAULT_NUM_DAYS = 14
 # DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 7
 DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
-# use default for pmap() if None
-# CONCURRENT_SIMS = None
-# HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = 4
-
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
+LOG_RUN = None
 
 # FORMAT_OUTPUT = "COG"
 FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS = False
-
-import common
-from common import ensure_dir
-from common import list_dirs
 
 DIR_LOG = "./logs"
 os.makedirs(DIR_LOG, exist_ok=True)
@@ -57,6 +49,11 @@ import numpy as np
 import geopandas as gpd
 from tqdm import tqdm
 import tqdm_pool
+# use default for pmap() if None
+# CONCURRENT_SIMS = None
+# # HACK: try just running a few at a time since time limit is low
+CONCURRENT_SIMS = max(1, tqdm_pool.MAX_PROCESSES // 2)
+
 
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append("/usr/local/bin")
@@ -79,7 +76,7 @@ import NG_FWI
 import tbd
 from tbd import FILE_SIM
 
-DIR_DATA = "../data"
+DIR_DATA = os.path.abspath("../data")
 DIR_SIMS = os.path.join(DIR_DATA, "sims")
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
@@ -144,11 +141,6 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
     logging.info("Merging {}".format(dir_in))
     # HACK: for some reason output tiles were both being called 'probability'
     # import importlib
-    from osgeo import gdal
-
-    use_exceptions = gdal.GetUseExceptions()
-    # HACK: if exceptions are on then gdal_merge throws one
-    gdal.DontUseExceptions()
     # importlib.reload(gr)
     # TILE_SIZE = str(1024)
     co = list(
@@ -158,7 +150,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
     dir_parent = os.path.dirname(dir_base)
     # dir_type = os.path.basename(dir_base)
     # want to put probability and perims together
-    dir_out = common.ensure_dir(
+    dir_out = ensure_dir(
         os.path.join(dir_parent, "combined", os.path.basename(dir_in))
     )
     files_by_for_what = {}
@@ -193,16 +185,20 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
             dir_for_what = f"day_{offset:02d}"
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
         changed = False
-        files_crs = []
-        for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}"):
+        def reproject(f):
+            nonlocal changed
             f_crs = os.path.join(dir_crs, os.path.basename(f))
-            files_crs.append(f_crs)
             # don't project if file already exists, but keep track of file for merge
             if not os.path.isfile(f_crs):
-                changed = True
+                # FIX: this is super slow for perim tifs
+                #       (because they're the full extent of the UTM zone?)
                 gis.project_raster(
                     f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_OUTPUT}"
                 )
+                changed = True
+                return f_crs
+
+        files_crs = tqdm_pool.pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
         file_root = os.path.join(
             dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
         )
@@ -252,8 +248,6 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                 os.remove(file_tmp)
         else:
             logging.info(f"Output already exists for {file_base}")
-    if use_exceptions:
-        gdal.UseExceptions()
     return dir_out
 
 
@@ -296,7 +290,7 @@ def merge_dirs(dir_input=None, dates=None):
     run_id = os.path.basename(dir_input)
     file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
     logging.info("Creating archive %s", file_zip)
-    z = common.zip_folder(file_zip, result)
+    z = zip_folder(file_zip, result)
     # # add a '/' so it uses the contents but not the folder
     # args = [
     #     "-c",
@@ -780,7 +774,6 @@ def do_run_fire(for_what):
                     logging.debug(
                         "Previously ran and took {}s to run simulations".format(t)
                     )
-                    data["ran"] = False
                     return data
                 else:
                     logging.debug("Previously ran but failed, so retrying")
@@ -812,7 +805,7 @@ def do_run_fire(for_what):
 def check_failure(dir_fire, result, stop_on_any_failure):
     if isinstance(result, Exception):
         logging.warning("Failed to get weather for %s", dir_fire)
-        if isinstance(result, common.ParseError):
+        if isinstance(result, ParseError):
             file_content = os.path.join(dir_fire, "exception_content.out")
             with open(file_content, "w") as f_ex:
                 # HACK: this is just where it ends up
@@ -838,6 +831,7 @@ def do_prep_and_run_fire(for_what):
 def run_all_fires(
     dir_fires=None, max_days=None, stop_on_any_failure=True, do_publish=True
 ):
+    global LOG_RUN
     # UTC time
     run_start = datetime.datetime.now()
     run_prefix = (
@@ -848,7 +842,7 @@ def run_all_fires(
     run_id = run_start.strftime("%Y%m%d%H%M")
     run_name = f"{run_prefix}_{run_id}"
     dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
-    log_run = add_log_file(
+    LOG_RUN = add_log_file(
         os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
     )
     logging.info("Starting run for %s", dir_out)
@@ -894,7 +888,7 @@ def run_all_fires(
         # df_fires = df_fires.to_crs(CRS)
     # cut out the row as a DataFrame still so we can use crs and centroid
     # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
-    file_bounds = common.BOUNDS["bounds"]
+    file_bounds = BOUNDS["bounds"]
     df_fires.to_file(os.path.join(dir_out, "df_fires_groups.shp"))
     df_bounds = None
     if file_bounds:
@@ -944,15 +938,22 @@ def run_all_fires(
     dir_out, dir_current, results, dates_out, totaltime = run_fires_in_dir_by_priority(
         dir_current, df_bounds, do_publish
     )
-    logging.getLogger().removeHandler(log_run)
+    logging.getLogger().removeHandler(LOG_RUN)
+    LOG_RUN = None
     return dir_out, dir_current, results, dates_out, totaltime
 
 
 def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=True):
+    global LOG_RUN
     dir_current = find_latest(dir_current)
+    had_log = LOG_RUN is None
+    if not had_log:
+        LOG_RUN = add_log_file(
+            os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
+        )
     list_bounds = [None]
     if df_bounds is None:
-        file_bounds = common.BOUNDS["bounds"]
+        file_bounds = BOUNDS["bounds"]
         if file_bounds:
             df_bounds = gpd.read_file(file_bounds)
     if df_bounds is not None:
@@ -964,7 +965,7 @@ def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=Tr
     total_time = 0
     all_results = {}
     all_dates = set([])
-    for b in tqdm(list_bounds, desc="Running by areas"):
+    for b in tqdm(list_bounds, desc="Running by area"):
         changed = False
         dir_out, dir_current, results, dates_out, cur_time = run_fires_in_dir(
             dir_current, b
@@ -983,6 +984,9 @@ def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=Tr
                 )
             )
             publish_all(dir_current)
+    if not had_log:
+        logging.getLogger().removeHandler(LOG_RUN)
+        LOG_RUN = None
     return dir_out, dir_current, all_results, list(all_dates), total_time
 
 
@@ -990,8 +994,10 @@ def publish_all(dir_current=None):
     dir_current = find_latest(dir_current)
     merge_dirs(dir_current)
     import publish_azure
+
     publish_azure.upload_dir(dir_current)
     import publish_geoserver
+
     publish_geoserver.publish_folder(dir_current)
 
 
@@ -1042,7 +1048,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
     sim_results = tqdm_pool.pmap(
         do_prep_and_run_fire,
         for_what,
-        proccesses=CONCURRENT_SIMS,
+        max_processes=CONCURRENT_SIMS,
         desc="Running simulations",
     )
     dates_out = []
@@ -1108,8 +1114,13 @@ if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
     max_days = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_NUM_DAYS
     dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
-    dir_out, dir_current, results, dates_out, totaltime = run_all_fires(
-        dir_fires, max_days, do_publish=True
-    )
+    if dir_fires and tbd.DIR_OUTPUT in os.path.abspath(dir_fires):
+        # if we give it a simulation directory then resume those sims
+        logging.info(f"Resuming simulations in {dir_fires}")
+        dir_out, dir_current, results, dates_out, totaltime = run_fires_in_dir_by_priority(dir_fires)
+    else:
+        dir_out, dir_current, results, dates_out, totaltime = run_all_fires(
+            dir_fires, max_days, do_publish=True
+        )
     # simtimes, totaltime, dates = run_all_fires()
     # dir_root = "/appl/data/output/current_m3"

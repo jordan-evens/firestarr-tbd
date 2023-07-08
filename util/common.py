@@ -31,6 +31,22 @@ import sys
 import time
 import traceback
 
+
+# still getting messages that look like they're from gdal when debug is on, but
+# maybe they're from a package that's using it?
+from osgeo import gdal, ogr, osr
+gdal.UseExceptions()
+gdal.SetConfigOption('CPL_LOG', '/dev/null')
+gdal.SetConfigOption('CPL_DEBUG', 'OFF')
+gdal.PushErrorHandler("CPLQuietErrorHandler")
+from logging import getLogger
+getLogger("gdal").setLevel(logging.WARNING)
+
+import fiona
+from fiona import collection
+from fiona.crs import from_epsg
+getLogger("fiona").setLevel(logging.WARNING)
+
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
 

@@ -11,16 +11,7 @@ import numpy as np
 import geopandas as gpd
 from ratelimit import limits, RateLimitException, sleep_and_retry
 
-from osgeo import gdal
-
 ONE_MINUTE=60
-
-# still getting messages that look like they're from gdal when debug is on, but
-# maybe they're from a package that's using it?
-gdal.UseExceptions()
-gdal.SetConfigOption('CPL_LOG', '/dev/null')
-gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0'
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
@@ -37,7 +28,6 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
     if filter is not None:
         request_url += f'&CQL_FILTER={urllib.parse.quote(filter)}'
     logging.debug(request_url)
-    print(request_url)
     return try_save(lambda _: save_http(_,
                                         save_as=f_out,
                                         check_modified=False,
@@ -166,20 +156,25 @@ def get_wx_cwfis_download(dir_out, dates, indices=""):
             # file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
             file_out = try_save(lambda _: save_http(_, file_out), url)
         logging.debug("Reading {}".format(file_out))
-        df_day = pd.read_csv(file_out, skipinitialspace=True)
-        # HACK: remove extra header rows in source
-        df_day = df_day[df_day['NAME'] != 'NAME']
-        df_day = df_day[~df_day['FFMC'].isna()]
-        df_day.columns = [x.lower() for x in df_day.columns]
-        df_day = df_day.drop(['name', 'agency', 'opts', 'calcstatus'], axis=1)
-        col_int = ['aes', 'wmo']
-        if [ymd] != np.unique(df_day['repdate']):
-            raise RuntimeError("Wrong day returned")
-        # df_day['repdate'] = df_day['repdate'].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d"))
-        df_day = pd.merge(df_day, stns, on=['aes', 'wmo'])
-        df_day = df_day.drop(['aes', 'wmo', 'repdate'], axis=1).astype(float)
-        df_day['date'] = date
-        df = pd.concat([df, df_day])
+        try:
+            df_day = pd.read_csv(file_out, skipinitialspace=True)
+            # HACK: remove extra header rows in source
+            df_day = df_day[df_day['NAME'] != 'NAME']
+            df_day = df_day[~df_day['FFMC'].isna()]
+            df_day.columns = [x.lower() for x in df_day.columns]
+            df_day = df_day.drop(['name', 'agency', 'opts', 'calcstatus'], axis=1)
+            col_int = ['aes', 'wmo']
+            if [ymd] != np.unique(df_day['repdate']):
+                raise RuntimeError("Wrong day returned")
+            # df_day['repdate'] = df_day['repdate'].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d"))
+            df_day = pd.merge(df_day, stns, on=['aes', 'wmo'])
+            df_day = df_day.drop(['aes', 'wmo', 'repdate'], axis=1).astype(float)
+            df_day['date'] = date
+            df = pd.concat([df, df_day])
+        except KeyboardInterrupt as ex:
+            raise ex
+        except pd.errors.ParserError:
+            logging.warning(f"Ignoring invalid file {file_out}")
     df['year'] = df.apply(lambda x: x['date'].year, axis=1)
     df['month'] = df.apply(lambda x: "{:02d}".format(x['date'].month), axis=1)
     df['day'] = df.apply(lambda x: "{:02d}".format(x['date'].day), axis=1)
@@ -276,7 +271,7 @@ def get_wx_ensembles(lat, long):
     SPOTWX_KEY = get_spotwx_key()
     model = "geps"
     url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
-    print(url)
+    logging.debug(url)
     # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
     content = None
     def get_initial(url):

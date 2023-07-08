@@ -1,4 +1,4 @@
-from logging import DEBUG, INFO, WARNING, ERROR, FATAL
+from logging import DEBUG, INFO, WARN, WARNING, ERROR, FATAL
 from logging import getLogger, StreamHandler, Formatter, FileHandler
 
 import logging.handlers as handlers
@@ -13,6 +13,7 @@ LOGGER_NAME = "firestarr"
 logging = getLogger(LOGGER_NAME)
 logging.DEBUG = DEBUG
 logging.INFO = INFO
+logging.WARN = WARN
 logging.WARNING = WARNING
 logging.ERROR = ERROR
 logging.FATAL = FATAL
@@ -24,12 +25,17 @@ LOG_FORMATTER_DEFAULT = Formatter(DEFAULT_FORMAT)
 
 
 def add_handler(handler, level=DEFAULT_LEVEL):
-    logger = getLogger()
+    logger = getLogger(LOGGER_NAME)
     handler.setFormatter(LOG_FORMATTER_DEFAULT)
     if level:
         handler.setLevel(level)
     logger.addHandler(handler)
-    logger.setLevel(min([h.level for h in logger.handlers]))
+    level = min([h.level for h in logger.handlers])
+    logger.setLevel(level)
+    # HACK: keep these from being higher than WARNING
+    # FIX: might not matter now that we're calling getLopgger(LOGGER_NAME)?
+    getLogger("gdal").setLevel(max(logging.WARNING, level))
+    getLogger("fiona").setLevel(max(logging.WARNING, level))
     return handler
 
 

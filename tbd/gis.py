@@ -2,22 +2,11 @@
 
 import sys
 sys.path.append("../util")
-from log import *
-import common
+from common import *
 import os
-
-from osgeo import gdal, ogr, osr
-# still getting messages that look like they're from gdal when debug is on, but
-# maybe they're from a package that's using it?
-gdal.UseExceptions()
-gdal.SetConfigOption('CPL_LOG', '/dev/null')
-gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 import numpy as np
 import geopandas as gpd
-
-from common import ensure_dir
 
 RASTER_DIR = "/appl/100m"
 
@@ -251,8 +240,6 @@ def save_point_shp(latitude, longitude, out_dir, name):
     """
     save_to = os.path.join(out_dir, "{}.shp".format(name))
     from shapely.geometry import Point, mapping
-    from fiona import collection
-    from fiona.crs import from_epsg
     schema = { 'geometry': 'Point', 'properties': { 'name': 'str' } }
     with collection(save_to, "w", "ESRI Shapefile", schema, crs=from_epsg(4269)) as output:
         point = Point(float(longitude), float(latitude))
@@ -386,7 +373,7 @@ def project_raster(
     input_raster = gdal.Open(filename)
     if output_raster is None:
         output_raster = filename[:-4] + '.tif'
-    common.ensure_dir(os.path.dirname(output_raster))
+    ensure_dir(os.path.dirname(output_raster))
     logging.debug(f"Projecting {filename} to {output_raster}")
     warp = gdal.Warp(output_raster,
                      input_raster,

@@ -1,8 +1,6 @@
 import sys
 sys.path.append('../util')
-from log import *
-
-import common
+from common import *
 import json
 import sys
 import pandas as pd
@@ -14,7 +12,6 @@ import timeit
 from osgeo import ogr
 from osgeo import osr
 import statistics
-import fiona
 from shapely.geometry import Polygon, mapping
 import os
 import gis
@@ -22,9 +19,9 @@ import numpy as np
 import shutil
 
 
-DIR_DATA = common.ensure_dir('/appl/data')
-DIR_ROOT = common.ensure_dir(os.path.join(DIR_DATA, 'sims'))
-DIR_OUTPUT = common.ensure_dir(os.path.join(DIR_DATA, 'output'))
+DIR_DATA = ensure_dir('/appl/data')
+DIR_ROOT = ensure_dir(os.path.join(DIR_DATA, 'sims'))
+DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, 'output'))
 FILE_SIM = "firestarr.json"
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -35,9 +32,13 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
     def nolog(*args, **kwargs):
         pass
     log_info = logging.info if verbose else nolog
+    file_json = os.path.join(dir_fire, FILE_SIM)
     try:
-        with open(os.path.join(dir_fire, FILE_SIM)) as f:
+        with open(file_json) as f:
             data = json.load(f)
+            # check if completely done
+            if data.get("postprocessed", False):
+                return data
     except json.JSONDecodeError as ex:
         logging.error(f"Can't read config for {dir_fire}")
         logging.error(ex)
@@ -47,10 +48,12 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
     job_date = data['job_date']
     fire_name = data['fire_name']
     # dir_out = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
-    done_already = os.path.exists(dir_out)
+    # outputs = sorted(os.listdir(dir_out))
+    # probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
+    # done_already = len(probs) > 0
+    done_already = data.get("ran", False)
     log_file = os.path.join(dir_out, "log.txt")
     data['log_file'] = log_file
-    data["ran"] = False
     try:
         if not done_already:
             lat = data['lat']
@@ -64,7 +67,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info("Scenario start time is: {}".format(start_time))
             # done_already = False
             # if not done_already:
-            common.ensure_dir(dir_out)
+            ensure_dir(dir_out)
             perim = data['perim']
             if perim is not None:
                 perim = os.path.join(dir_fire, data['perim'])
@@ -126,19 +129,22 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                     ]
                 )
             # NOTE: needs to be octal base
-            os.chmod(file_sh, 0o555)
+            os.chmod(file_sh, 0o775)
             log_info(f'Running: {cmd} {args}')
             # run generated command for parsing data
             run_what = [cmd] + shlex.split(args)
             t0 = timeit.default_timer()
-            stdout, stderr = common.finish_process(common.start_process(run_what, "/appl/tbd"))
+            stdout, stderr = finish_process(start_process(run_what, "/appl/tbd"))
             t1 = timeit.default_timer()
             sim_time = t1 - t0
             data['sim_time'] = sim_time
+            data['sim_finished'] = True
+            with open(file_json, "w") as f:
+                json.dump(data, f)
+            data["ran"] = True
             log_info("Took {}s to run simulations".format(sim_time))
             with open(log_file, 'w') as f_log:
                 f_log.write(stdout.decode('utf-8'))
-            data["ran"] = True
         else:
             log_info("Simulation already ran")
             data['sim_time'] = None
@@ -156,7 +162,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated
             file_out = os.path.join(dir_region, d, fire_name + '.tif')
-            if data["ran"] or not os.path.isfile(file_out):
+            if data.get("ran", False) or not os.path.isfile(file_out):
                 extent = gis.project_raster(
                     os.path.join(dir_out, prob),
                     file_out,
@@ -174,7 +180,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         if len(perims) > 0:
             # FIX: maybe put the perims used for the run and the outputs in the same root directory?
             file_out = os.path.join(dir_region, 'perim', fire_name + '.tif')
-            if data["ran"] or not os.path.isfile(file_out):
+            if data.get("ran", False) or not os.path.isfile(file_out):
                 perim = perims[0]
                 log_info(f"Adding raster to final outputs: {perim}")
                 gis.project_raster(os.path.join(dir_out, perim),
@@ -183,14 +189,17 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
                                                 # HACK: if nodata is none then 0's should just show up as 0?
                                                 nodata=None)
         data['dates_out'] = dates_out
-        data['sim_finished'] = True
+        data['postprocessed'] = True
+        with open(file_json, "w") as f:
+            json.dump(data, f)
     except KeyboardInterrupt as ex:
         raise ex
     except Exception as ex:
         logging.warning(ex)
         data['sim_time'] = None
-        data['dates_out'] = None
         data['sim_finished'] = False
+        data['dates_out'] = None
+        data['postprocessed'] = False
         # FIX: should we return e here?
     return data
 
