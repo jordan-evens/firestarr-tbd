@@ -95,8 +95,12 @@ DIR_OUT = "/appl/data/sims"
 DIR_DEFAULT_DOWNLOAD = ensure_dir(f"{DIR_OUT}/download/")
 
 
+def listdir_sorted(path):
+    return sorted(os.listdir(path))
+
+
 def list_dirs(path):
-    return [x for x in os.listdir(path) if os.path.isdir(os.path.join(path, x))]
+    return [x for x in listdir_sorted(path) if os.path.isdir(os.path.join(path, x))]
 
 
 def to_utc(d):

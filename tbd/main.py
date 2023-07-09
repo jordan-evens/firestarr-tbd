@@ -161,7 +161,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
                 dir_for_what = os.path.join(dir_region, for_what)
                 files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
                     os.path.join(dir_for_what, x)
-                    for x in sorted(os.listdir(dir_for_what))
+                    for x in listdir_sorted(dir_for_what)
                     if x.endswith(".tif")
                 ]
     ymd_origin = os.path.basename(dir_in)
@@ -1007,9 +1007,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
     prefix = prefix[prefix.rindex("_") + 1 :]
     run_name = f"{prefix}_{run_id}"
     dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
-    dirs_fire = [
-        x for x in os.listdir(dir_out) if os.path.isdir(os.path.join(dir_out, x))
-    ]
+    dirs_fire = list_dirs(dir_out)
     if df_bounds is not None:
         # logging.info("Clipping to bounds")
         df_fires = gpd.read_file(os.path.join(dir_out, "df_fires_groups.shp"))

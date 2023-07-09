@@ -90,12 +90,12 @@ def upload_dir(dir_run):
     run_id = os.path.basename(dir_run)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
-    dates = os.listdir(dir_combined)
+    dates = listdir_sorted(dir_combined)
     source = os.path.basename(os.path.dirname(dir_run))
     assert (1 == len(dates))
     for date in dates:
         dir_date = os.path.join(dir_combined, date)
-        files = os.listdir(dir_date)
+        files = listdir_sorted(dir_date)
         # HACK: ignore perim for now
         files = [f for f in files if 'perim' not in f]
         # assert ('perim.tif' in files)
@@ -158,14 +158,14 @@ def upload_from_zip(z):
 
 def upload_from_zips(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in os.listdir(dir_main) if x.endswith('.zip')]
+    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
     for z in zips:
         upload_from_zip(os.path.join(dir_main, z))
 
 
 def upload_latest(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
-    zips = sorted([x for x in os.listdir(dir_main) if x.endswith('.zip')])
+    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
     upload_from_zip(os.path.join(dir_main, zips[-1]))
 
 

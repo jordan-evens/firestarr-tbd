@@ -48,7 +48,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
     job_date = data['job_date']
     fire_name = data['fire_name']
     # dir_out = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
-    # outputs = sorted(os.listdir(dir_out))
+    # outputs = listdir_sorted(dir_out)
     # probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
     # done_already = len(probs) > 0
     done_already = data.get("ran", False)
@@ -146,7 +146,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info("Simulation already ran")
             data['sim_time'] = None
         logging.debug(f"Collecting outputs from {dir_out}")
-        outputs = sorted(os.listdir(dir_out))
+        outputs = listdir_sorted(dir_out)
         extent = None
         probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
         dates_out = []
