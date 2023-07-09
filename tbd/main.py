@@ -784,7 +784,6 @@ def do_run_fire(for_what):
         t = result["sim_time"]
         if t is not None:
             logging.debug("Took {}s to run simulations".format(t))
-        result["failed"] = False
         return result
     except Exception as ex:
         logging.warning(ex)
@@ -792,7 +791,6 @@ def do_run_fire(for_what):
         # data['sim_time'] = None
         # data['dates_out'] = None
         # data['sim_finished'] = False
-        # data['failed'] = True
         # return data
 
 
@@ -1065,12 +1063,16 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
         tries = NUM_TRIES
         # try again if failed
         while (
-            isinstance(result, Exception) or result.get("failed", True)
+            isinstance(result, Exception)
+            or (not result.get("sim_finished", False))
         ) and tries > 0:
             logging.warning("Retrying running %s", dir_fire)
             result = do_run_fire([dir_fire, dir_current, verbose])
             tries -= 1
-        if isinstance(result, Exception) or result.get("failed", True):
+        if (
+            isinstance(result, Exception)
+            or (not result.get("sim_finished", False))
+        ):
             logging.warning("Could not run fire %s", dir_fire)
         else:
             fire_name = result["fire_name"]
