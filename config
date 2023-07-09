@@ -1,5 +1,8 @@
 # don't use sections so that we can load this with python or bash
 
+# assign any value to make cronjob for update work
+CRONJOB_RUN=
+
 # minimum latitude for area bounding box
 BOUNDS_LATITUDE_MIN=41
 
