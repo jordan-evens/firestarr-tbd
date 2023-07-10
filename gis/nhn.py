@@ -97,10 +97,11 @@ DRIVER_SHP = ogr.GetDriverByName('ESRI Shapefile')
 index = DRIVER_SHP.Open(INDEX_FILE)
 indexLayer = index.GetLayer()
 
-xLeft = float(common.CONFIG.get('tbd','longitude_min'))
-xRight = float(common.CONFIG.get('tbd','longitude_max'))
-yBottom = float(common.CONFIG.get('tbd','latitude_min'))
-yTop = float(common.CONFIG.get('tbd','latitude_max'))
+
+xLeft = common.BOUNDS['longitude']['min']
+xRight = common.BOUNDS['longitude']['max']
+yBottom = common.BOUNDS['latitude']['min']
+yTop = common.BOUNDS['latitude']['max']
 
 srs = ogr.osr.SpatialReference()
 srs.ImportFromEPSG(4269)

@@ -30,18 +30,40 @@ from tqdm import tqdm
 import sys
 import time
 import traceback
+import json
+import itertools
+
+
+# still getting messages that look like they're from gdal when debug is on, but
+# maybe they're from a package that's using it?
+from osgeo import gdal, ogr, osr
+
+gdal.UseExceptions()
+gdal.SetConfigOption("CPL_LOG", "/dev/null")
+gdal.SetConfigOption("CPL_DEBUG", "OFF")
+gdal.PushErrorHandler("CPLQuietErrorHandler")
+from logging import getLogger
+
+getLogger("gdal").setLevel(logging.WARNING)
+
+import fiona
+from fiona import collection
+from fiona.crs import from_epsg
+
+getLogger("fiona").setLevel(logging.WARNING)
 
 ## So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
 
 from urllib3.exceptions import InsecureRequestWarning
+
 # Suppress only the single warning from urllib3 needed.
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 # pretend to be something else so servers don't block requests
 VERIFY = False
 # VERIFY = True
 HEADERS = {
-    'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
 }
 # HEADERS = {'User-Agent': 'WeatherSHIELD/0.93'}
 RETRY_MAX_ATTEMPTS = 10
@@ -51,7 +73,7 @@ RETRY_DELAY = 2
 BOUNDS = None
 
 ## file to load settings from
-SETTINGS_FILE = r'../settings.ini'
+SETTINGS_FILE = r"../config"
 ## loaded configuration
 CONFIG = None
 
@@ -68,16 +90,22 @@ def ensure_dir(dir):
         sys.exit(-1)
     return dir
 
-DIR_OUT = '/appl/data/sims'
-DIR_DEFAULT_DOWNLOAD = ensure_dir(f'{DIR_OUT}/download/')
+
+DIR_OUT = "/appl/data/sims"
+DIR_DEFAULT_DOWNLOAD = ensure_dir(f"{DIR_OUT}/download/")
+
+
+def listdir_sorted(path):
+    return sorted(os.listdir(path))
 
 
 def list_dirs(path):
-    return [x for x in os.listdir(path) if os.path.isdir(os.path.join(path, x))]
+    return [x for x in listdir_sorted(path) if os.path.isdir(os.path.join(path, x))]
 
 
 def to_utc(d):
     return pd.to_datetime(d, utc=True, infer_datetime_format=True)
+
 
 def read_config(force=False):
     """!
@@ -87,34 +115,69 @@ def read_config(force=False):
     """
     global CONFIG
     global BOUNDS
-    logging.debug('Reading config file {}'.format(SETTINGS_FILE))
+    logging.debug("Reading config file {}".format(SETTINGS_FILE))
     if force or CONFIG is None:
-        CONFIG = configparser.SafeConfigParser()
-        # set default values and then read to overwrite with whatever is in config
-        CONFIG.add_section('tbd')
         # default to all of canada
-        CONFIG.set('tbd', 'latitude_min', '41')
-        CONFIG.set('tbd', 'latitude_max', '84')
-        CONFIG.set('tbd', 'longitude_min', '-141')
-        CONFIG.set('tbd', 'longitude_max', '-52')
-        CONFIG.set('tbd', 'bounds', "")
+        CONFIG = {
+            "BOUNDS_LATITUDE_MIN": "41",
+            "BOUNDS_LATITUDE_MAX": "84",
+            "BOUNDS_LONGITUDE_MIN": "-141",
+            "BOUNDS_LONGITUDE_MAX": "-52",
+            "BOUNDS_FILE": "",
+            "SPOTWX_API_KEY": "",
+            "SPOTWX_API_LIMITs": "150",
+            "AZURE_URL": "",
+            "AZURE_TOKEN": "",
+            "AZURE_CONTAINER": "",
+            "GEOSERVER_LAYER": "",
+            "GEOSERVER_COVERAGE": "",
+            "GEOSERVER_CREDENTIALS": "",
+            "GEOSERVER_SERVER": "",
+            "GEOSERVER_WORKSPACE": "",
+            "GEOSERVER_DIR_DATA": "",
+        }
+        config = configparser.ConfigParser()
+        # set default values and then read to overwrite with whatever is in config
+        config.add_section("GLOBAL")
+        for k, v in CONFIG.items():
+            config.set("GLOBAL", k, v)
         try:
             with open(SETTINGS_FILE) as configfile:
-                CONFIG.readfp(configfile)
+                # fake a config section so it works with parser
+                config.read_file(
+                    itertools.chain(["[GLOBAL]"], configfile), source=SETTINGS_FILE
+                )
         except:
-            logging.info('Creating new config file {}'.format(SETTINGS_FILE))
-            with open(SETTINGS_FILE, 'w') as configfile:
-                CONFIG.write(configfile)
+            logging.info("Creating new config file {}".format(SETTINGS_FILE))
+            # HACK: don't output section header because it breaks bash
+            from io import StringIO
+            buffer = StringIO()
+            config.write(buffer)
+            buffer.seek(0)
+            fixed = []
+            # skip header and last empty line
+            for line in buffer.readlines()[1:-1]:
+                split = line.strip("\n").split(" = ")
+                # HACK: if for some reason the value has " = " in it then 2 < len(split)
+                k = split[0]
+                v = " = ".join(split[1:])
+                fixed.append(f"{k.upper()}={v}\n")
+            with open(SETTINGS_FILE, "w") as f:
+                f.writelines(fixed)
+        # assign to CONFIG so defaults get overwritten
+        for k, v in config.items("GLOBAL"):
+            v = v.strip('"') if v.startswith('"') and v.endswith('"') else v.strip("'")
+            CONFIG[k.upper()] = v
         BOUNDS = {
-            'latitude': {
-                'min': int(CONFIG.get('tbd', 'latitude_min')),
-                'max': int(CONFIG.get('tbd', 'latitude_max'))
+            "latitude": {
+                "min": float(CONFIG["BOUNDS_LATITUDE_MIN"]),
+                "max": float(CONFIG["BOUNDS_LATITUDE_MAX"]),
             },
-            'longitude': {
-                'min': int(CONFIG.get('tbd', 'longitude_min')),
-                'max': int(CONFIG.get('tbd', 'longitude_max'))
+            "longitude": {
+                "min": float(CONFIG["BOUNDS_LONGITUDE_MIN"]),
+                "max": float(CONFIG["BOUNDS_LONGITUDE_MAX"]),
             },
-            'bounds': CONFIG.get('tbd', 'bounds'),
+            "bounds": CONFIG["BOUNDS_FILE"],
         }
 
 
@@ -137,7 +200,7 @@ def fix_timezone_offset(d):
     return (d + localdelta).replace(tzinfo=None)
 
 
-def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified=True):
+def get_http(url, save_as=None, mode="wb", ignore_existing=False, check_modified=True):
     """!
     Save file at given URL into given directory using an HTTP connection
     @param to_dir Directory to save into
@@ -148,10 +211,8 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
     @return Path that file was saved to
     """
     if save_as is None:
-        logging.debug(f'Opening {url}')
-        response = requests.get(url,
-                                verify=VERIFY,
-                                headers=HEADERS)
+        logging.debug(f"Opening {url}")
+        response = requests.get(url, verify=VERIFY, headers=HEADERS)
         return response.content
     # logging.debug("Saving {}".format(url))
     if ignore_existing and os.path.exists(save_as):
@@ -167,13 +228,10 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
     #                            verify=VERIFY)
     modlocal = None
     try:
-        logging.debug(f'Opening {url}')
-        response = requests.get(url,
-                                stream=True,
-                                verify=VERIFY,
-                                headers=HEADERS)
-        if check_modified and 'last-modified' in response.headers.keys():
-            mod = response.headers['last-modified']
+        logging.debug(f"Opening {url}")
+        response = requests.get(url, stream=True, verify=VERIFY, headers=HEADERS)
+        if check_modified and "last-modified" in response.headers.keys():
+            mod = response.headers["last-modified"]
             modtime = dateutil.parser.parse(mod)
             modlocal = fix_timezone_offset(modtime)
             # if file exists then compare mod times
@@ -184,10 +242,13 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
         # NOTE: need to check file size too? Or should it not matter because we
         #       only change the timestamp after it's fully written
         if do_save:
-            with tqdm.wrapattr(open(save_as, mode), "write",
-                            miniters=1,
-                            desc=url.split('?')[0] if '?' in url else url,
-                            total=int(response.headers.get('content-length', 0))) as fout:
+            with tqdm.wrapattr(
+                open(save_as, mode),
+                "write",
+                miniters=1,
+                desc=url.split("?")[0] if "?" in url else url,
+                total=int(response.headers.get("content-length", 0)),
+            ) as fout:
                 for chunk in response.iter_content(chunk_size=4096):
                     fout.write(chunk)
             # logging.debug(f'Downloaded {save_as}')
@@ -202,8 +263,7 @@ def get_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified
     return save_as
 
 
-
-def save_http(url, save_as=None, mode='wb', ignore_existing=False, check_modified=True):
+def save_http(url, save_as=None, mode="wb", ignore_existing=False, check_modified=True):
     """!
     Save file at given URL into given directory using an HTTP connection
     @param to_dir Directory to save into
@@ -238,16 +298,17 @@ def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
     # print(save_as)
     if os.path.isfile(save_as):
         if ignore_existing:
-            logging.debug('Ignoring existing file')
+            logging.debug("Ignoring existing file")
             return save_as
     import ftplib
-    #logging.debug([to_dir, url, site, user, password])
+
+    # logging.debug([to_dir, url, site, user, password])
     ftp = ftplib.FTP(site)
     ftp.login(user, password)
     ftp.cwd(folder)
     do_save = True
-    ftptime = ftp.sendcmd('MDTM {}'.format(filename))
-    ftpdatetime = datetime.datetime.strptime(ftptime[4:], '%Y%m%d%H%M%S')
+    ftptime = ftp.sendcmd("MDTM {}".format(filename))
+    ftpdatetime = datetime.datetime.strptime(ftptime[4:], "%Y%m%d%H%M%S")
     ftplocal = fix_timezone_offset(ftpdatetime)
     # if file exists then compare mod times
     if os.path.isfile(save_as):
@@ -258,8 +319,8 @@ def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
     #       only change the timestamp after it's fully written
     if do_save:
         logging.debug("Downloading {}".format(filename))
-        with open(save_as, 'wb') as f:
-            ftp.retrbinary('RETR {}'.format(filename), f.write)
+        with open(save_as, "wb") as f:
+            ftp.retrbinary("RETR {}".format(filename), f.write)
         tt = ftplocal.timetuple()
         usetime = time.mktime(tt)
         os.utime(save_as, (usetime, usetime))
@@ -275,7 +336,7 @@ def try_save(fct, url, max_save_retries=RETRY_MAX_ATTEMPTS, check_code=False):
     @return Result of calling fct on url
     """
     save_tries = 0
-    while (True):
+    while True:
         try:
             return fct(url)
         except ConnectionError as ex:
@@ -288,6 +349,7 @@ def try_save(fct, url, max_save_retries=RETRY_MAX_ATTEMPTS, check_code=False):
                 if 404 == ex.errno:
                     raise ex
             if save_tries >= max_save_retries:
+                logging.error(f"Tried {save_tries} times, but failed to save {url}")
                 raise ex
             logging.warning("Retrying save for {}".format(url))
             time.sleep(RETRY_DELAY)
@@ -347,18 +409,21 @@ def kelvin_to_celcius(t):
     """
     return t - 273.15
 
+
 def apply_wind(w):
     return w.apply(calc_wind, axis=1)
 
+
 def filterXY(data):
-    data = data[data[:, :, 0] >= BOUNDS['latitude']['min']]
-    data = data[data[:, 0] <= BOUNDS['latitude']['max']]
-    data = data[data[:, 1] >= BOUNDS['longitude']['min']]
-    data = data[data[:, 1] <= BOUNDS['longitude']['max']]
+    data = data[data[:, :, 0] >= BOUNDS["latitude"]["min"]]
+    data = data[data[:, 0] <= BOUNDS["latitude"]["max"]]
+    data = data[data[:, 1] >= BOUNDS["longitude"]["min"]]
+    data = data[data[:, 1] <= BOUNDS["longitude"]["max"]]
     return data
 
+
 def read_all_data(lib, coords, mask, matches, indices):
-# def read_data(args):
+    # def read_data(args):
     # coords, mask, select, m = args
     # logging.debug('{} => {}'.format(mask.format(m), select))
     results = wgrib2.get_all_data(lib, mask, indices, matches)
@@ -379,16 +444,17 @@ k_to_c = np.vectorize(kelvin_to_celcius)
 
 import concurrent.futures
 
+
 # def read_member(mask, select, coords, member, apcp):
 def read_members(lib, mask, matches, coords, members, apcp):
-    indices = ['TMP', 'RH', 'UGRD', 'VGRD']
+    indices = ["TMP", "RH", "UGRD", "VGRD"]
     if apcp:
-        indices = indices + ['APCP']
+        indices = indices + ["APCP"]
     results = read_all_data(lib, coords, mask, matches, indices)
-    temp = results['TMP']
-    rh = results['RH']
-    ugrd = results['UGRD']
-    vgrd = results['VGRD']
+    temp = results["TMP"]
+    rh = results["RH"]
+    ugrd = results["UGRD"]
+    vgrd = results["VGRD"]
     # temp = read_data(coords, mask, matches, 'TMP')
     # rh = read_data(coords, mask, matches, 'RH')
     # ugrd = read_data(coords, mask, matches, 'UGRD')
@@ -407,27 +473,29 @@ def read_members(lib, mask, matches, coords, members, apcp):
         a = np.arctan2(-u, -v)
         wd.append(((180 / math.pi * a) + 360) % 360)
     # logging.debug("Stack")
-    columns = ['latitude', 'longitude', 'TMP','RH', 'WS', 'WD']
+    columns = ["latitude", "longitude", "TMP", "RH", "WS", "WD"]
     if apcp:
         # pcp = read_data(coords, mask, matches, 'APCP')
-        pcp = results['APCP']
+        pcp = results["APCP"]
     coords = filterXY(coords)
     # logging.debug("DataFrame")
     results = []
     for i in range(len(members)):
         member = members[i]
-        wx = pd.DataFrame(coords, columns=['latitude', 'longitude'])
-        wx['TMP'] = temp[i]
-        wx['RH'] = rh[i]
-        wx['WS'] = ws[i]
-        wx['WD'] = wd[i]
-        wx['APCP'] = pcp[i] if apcp else 0
-        wx['Member'] = member
+        wx = pd.DataFrame(coords, columns=["latitude", "longitude"])
+        wx["TMP"] = temp[i]
+        wx["RH"] = rh[i]
+        wx["WS"] = ws[i]
+        wx["WD"] = wd[i]
+        wx["APCP"] = pcp[i] if apcp else 0
+        wx["Member"] = member
         results.append(wx)
     # logging.debug("Done")
     return pd.concat(results)
 
+
 from multiprocessing import Pool
+
 
 def read_grib(mask, apcp=True):
     """!
@@ -436,18 +504,26 @@ def read_grib(mask, apcp=True):
     @return DataFrame with data read from file
     """
     lib = wgrib2.open()
-    matches = wgrib2.match(lib, mask.format('TMP'))
-    members = list(map(lambda x: 0 if -1 != x.find('low-res ctl') else int(x[x.find('ENS=') + 4:]), matches))
-    matches = list(map(lambda x: x[x.rfind(':'):], matches))
-    coords = wgrib2.coords(lib, mask.format('TMP'))
+    matches = wgrib2.match(lib, mask.format("TMP"))
+    members = list(
+        map(
+            lambda x: 0
+            if -1 != x.find("low-res ctl")
+            else int(x[x.find("ENS=") + 4 :]),
+            matches,
+        )
+    )
+    matches = list(map(lambda x: x[x.rfind(":") :], matches))
+    coords = wgrib2.coords(lib, mask.format("TMP"))
     results = read_members(lib, mask, matches, coords, members, apcp)
     # logging.debug(output)
-    output = results.set_index(['latitude', 'longitude', 'Member'])
-    output = output[['TMP', 'RH', 'WS', 'WD', 'APCP']]
+    output = results.set_index(["latitude", "longitude", "Member"])
+    output = output[["TMP", "RH", "WS", "WD", "APCP"]]
     # need to add fortime and generated
     wgrib2.close(lib)
     del lib
     return output
+
 
 def try_remove(file):
     """!
@@ -471,7 +547,8 @@ def download(url, suppress_exceptions=True):
     """
     try:
         # HACK: check this to make sure url completion has worked properly
-        assert('{}' not in url)
+        if "{}" in url:
+            raise RuntimeError(f"Url still has format string in it: {url}")
         response = urllib2.urlopen(url)
         # logging.debug("Saving {}".format(url))
         return response.read()
@@ -479,7 +556,7 @@ def download(url, suppress_exceptions=True):
         # provide option so that we can call this from multiprocessing and still handle errors
         if suppress_exceptions:
             # HACK: return type and url for exception
-            return {'type': type(ex), 'url': url}
+            return {"type": type(ex), "url": url}
         ex.url = url
         raise ex
 
@@ -506,13 +583,13 @@ def split_line(line):
     @param line Line to split on whitespace
     @return Array of strings after splitting
     """
-    return re.sub(r' +', ' ', line.strip()).split(' ')
+    return re.sub(r" +", " ", line.strip()).split(" ")
 
 
 def unzip(path, to_dir, match=None):
     if not os.path.exists(to_dir):
         os.mkdir(to_dir)
-    with zipfile.ZipFile(path, 'r') as zip_ref:
+    with zipfile.ZipFile(path, "r") as zip_ref:
         if match is None:
             zip_ref.extractall(to_dir)
         else:
@@ -529,10 +606,9 @@ def start_process(run_what, cwd):
     @return Running subprocess
     """
     # logging.debug(run_what)
-    p = subprocess.Popen(run_what,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
-                           cwd=cwd)
+    p = subprocess.Popen(
+        run_what, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
+    )
     p.args = run_what
     return p
 
@@ -540,28 +616,54 @@ def start_process(run_what, cwd):
 def finish_process(process):
     stdout, stderr = process.communicate()
     if process.returncode != 0:
-        #HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
+        # HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
         if -1073741510 == process.returncode:
             sys.exit(process.returncode)
-        raise RuntimeError('Error running {} [{}]: '.format(process.args, process.returncode) + stderr.decode('utf-8') + stdout.decode('utf-8'))
+        raise RuntimeError(
+            "Error running {} [{}]: ".format(process.args, process.returncode)
+            + stderr.decode("utf-8")
+            + stdout.decode("utf-8")
+        )
     return stdout, stderr
 
 
 def zip_folder(zip_name, path):
-    with zipfile.ZipFile(zip_name, 'w') as zf:
+    with zipfile.ZipFile(zip_name, "w") as zf:
         all_files = []
         logging.info("Finding files")
         for root, dirs, files in os.walk(path):
             for d in dirs:
                 dir = os.path.join(root, d)
-                zf.write(dir, dir.replace(path, '').lstrip('/'))
+                zf.write(dir, dir.replace(path, "").lstrip("/"))
             for f in files:
                 all_files.append(os.path.join(root, f))
         logging.info("Zipping")
-        for f in tqdm(all_files, desc=os.path.basename(zip_name), leave=False):
-            f_relative = f.replace(path, '').lstrip('/')
+        for f in tqdm(all_files, desc=os.path.basename(zip_name)):
+            f_relative = f.replace(path, "").lstrip("/")
             zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name
+
+
+def dump_json(data, path):
+    try:
+        dir = os.path.dirname(path)
+        base = os.path.splitext(os.path.basename(path))[0]
+        file = os.path.join(dir, f"{base}.json")
+        # NOTE: json.dumps() first and then write string so
+        #      file is okay if dump fails
+        # FIX: this is overkill but just want it to work for now
+        s = json.dumps(data)
+        d = json.loads(s)
+        with open(file, "w") as f:
+            # HACK: not getting full string when using f.write(s)
+            json.dump(data, f)
+            # f.write(s)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n{str(ex)}\n{data}")
+        raise ex
+    return file
 
 
 # so we can throw an exception and include the content that didn't parse plus

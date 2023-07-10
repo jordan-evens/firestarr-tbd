@@ -34,13 +34,13 @@
 import math
 import sys
 import time
+
 # import logging
+from tqdm import tqdm
 
 from osgeo import gdal
 from osgeo_utils.auxiliary.util import GetOutputDriverFor
 import numpy as np
-
-progress = gdal.TermProgress_nocb
 
 __version__ = "$id$"[5:-1]
 
@@ -55,9 +55,7 @@ __version__ = "$id$"[5:-1]
 # # =============================================================================
 
 
-
 # # =============================================================================
-
 
 
 # # =============================================================================
@@ -229,303 +227,304 @@ class file_info_max(object):
         )
 
 
-# # =============================================================================
-# def Usage():
-#     print("Usage: gdal_merge.py [-o out_filename] [-of out_format] [-co NAME=VALUE]*")
-#     print(
-#         "                     [-ps pixelsize_x pixelsize_y] [-tap] [-separate] [-q] [-v] [-pct]"
-#     )
-#     print('                     [-ul_lr ulx uly lrx lry] [-init "value [value...]"]')
-#     print("                     [-n nodata_value] [-a_nodata output_nodata_value]")
-#     print("                     [-ot datatype] [-createonly] input_files")
-#     print("                     [--help-general]")
-#     print("")
-#     return 2
+# =============================================================================
+def Usage():
+    print("Usage: gdal_merge.py [-o out_filename] [-of out_format] [-co NAME=VALUE]*")
+    print(
+        "                     [-ps pixelsize_x pixelsize_y] [-tap] [-separate] [-q] [-v] [-pct]"
+    )
+    print('                     [-ul_lr ulx uly lrx lry] [-init "value [value...]"]')
+    print("                     [-n nodata_value] [-a_nodata output_nodata_value]")
+    print("                     [-ot datatype] [-createonly] input_files")
+    print("                     [--help-general]")
+    print("")
+    return 2
 
 
 def gdal_merge_max(argv=None):
+    # HACK: do this so we know it's always going to turn exceptions back on
+    def do_merge(argv):
+        verbose = 0
+        quiet = 0
+        names = []
+        driver_name = None
+        out_file = "out.tif"
+
+        ulx = None
+        psize_x = None
+        separate = 0
+        copy_pct = 0
+        nodata = None
+        a_nodata = None
+        create_options = []
+        pre_init = []
+        band_type = None
+        createonly = 0
+        bTargetAlignedPixels = False
+        start_time = time.time()
+
+        if argv is None:
+            argv = argv
+        argv = gdal.GeneralCmdLineProcessor(argv)
+        if argv is None:
+            return 0
+
+        # Parse command line arguments.
+        i = 1
+        while i < len(argv):
+            arg = argv[i]
+
+            if arg == "-o":
+                i = i + 1
+                out_file = argv[i]
+
+            elif arg == "-v":
+                verbose = 1
+
+            elif arg == "-q" or arg == "-quiet":
+                quiet = 1
+
+            elif arg == "-createonly":
+                createonly = 1
+
+            elif arg == "-separate":
+                separate = 1
+
+            elif arg == "-seperate":
+                separate = 1
+
+            elif arg == "-pct":
+                copy_pct = 1
+
+            elif arg == "-ot":
+                i = i + 1
+                band_type = gdal.GetDataTypeByName(argv[i])
+                if band_type == gdal.GDT_Unknown:
+                    print("Unknown GDAL data type: %s" % argv[i])
+                    return 1
+
+            elif arg == "-init":
+                i = i + 1
+                str_pre_init = argv[i].split()
+                for x in str_pre_init:
+                    pre_init.append(float(x))
+
+            elif arg == "-n":
+                i = i + 1
+                nodata = float(argv[i])
+
+            elif arg == "-a_nodata":
+                i = i + 1
+                a_nodata = float(argv[i])
+
+            elif arg == "-f" or arg == "-of":
+                i = i + 1
+                driver_name = argv[i]
+
+            elif arg == "-co":
+                i = i + 1
+                create_options.append(argv[i])
+
+            elif arg == "-ps":
+                psize_x = float(argv[i + 1])
+                psize_y = -1 * abs(float(argv[i + 2]))
+                i = i + 2
+
+            elif arg == "-tap":
+                bTargetAlignedPixels = True
+
+            elif arg == "-ul_lr":
+                ulx = float(argv[i + 1])
+                uly = float(argv[i + 2])
+                lrx = float(argv[i + 3])
+                lry = float(argv[i + 4])
+                i = i + 4
+
+            elif arg[:1] == "-":
+                print("Unrecognized command option: %s" % arg)
+                return Usage()
+
+            else:
+                names.append(arg)
+
+            i = i + 1
+
+        if not names:
+            print("No input files selected.")
+            return Usage()
+
+        if driver_name is None:
+            driver_name = GetOutputDriverFor(out_file)
+
+        driver = gdal.GetDriverByName(driver_name)
+        if driver is None:
+            print("Format driver %s not found, pick a supported driver." % driver_name)
+            return 1
+
+        DriverMD = driver.GetMetadata()
+        if "DCAP_CREATE" not in DriverMD:
+            print(
+                "Format driver %s does not support creation and piecewise writing.\nPlease select a format that does, such as GTiff (the default) or HFA (Erdas Imagine)."
+                % driver_name
+            )
+            return 1
+
+        # Collect information on all the source files.
+        file_infos = names_to_fileinfos(names)
+
+        if ulx is None:
+            ulx = file_infos[0].ulx
+            uly = file_infos[0].uly
+            lrx = file_infos[0].lrx
+            lry = file_infos[0].lry
+
+            for fi in file_infos:
+                ulx = min(ulx, fi.ulx)
+                uly = max(uly, fi.uly)
+                lrx = max(lrx, fi.lrx)
+                lry = min(lry, fi.lry)
+
+        if psize_x is None:
+            psize_x = file_infos[0].geotransform[1]
+            psize_y = file_infos[0].geotransform[5]
+
+        if band_type is None:
+            band_type = file_infos[0].band_type
+
+        # Try opening as an existing file.
+        gdal.PushErrorHandler("CPLQuietErrorHandler")
+        t_fh = gdal.Open(out_file, gdal.GA_Update)
+        gdal.PopErrorHandler()
+
+        # Create output file if it does not already exist.
+        if t_fh is None:
+            # logging.info("Creating new file %s", out_file)
+
+            if bTargetAlignedPixels:
+                ulx = math.floor(ulx / psize_x) * psize_x
+                lrx = math.ceil(lrx / psize_x) * psize_x
+                lry = math.floor(lry / -psize_y) * -psize_y
+                uly = math.ceil(uly / -psize_y) * -psize_y
+
+            geotransform = [ulx, psize_x, 0, uly, 0, psize_y]
+
+            xsize = int((lrx - ulx) / geotransform[1] + 0.5)
+            ysize = int((lry - uly) / geotransform[5] + 0.5)
+
+            if separate != 0:
+                bands = 0
+
+                for fi in file_infos:
+                    bands = bands + fi.bands
+            else:
+                bands = file_infos[0].bands
+
+            t_fh = driver.Create(
+                out_file, xsize, ysize, bands, band_type, create_options
+            )
+            if t_fh is None:
+                print("Creation failed, terminating gdal_merge.")
+                return 1
+
+            t_fh.SetGeoTransform(geotransform)
+            t_fh.SetProjection(file_infos[0].projection)
+
+            if copy_pct:
+                t_fh.GetRasterBand(1).SetRasterColorTable(file_infos[0].ct)
+            # # HACK: reopen as update so we can read overlapping areas
+            # t_fh = None
+            # # Try opening as an existing file.
+            # logging.info("Reopening as update")
+            # gdal.PushErrorHandler("CPLQuietErrorHandler")
+            # t_fh = gdal.Open(out_file, gdal.GA_Update)
+            # gdal.PopErrorHandler()
+        else:
+            # logging.info("Updating file")
+            if separate != 0:
+                bands = 0
+                for fi in file_infos:
+                    bands = bands + fi.bands
+                if t_fh.RasterCount < bands:
+                    print(
+                        "Existing output file has less bands than the input files. You should delete it before. Terminating gdal_merge."
+                    )
+                    return 1
+            else:
+                bands = min(file_infos[0].bands, t_fh.RasterCount)
+
+        # Do we need to set nodata value ?
+        if a_nodata is not None:
+            for i in range(t_fh.RasterCount):
+                t_fh.GetRasterBand(i + 1).SetNoDataValue(a_nodata)
+
+        # Do we need to pre-initialize the whole mosaic file to some value?
+        if pre_init is not None:
+            if t_fh.RasterCount <= len(pre_init):
+                for i in range(t_fh.RasterCount):
+                    t_fh.GetRasterBand(i + 1).Fill(pre_init[i])
+            elif len(pre_init) == 1:
+                for i in range(t_fh.RasterCount):
+                    t_fh.GetRasterBand(i + 1).Fill(pre_init[0])
+        # seems fine without this
+        # # HACK: reopen as update so we can read overlapping areas
+        # t_fh.FlushCache()
+        # t_fh = None
+        # # # Try opening as an existing file.
+        # # logging.info("Reopening as update")
+        # gdal.PushErrorHandler("CPLQuietErrorHandler")
+        # t_fh = gdal.Open(out_file, gdal.GA_Update)
+        # gdal.PopErrorHandler()
+
+        # Copy data from source files into output file.
+        t_band = 1
+        fi_processed = 0
+
+        # gdal.PushErrorHandler("CPLQuietErrorHandler")
+        for fi in tqdm(file_infos):
+            if createonly != 0:
+                continue
+
+            if verbose != 0:
+                print("")
+                print(
+                    "Processing file %5d of %5d, %6.3f%% completed in %d minutes."
+                    % (
+                        fi_processed + 1,
+                        len(file_infos),
+                        fi_processed * 100.0 / len(file_infos),
+                        int(round((time.time() - start_time) / 60.0)),
+                    )
+                )
+                fi.report()
+
+            if separate == 0:
+                for band in range(1, bands + 1):
+                    # t_fh = gdal.Open(out_file, gdal.GA_Update)
+                    fi.copy_into(t_fh, band, band, nodata, verbose)
+                    # t_fh.FlushCache()
+                    # t_fh = None
+            else:
+                for band in range(1, fi.bands + 1):
+                    # t_fh = gdal.Open(out_file, gdal.GA_Update)
+                    fi.copy_into(t_fh, band, t_band, nodata, verbose)
+                    # t_fh.FlushCache()
+                    # t_fh = None
+                    t_band = t_band + 1
+
+            fi_processed = fi_processed + 1
+        # gdal.PopErrorHandler()
+
+        # Force file to be closed.
+        t_fh = None
+        return 0
+
     # logging.info("Running gdal_merge_max()")
     use_exceptions = gdal.GetUseExceptions()
     # HACK: if exceptions are on then gdal_merge throws one
     gdal.DontUseExceptions()
-    verbose = 0
-    quiet = 0
-    names = []
-    driver_name = None
-    out_file = "out.tif"
-
-    ulx = None
-    psize_x = None
-    separate = 0
-    copy_pct = 0
-    nodata = None
-    a_nodata = None
-    create_options = []
-    pre_init = []
-    band_type = None
-    createonly = 0
-    bTargetAlignedPixels = False
-    start_time = time.time()
-
-    if argv is None:
-        argv = argv
-    argv = gdal.GeneralCmdLineProcessor(argv)
-    if argv is None:
-        return 0
-
-    # Parse command line arguments.
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
-
-        if arg == "-o":
-            i = i + 1
-            out_file = argv[i]
-
-        elif arg == "-v":
-            verbose = 1
-
-        elif arg == "-q" or arg == "-quiet":
-            quiet = 1
-
-        elif arg == "-createonly":
-            createonly = 1
-
-        elif arg == "-separate":
-            separate = 1
-
-        elif arg == "-seperate":
-            separate = 1
-
-        elif arg == "-pct":
-            copy_pct = 1
-
-        elif arg == "-ot":
-            i = i + 1
-            band_type = gdal.GetDataTypeByName(argv[i])
-            if band_type == gdal.GDT_Unknown:
-                print("Unknown GDAL data type: %s" % argv[i])
-                return 1
-
-        elif arg == "-init":
-            i = i + 1
-            str_pre_init = argv[i].split()
-            for x in str_pre_init:
-                pre_init.append(float(x))
-
-        elif arg == "-n":
-            i = i + 1
-            nodata = float(argv[i])
-
-        elif arg == "-a_nodata":
-            i = i + 1
-            a_nodata = float(argv[i])
-
-        elif arg == "-f" or arg == "-of":
-            i = i + 1
-            driver_name = argv[i]
-
-        elif arg == "-co":
-            i = i + 1
-            create_options.append(argv[i])
-
-        elif arg == "-ps":
-            psize_x = float(argv[i + 1])
-            psize_y = -1 * abs(float(argv[i + 2]))
-            i = i + 2
-
-        elif arg == "-tap":
-            bTargetAlignedPixels = True
-
-        elif arg == "-ul_lr":
-            ulx = float(argv[i + 1])
-            uly = float(argv[i + 2])
-            lrx = float(argv[i + 3])
-            lry = float(argv[i + 4])
-            i = i + 4
-
-        elif arg[:1] == "-":
-            print("Unrecognized command option: %s" % arg)
-            return Usage()
-
-        else:
-            names.append(arg)
-
-        i = i + 1
-
-    if not names:
-        print("No input files selected.")
-        return Usage()
-
-    if driver_name is None:
-        driver_name = GetOutputDriverFor(out_file)
-
-    driver = gdal.GetDriverByName(driver_name)
-    if driver is None:
-        print("Format driver %s not found, pick a supported driver." % driver_name)
-        return 1
-
-    DriverMD = driver.GetMetadata()
-    if "DCAP_CREATE" not in DriverMD:
-        print(
-            "Format driver %s does not support creation and piecewise writing.\nPlease select a format that does, such as GTiff (the default) or HFA (Erdas Imagine)."
-            % driver_name
-        )
-        return 1
-
-    # Collect information on all the source files.
-    file_infos = names_to_fileinfos(names)
-
-    if ulx is None:
-        ulx = file_infos[0].ulx
-        uly = file_infos[0].uly
-        lrx = file_infos[0].lrx
-        lry = file_infos[0].lry
-
-        for fi in file_infos:
-            ulx = min(ulx, fi.ulx)
-            uly = max(uly, fi.uly)
-            lrx = max(lrx, fi.lrx)
-            lry = min(lry, fi.lry)
-
-    if psize_x is None:
-        psize_x = file_infos[0].geotransform[1]
-        psize_y = file_infos[0].geotransform[5]
-
-    if band_type is None:
-        band_type = file_infos[0].band_type
-
-    # Try opening as an existing file.
-    gdal.PushErrorHandler("CPLQuietErrorHandler")
-    t_fh = gdal.Open(out_file, gdal.GA_Update)
-    gdal.PopErrorHandler()
-
-    # Create output file if it does not already exist.
-    if t_fh is None:
-        # logging.info("Creating new file %s", out_file)
-
-        if bTargetAlignedPixels:
-            ulx = math.floor(ulx / psize_x) * psize_x
-            lrx = math.ceil(lrx / psize_x) * psize_x
-            lry = math.floor(lry / -psize_y) * -psize_y
-            uly = math.ceil(uly / -psize_y) * -psize_y
-
-        geotransform = [ulx, psize_x, 0, uly, 0, psize_y]
-
-        xsize = int((lrx - ulx) / geotransform[1] + 0.5)
-        ysize = int((lry - uly) / geotransform[5] + 0.5)
-
-        if separate != 0:
-            bands = 0
-
-            for fi in file_infos:
-                bands = bands + fi.bands
-        else:
-            bands = file_infos[0].bands
-
-        t_fh = driver.Create(out_file, xsize, ysize, bands, band_type, create_options)
-        if t_fh is None:
-            print("Creation failed, terminating gdal_merge.")
-            return 1
-
-        t_fh.SetGeoTransform(geotransform)
-        t_fh.SetProjection(file_infos[0].projection)
-
-        if copy_pct:
-            t_fh.GetRasterBand(1).SetRasterColorTable(file_infos[0].ct)
-        # # HACK: reopen as update so we can read overlapping areas
-        # t_fh = None
-        # # Try opening as an existing file.
-        # logging.info("Reopening as update")
-        # gdal.PushErrorHandler("CPLQuietErrorHandler")
-        # t_fh = gdal.Open(out_file, gdal.GA_Update)
-        # gdal.PopErrorHandler()
-    else:
-        # logging.info("Updating file")
-        if separate != 0:
-            bands = 0
-            for fi in file_infos:
-                bands = bands + fi.bands
-            if t_fh.RasterCount < bands:
-                print(
-                    "Existing output file has less bands than the input files. You should delete it before. Terminating gdal_merge."
-                )
-                return 1
-        else:
-            bands = min(file_infos[0].bands, t_fh.RasterCount)
-
-    # Do we need to set nodata value ?
-    if a_nodata is not None:
-        for i in range(t_fh.RasterCount):
-            t_fh.GetRasterBand(i + 1).SetNoDataValue(a_nodata)
-
-    # Do we need to pre-initialize the whole mosaic file to some value?
-    if pre_init is not None:
-        if t_fh.RasterCount <= len(pre_init):
-            for i in range(t_fh.RasterCount):
-                t_fh.GetRasterBand(i + 1).Fill(pre_init[i])
-        elif len(pre_init) == 1:
-            for i in range(t_fh.RasterCount):
-                t_fh.GetRasterBand(i + 1).Fill(pre_init[0])
-    # seems fine without this
-    # # HACK: reopen as update so we can read overlapping areas
-    # t_fh.FlushCache()
-    # t_fh = None
-    # # # Try opening as an existing file.
-    # # logging.info("Reopening as update")
-    # gdal.PushErrorHandler("CPLQuietErrorHandler")
-    # t_fh = gdal.Open(out_file, gdal.GA_Update)
-    # gdal.PopErrorHandler()
-
-    # Copy data from source files into output file.
-    t_band = 1
-
-    if quiet == 0 and verbose == 0:
-        progress(0.0)
-    fi_processed = 0
-
-    # gdal.PushErrorHandler("CPLQuietErrorHandler")
-    for fi in file_infos:
-        if createonly != 0:
-            continue
-
-        if verbose != 0:
-            print("")
-            print(
-                "Processing file %5d of %5d, %6.3f%% completed in %d minutes."
-                % (
-                    fi_processed + 1,
-                    len(file_infos),
-                    fi_processed * 100.0 / len(file_infos),
-                    int(round((time.time() - start_time) / 60.0)),
-                )
-            )
-            fi.report()
-
-        if separate == 0:
-            for band in range(1, bands + 1):
-                # t_fh = gdal.Open(out_file, gdal.GA_Update)
-                fi.copy_into(t_fh, band, band, nodata, verbose)
-                # t_fh.FlushCache()
-                # t_fh = None
-        else:
-            for band in range(1, fi.bands + 1):
-                # t_fh = gdal.Open(out_file, gdal.GA_Update)
-                fi.copy_into(t_fh, band, t_band, nodata, verbose)
-                # t_fh.FlushCache()
-                # t_fh = None
-                t_band = t_band + 1
-
-        fi_processed = fi_processed + 1
-        if quiet == 0 and verbose == 0:
-            progress(fi_processed / float(len(file_infos)))
-    # gdal.PopErrorHandler()
-
-    # Force file to be closed.
-    t_fh = None
+    do_merge(argv)
     if use_exceptions:
         gdal.UseExceptions()
-
 
 
 def raster_copy_max_with_nodata(
@@ -551,7 +550,9 @@ def raster_copy_max_with_nodata(
 
     # HACK: write maximum value
     if not np.isnan(nodata):
-        nodata_test = np.not_equal(data_src, nodata) + (2 * np.not_equal(data_dst, nodata))
+        nodata_test = np.not_equal(data_src, nodata) + (
+            2 * np.not_equal(data_dst, nodata)
+        )
     else:
         nodata_test = np.isfinite(data_src) + (2 * np.isfinite(data_dst))
     # 0: neither has data
@@ -566,7 +567,9 @@ def raster_copy_max_with_nodata(
     # so just -1 and np.maximum(0, nodata_test) and then use:
     # (data_src, data_dst, np.maximum(data_src, data_dst))
     nodata_test = np.maximum(0, nodata_test - 1)
-    to_write = np.choose(nodata_test, (data_src, data_dst, np.maximum(data_src, data_dst)))
+    to_write = np.choose(
+        nodata_test, (data_src, data_dst, np.maximum(data_src, data_dst))
+    )
 
     t_band.WriteArray(to_write, t_xoff, t_yoff)
 
@@ -638,6 +641,7 @@ def raster_copy_max_with_mask(
     t_band.WriteArray(to_write, t_xoff, t_yoff)
 
     return 0
+
 
 def raster_copy_max(
     s_fh,
@@ -751,4 +755,3 @@ def raster_copy_max(
 #     gm.raster_copy_with_nodata = old_copy_nodata
 #     gm.raster_copy_with_mask = old_copy_mask
 #     return r
-

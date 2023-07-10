@@ -1,19 +1,19 @@
 # docker-compose build
 version: '3.3'
-volumes:
-  dbbackups:
-  postgis-data:
 
 services:
   gis:
+    image: tbd_gis
     build:
       context: .
       target: gis
       dockerfile: .docker/Dockerfile_gis
+      tags:
+      - tbd_gis:${VERSION}
     volumes:
       - type: bind
-        source: ./settings.ini
-        target: /appl/settings.ini
+        source: ./config
+        target: /appl/config
       - type: bind
         source: ./data
         target: /appl/data
@@ -25,58 +25,28 @@ services:
         target: /appl/util
 
 
-  # tbd_dev:
-  #   build:
-  #     context: .
-  #     target: tbd_dev
-  #     dockerfile: .docker/Dockerfile_tbd
-  #   security_opt:
-  #     - seccomp:unconfined
-  #   ports:
-  #     - "2222:22"
-  #   volumes:
-  #     - type: bind
-  #       source: ./settings.ini
-  #       target: /appl/settings.ini
-  #     - type: bind
-  #       source: ./data
-  #       target: /appl/data
-  #     - type: bind
-  #       source: /mnt/publish
-  #       target: /appl/publish
-  #     - type: bind
-  #       source: ./data/generated/grid
-  #       target: /appl/100m/default
-  #     - type: bind
-  #       source: ./tbd
-  #       target: /appl/tbd
-  #     - type: bind
-  #       source: ./util
-  #       target: /appl/util
-  #   restart: on-failure
-  #   cap_add:
-  #       - SYS_PTRACE
-
-
   tbd_dev_svc:
+    image: tbd_dev_svc
     build:
       context: .
       target: tbd_dev_svc
       dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        PERF_VERSION: ${PERF_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
+      tags:
+      - tbd_dev_svc:${VERSION}
     security_opt:
       - seccomp:unconfined
-    ports:
-      - "2222:22"
     volumes:
       - type: bind
-        source: ./settings.ini
-        target: /appl/settings.ini
+        source: ./config
+        target: /appl/config
       - type: bind
         source: ./data
         target: /appl/data
-      - type: bind
-        source: /mnt/publish
-        target: /appl/publish
       - type: bind
         source: ./data/generated/grid
         target: /appl/100m/default
@@ -91,64 +61,18 @@ services:
         - SYS_PTRACE
 
 
-  firestarr:
-    build:
-      context: .
-      target: firestarr
-      dockerfile: .docker/Dockerfile_tbd
-    volumes:
-      - type: bind
-        source: ./tbd/settings.ini
-        target: /appl/tbd/settings.ini
-      - type: bind
-        source: ./data
-        target: /appl/data
-      - type: bind
-        source: ./data/generated/grid
-        target: /appl/100m/default
-
-
-  tbd_build:
-    build:
-      context: .
-      target: tbd_build
-      dockerfile: .docker/Dockerfile_tbd
-    volumes:
-      - type: bind
-        source: ./tbd/settings.ini
-        target: /appl/tbd/settings.ini
-      - type: bind
-        source: ./data
-        target: /appl/data
-      - type: bind
-        source: ./data/generated/grid
-        target: /appl/100m/default
-
-
-  perf:
-    build:
-      context: .
-      target: perf
-      dockerfile: .docker/Dockerfile_tbd
-
-  cmake:
-    build:
-      context: .
-      target: cmake
-      dockerfile: .docker/Dockerfile_tbd
-
-  cmake_install:
-    build:
-      context: .
-      target: cmake_install
-      dockerfile: .docker/Dockerfile_tbd
-
-
   tbd_prod:
+    image: tbd_prod
     build:
       context: .
       target: tbd_prod
       dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
+      tags:
+      - tbd_prod:${VERSION}
     volumes:
       - type: bind
         source: ./tbd/settings.ini
@@ -161,12 +85,18 @@ services:
         target: /appl/100m/default
 
 
-
-  py_gdal:
+  firestarr:
+    image: firestarr
     build:
       context: .
-      target: py_gdal
+      target: firestarr
       dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
+      tags:
+      - firestarr:${VERSION}
     volumes:
       - type: bind
         source: ./tbd/settings.ini
@@ -177,3 +107,4 @@ services:
       - type: bind
         source: ./data/generated/grid
         target: /appl/100m/default
+

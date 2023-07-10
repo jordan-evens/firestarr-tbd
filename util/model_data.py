@@ -1,5 +1,5 @@
+from log import *
 from common import *
-import logging
 import io
 import urllib
 import pandas as pd
@@ -9,15 +9,9 @@ import datetime
 import json
 import numpy as np
 import geopandas as gpd
+from ratelimit import limits, RateLimitException, sleep_and_retry
 
-from osgeo import gdal
-
-# still getting messages that look like they're from gdal when debug is on, but
-# maybe they're from a package that's using it?
-gdal.UseExceptions()
-gdal.SetConfigOption('CPL_LOG', '/dev/null')
-gdal.SetConfigOption('CPL_DEBUG', 'OFF')
-gdal.SetErrorHandler('CPLLoggingErrorHandler')
+ONE_MINUTE=60
 
 WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0'
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
@@ -34,7 +28,6 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
     if filter is not None:
         request_url += f'&CQL_FILTER={urllib.parse.quote(filter)}'
     logging.debug(request_url)
-    print(request_url)
     return try_save(lambda _: save_http(_,
                                         save_as=f_out,
                                         check_modified=False,
@@ -43,7 +36,7 @@ def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_
                     check_code=False)
 
 
-def get_fires_m3(dir_out, for_day=datetime.date.today()):
+def get_fires_m3(dir_out, last_active_since=datetime.date.today()):
     f_out = f'{dir_out}/m3_polygons.json'
     # features='uid,geometry,hcount,mindate,maxdate,firstdate,lastdate,area,fcount,status,firetype,guess_id,consis_id'
     features = 'uid,geometry,hcount,firstdate,lastdate,area,guess_id'
@@ -53,7 +46,8 @@ def get_fires_m3(dir_out, for_day=datetime.date.today()):
     # yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime('%Y%m%d')
     # filter = f'"maxdate">=\'{today}\''
     # filter = None
-    filter = f"lastdate during {for_day.strftime('%Y-%m-%d')}T00:00:00Z/P1D"
+    if last_active_since:
+        filter = f"lastdate >= {last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     logging.debug(f"Reading {f_json}")
     gdf = gpd.read_file(f_json)
@@ -101,7 +95,7 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     return gdf, f_json
 
 
-def get_m3_download(dir_out, df_fires):
+def get_m3_download(dir_out, df_fires, last_active_since=datetime.date.today()):
     def get_shp(filename):
         for ext in ["dbf", "prj", "shx", "shp"]:
             url = f"https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/{filename}.{ext}"
@@ -109,11 +103,11 @@ def get_m3_download(dir_out, df_fires):
             f = try_save(lambda _: save_http(_, f_out), url)
         gdf = gpd.read_file(f)
         return gdf
-    datetime.date.today()
     perimeters = get_shp("perimeters")
     # perimeters['LASTDATE'] = perimeters['LASTDATE'].apply(lambda x: pd.to_datetime(x).to_pydatetime())
     perimeters['LASTDATE'] = pd.to_datetime(perimeters['LASTDATE'])
-    perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(datetime.date.today())]
+    if last_active_since:
+        perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(last_active_since)]
     # hotspots = get_shp("hotspots")
     # don't have guess_id
     df_perims = perimeters.to_crs(CRS_LAMBERT)
@@ -162,20 +156,25 @@ def get_wx_cwfis_download(dir_out, dates, indices=""):
             # file_out = try_save(lambda _: save_http(_, file_out), url, check_code=False)
             file_out = try_save(lambda _: save_http(_, file_out), url)
         logging.debug("Reading {}".format(file_out))
-        df_day = pd.read_csv(file_out, skipinitialspace=True)
-        # HACK: remove extra header rows in source
-        df_day = df_day[df_day['NAME'] != 'NAME']
-        df_day = df_day[~df_day['FFMC'].isna()]
-        df_day.columns = [x.lower() for x in df_day.columns]
-        df_day = df_day.drop(['name', 'agency', 'opts', 'calcstatus'], axis=1)
-        col_int = ['aes', 'wmo']
-        if [ymd] != np.unique(df_day['repdate']):
-            raise RuntimeError("Wrong day returned")
-        # df_day['repdate'] = df_day['repdate'].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d"))
-        df_day = pd.merge(df_day, stns, on=['aes', 'wmo'])
-        df_day = df_day.drop(['aes', 'wmo', 'repdate'], axis=1).astype(float)
-        df_day['date'] = date
-        df = pd.concat([df, df_day])
+        try:
+            df_day = pd.read_csv(file_out, skipinitialspace=True)
+            # HACK: remove extra header rows in source
+            df_day = df_day[df_day['NAME'] != 'NAME']
+            df_day = df_day[~df_day['FFMC'].isna()]
+            df_day.columns = [x.lower() for x in df_day.columns]
+            df_day = df_day.drop(['name', 'agency', 'opts', 'calcstatus'], axis=1)
+            col_int = ['aes', 'wmo']
+            if [ymd] != np.unique(df_day['repdate']):
+                raise RuntimeError("Wrong day returned")
+            # df_day['repdate'] = df_day['repdate'].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d"))
+            df_day = pd.merge(df_day, stns, on=['aes', 'wmo'])
+            df_day = df_day.drop(['aes', 'wmo', 'repdate'], axis=1).astype(float)
+            df_day['date'] = date
+            df = pd.concat([df, df_day])
+        except KeyboardInterrupt as ex:
+            raise ex
+        except pd.errors.ParserError:
+            logging.warning(f"Ignoring invalid file {file_out}")
     df['year'] = df.apply(lambda x: x['date'].year, axis=1)
     df['month'] = df.apply(lambda x: "{:02d}".format(x['date'].month), axis=1)
     df['day'] = df.apply(lambda x: "{:02d}".format(x['date'].day), axis=1)
@@ -230,7 +229,7 @@ def get_wx_cwfis(dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui
 
 def get_spotwx_key():
     try:
-        key = CONFIG.get('keys', 'spotwx')
+        key = CONFIG.get("SPOTWX_API_KEY", "")
     except configparser.NoSectionError:
         key = None
     if key is None or 0 == len(key):
@@ -240,8 +239,12 @@ def get_spotwx_key():
     return key
 
 
+def get_spotwx_limit():
+    return int(CONFIG.get("SPOTWX_API_LIMIT"))
+
+
 def get_wx_spotwx(lat, long):
-    SPOTWX_KEY =  get_spotwx_key()
+    SPOTWX_KEY = get_spotwx_key()
     metmodel = "gem_reg_10km" if lat > 67 else "gem_lam_continental"
     # HACK: can't figure out a way to just get a csv directly, so parsing html javascript array for data
     url = f'https://spotwx.com/products/grib_index.php?key={SPOTWX_KEY}&model={metmodel}&lat={round(lat, 3)}&lon={round(long, 3)}&display=table_prometheus'
@@ -262,11 +265,13 @@ def get_wx_spotwx(lat, long):
     return df_spotwx
 
 
+@sleep_and_retry
+@limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
 def get_wx_ensembles(lat, long):
-    SPOTWX_KEY =  get_spotwx_key()
+    SPOTWX_KEY = get_spotwx_key()
     model = "geps"
     url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
-    print(url)
+    logging.debug(url)
     # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
     content = None
     def get_initial(url):

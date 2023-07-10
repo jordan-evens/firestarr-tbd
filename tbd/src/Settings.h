@@ -69,6 +69,17 @@ public:
    */
   static void setRunAsync(bool value) noexcept;
   /**
+   * \brief Whether or not to run deterministically (100% chance of spread & survival)
+   * \return Whether or not to run deterministically (100% chance of spread & survival)
+   */
+  [[nodiscard]] static bool deterministic() noexcept;
+  /**
+   * \brief Set whether or not to run deterministically (100% chance of spread & survival)
+   * \param value Whether or not to run deterministically (100% chance of spread & survival)
+   * \return None
+   */
+  static void setDeterministic(bool value) noexcept;
+  /**
    * \brief Whether or not to save grids as .asc
    * \return Whether or not to save grids as .asc
    */
@@ -187,7 +198,12 @@ public:
    * \brief Maximum time simulation can run before it is ended and whatever results it has are used (s)
    * \return Maximum time simulation can run before it is ended and whatever results it has are used (s)
    */
-  [[nodiscard]] static int64_t maximumTimeSeconds() noexcept;
+  [[nodiscard]] static size_t maximumTimeSeconds() noexcept;
+  /**
+   * \brief Maximum number of simulations that can run before it is ended and whatever results it has are used
+   * \return Maximum number of simulations that can run before it is ended and whatever results it has are used
+   */
+  [[nodiscard]] static size_t maximumCountSimulations() noexcept;
   /**
    * \brief Weight to give to Scenario part of thresholds
    * \return Weight to give to Scenario part of thresholds

@@ -1,8 +1,8 @@
-import os
 import sys
 sys.path.append('../util')
-import common
-import logging
+from common import *
+
+import os
 import datetime
 import urllib.parse
 
@@ -22,7 +22,7 @@ AZURE_CONTAINER = None
 
 def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
-    token = common.CONFIG.get('azure', 'token')
+    token = CONFIG.get("AZURE_TOKEN", "")
     args = token.split('&')
     args_kv = {k: v for k, v in [(arg[:arg.index('=')], arg[(arg.index('=') + 1):]) for arg in args]}
     args_kv['sig'] = urllib.parse.quote(args_kv['sig'])
@@ -34,13 +34,13 @@ def read_config():
     global AZURE_TOKEN
     global AZURE_CONTAINER
     try:
-        AZURE_URL = common.CONFIG.get('azure', 'url')
+        AZURE_URL = CONFIG.get("AZURE_URL", "")
         AZURE_TOKEN = get_token()
-        AZURE_CONTAINER = common.CONFIG.get('azure', 'container')
+        AZURE_CONTAINER = CONFIG.get("AZURE_CONTAINER", "")
     except ValueError as ex:
+        logging.error(ex)
         logging.warning("Unable to read azure config")
-        return False
-    return True
+    return (AZURE_URL and AZURE_TOKEN and AZURE_CONTAINER)
 
 def get_blob_service_client():
     retry = ExponentialRetry(initial_backoff=1, increment_base=3, retry_total=5)
@@ -84,16 +84,18 @@ def show_blobs(container):
 
 def upload_dir(dir_run):
     if not read_config():
+        logging.info(f"Azure not configured so not publishing {dir_run}")
         return False
+    logging.info(f"Azure configured so publishing {dir_run}")
     run_id = os.path.basename(dir_run)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
-    dates = os.listdir(dir_combined)
+    dates = listdir_sorted(dir_combined)
     source = os.path.basename(os.path.dirname(dir_run))
     assert (1 == len(dates))
     for date in dates:
         dir_date = os.path.join(dir_combined, date)
-        files = os.listdir(dir_date)
+        files = listdir_sorted(dir_date)
         # HACK: ignore perim for now
         files = [f for f in files if 'perim' not in f]
         # assert ('perim.tif' in files)
@@ -156,14 +158,14 @@ def upload_from_zip(z):
 
 def upload_from_zips(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in os.listdir(dir_main) if x.endswith('.zip')]
+    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
     for z in zips:
         upload_from_zip(os.path.join(dir_main, z))
 
 
 def upload_latest(source="current_m3"):
     dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in os.listdir(dir_main) if x.endswith('.zip')]
+    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
     upload_from_zip(os.path.join(dir_main, zips[-1]))
 
 

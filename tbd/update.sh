@@ -1,14 +1,50 @@
 #!/bin/bash
-echo Running update at `date`
-source /appl/.venv/bin/activate
-cd /appl/tbd
-# cmake --configure .
-# cmake --build .
-# (/usr/bin/flock -n /tmp/update.lockfile -c "(python main.py 14 || echo FAILED)") && /usr/bin/flock -u /tmp/update.lockfile
-curl -k "https://spotwx.com/products/grib_index.php?model=geps_0p5_raw&lat=48.80686&lon=-87.45117&tz=-5&label=" | grep "Model date" > /appl/data/geps_latest
-# wait until we can get a lock for now
-# (diff /appl/data/geps_current /appl/data/geps_latest && echo Model already matches `cat /appl/data/geps_latest) || ((python main.py 14) && (curl -k "https://spotwx.com/products/grib_index.php?model=geps_0p5_raw&lat=48.80686&lon=-87.45117&tz=-5&label=" | grep "Model date") > /appl/data/geps_current)
-# /usr/bin/flock -u /tmp/update.lockfile
-# do locking outside this script
-# (diff /appl/data/geps_current /appl/data/geps_latest && echo Model already matches `cat /appl/data/geps_latest`) || ((python main.py) && (curl -k "https://spotwx.com/products/grib_index.php?model=geps_0p5_raw&lat=48.80686&lon=-87.45117&tz=-5&label=" | grep "Model date") > /appl/data/geps_current)
-(diff /appl/data/geps_current /appl/data/geps_latest && echo Model already matches `cat /appl/data/geps_latest`) || ((python main.py) && (cp /appl/data/geps_latest /appl/data/geps_current) && {./publish_geoserver.sh})
+. /appl/config
+
+if [ -z "${SPOTWX_API_KEY}" ] \
+    || [ -z "${BOUNDS_LATITUDE_MAX}" ] \
+    || [ -z "${BOUNDS_LATITUDE_MIN}" ] \
+    || [ -z "${BOUNDS_LONGITUDE_MAX}" ] \
+    || [ -z "${BOUNDS_LONGITUDE_MIN}" ] \
+    ; then
+    echo SPOTWX_API_KEY must be set
+else
+    LATITUDE=$((${BOUNDS_LATITUDE_MAX} - ${BOUNDS_LATITUDE_MIN}))
+    LONGITUDE=$((${BOUNDS_LONGITUDE_MAX} - ${BOUNDS_LONGITUDE_MIN}))
+    MODEL=geps
+    URL_TEST="https://spotwx.io/api.php?key=${SPOTWX_API_KEY}&lat=${LATITUDE}&lon=${LONGITUDE}&model=${MODEL}&output=archive"
+    DIR=/appl/data
+    CURDATE=`date -u --rfc-3339=seconds`
+    FILE_LATEST=${DIR}/${MODEL}_latest
+    FILE_CURRENT=${DIR}/${MODEL}_current
+    FILE_TMP=${DIR}/${MODEL}_tmp
+    FILE_LOG=${DIR}/${MODEL}_log
+    source /appl/.venv/bin/activate
+    cd /appl/tbd
+    # echo ${CURDATE} >> ${FILE_LOG}
+    # copy after trying instead of going right to ${FILE_LATEST} in case curl fails and makes an empty file
+    ( \
+        ( \
+            (curl -sk "${URL_TEST}" -o ${FILE_TMP}) \
+            && (mv ${FILE_TMP} ${FILE_LATEST}) \
+        ) \
+        || ( \
+            (echo ${CURDATE}: failed to get ${URL_TEST} | tee -a ${FILE_LOG}) \
+            && (exit -1) \
+        ) \
+    ) \
+    && ( \
+        ( \
+            diff ${FILE_CURRENT} ${FILE_LATEST} \
+            && echo ${CURDATE}: Already up to date >> ${FILE_LOG}
+        ) \
+        || \
+        ( \
+            (echo ${CURDATE}: Running update  | tee -a ${FILE_LOG}) \
+            && (python main.py $*) \
+            && (cp ${FILE_LATEST} ${FILE_CURRENT}) \
+            && (echo ${CURDATE}: Done update  | tee -a ${FILE_LOG}) \
+        ) \
+    ) \
+    || (echo ${CURDATE}: Run attempt failed | tee -a ${FILE_LOG})
+fi

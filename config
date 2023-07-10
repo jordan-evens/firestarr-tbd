@@ -1,0 +1,39 @@
+# don't use sections so that we can load this with python or bash
+
+# assign any value to make cronjob for update work
+CRONJOB_RUN=
+
+# minimum latitude for area bounding box
+BOUNDS_LATITUDE_MIN=41
+
+# maximum latitude for area bounding box
+BOUNDS_LATITUDE_MAX=84
+
+# minimum longitude for area bounding box
+BOUNDS_LONGITUDE_MIN=-141
+
+# maximum longitude for area bounding box
+BOUNDS_LONGITUDE_MAX=-52
+
+# area to look at for simulations
+BOUNDS_FILE="bounds.geojson"
+
+# requires a spotwx.io API key to get ensemble weather
+SPOTWX_API_KEY=
+# actually 180 by default, but don"t push it
+SPOTWX_API_LIMIT=150
+
+# if azure settings are specified then outputs will be published to container
+AZURE_URL=
+AZURE_TOKEN=
+AZURE_CONTAINER=
+
+# if geoserver settings are specified then coverage will get updated
+# NOTE: relies on data being in GEOSERVER_DIR_DATA
+#       (accomplished by publishing to azure currently)
+GEOSERVER_LAYER=
+GEOSERVER_COVERAGE=
+GEOSERVER_CREDENTIALS=
+GEOSERVER_SERVER=
+GEOSERVER_WORKSPACE_NAME=
+GEOSERVER_DIR_DATA=

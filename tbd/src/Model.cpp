@@ -240,6 +240,24 @@ void Model::readWeather(const wx::FwiWeather& yesterday,
           prev = &s_daily.at(static_cast<Day>(t.tm_yday));
         }
 #ifndef NDEBUG
+        const auto month = t.tm_mon + 1;
+        logging::debug("%ld,%d-%02d-%02d %02d:00,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g",
+                       cur,
+                       year_,
+                       month,
+                       t.tm_mday,
+                       t.tm_hour,
+                       w->prec().asDouble(),
+                       w->temp().asDouble(),
+                       w->rh().asDouble(),
+                       w->wind().speed().asDouble(),
+                       w->wind().direction().asDouble(),
+                       w->ffmc().asDouble(),
+                       w->dmc().asDouble(),
+                       w->dc().asDouble(),
+                       w->isi().asDouble(),
+                       w->bui().asDouble(),
+                       w->fwi().asDouble());
         fprintf(out,
                 "%ld,%d-%02d-%02d %02d:00,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g,%1.6g\n",
                 cur,
@@ -479,6 +497,10 @@ Iteration Model::readScenarios(const topo::StartPoint& start_point,
   const auto run_time_seconds = std::chrono::duration_cast<std::chrono::seconds>(run_time);
   return run_time_seconds;
 }
+bool Model::shouldStop() const noexcept
+{
+  return isOutOfTime() || isOverSimulationCountLimit();
+}
 bool Model::isOutOfTime() const noexcept
 {
   // return is_out_of_time_ || runTime() > timeLimit();
@@ -487,6 +509,10 @@ bool Model::isOutOfTime() const noexcept
   // return (is_out_of_time_ || ((last_checked_ - startTime()) > timeLimit()));
   // return (Clock::now() - startTime()) > timeLimit();
   return is_out_of_time_;
+}
+bool Model::isOverSimulationCountLimit() const noexcept
+{
+  return is_over_simulation_count_;
 }
 ProbabilityMap* Model::makeProbabilityMap(const double time,
                                           const double start_time,
@@ -540,14 +566,12 @@ map<double, util::SafeVector*> make_size_map(const vector<double>& saves)
   }
   return result;
 }
-bool add_statistics(const size_t i,
-                    vector<double>* all_sizes,
-                    vector<double>* means,
-                    vector<double>* pct,
-                    const Model& model,
-                    const util::SafeVector& v)
+bool Model::add_statistics(vector<double>* all_sizes,
+                           vector<double>* means,
+                           vector<double>* pct,
+                           const util::SafeVector& sizes)
 {
-  const auto cur_sizes = v.getValues();
+  const auto cur_sizes = sizes.getValues();
   logging::check_fatal(cur_sizes.empty(), "No sizes at end of simulation");
   const util::Statistics s{cur_sizes};
   static_cast<void>(util::insert_sorted(pct, s.percentile(95)));
@@ -557,11 +581,20 @@ bool add_statistics(const size_t i,
   {
     static_cast<void>(util::insert_sorted(all_sizes, size));
   }
-  if (model.isOutOfTime())
+  is_over_simulation_count_ = all_sizes->size() >= Settings::maximumCountSimulations();
+  if (isOverSimulationCountLimit())
+  {
+    logging::note(
+      "Stopping after %d iterations. Simulation limit of %d simulations has been reached.",
+      all_sizes->size(),
+      Settings::maximumCountSimulations());
+    return false;
+  }
+  if (isOutOfTime())
   {
     logging::note(
       "Stopping after %d iterations. Time limit of %d seconds has been reached.",
-      i,
+      pct->size(),
       Settings::maximumTimeSeconds());
     return false;
   }
@@ -584,6 +617,19 @@ size_t runs_required(const size_t i,
                      const vector<double>* pct,
                      const Model& model)
 {
+  if (Settings::deterministic())
+  {
+    logging::note("Stopping after %i iteration because running in deterministic mode");
+    return 0;
+  }
+  if (model.isOverSimulationCountLimit())
+  {
+    logging::note(
+      "Stopping after %d iterations. Simulation limit of %d simulations has been reached.",
+      all_sizes->size(),
+      Settings::maximumCountSimulations());
+    return 0;
+  }
   if (model.isOutOfTime())
   {
     logging::note(
@@ -698,7 +744,7 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
       is_out_of_time_ = runTime() >= timeLimit();
       // logging::debug("Checking clock");
     }
-    while (runs_left > 0 && !isOutOfTime());
+    while (runs_left > 0 && !shouldStop());
     if (isOutOfTime())
     {
       logging::warning("Ran out of time - cancelling simulations");
@@ -713,8 +759,8 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
       // don't cancel first iteration if no iterations are done
       if (0 != runs_done || 0 != i)
       {
-        // if not out of time then just did all the runs so no warning
-        iter.cancel(isOutOfTime());
+        // if not over limit then just did all the runs so no warning
+        iter.cancel(shouldStop());
       }
       ++i;
     }
@@ -763,9 +809,12 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
     // const auto concurrent_iterations = std::min(
     //   static_cast<size_t>(MIN_ITERATIONS_BEFORE_CHECK),
     //   MAX_THREADS);
-    const auto concurrent_iterations = std::max<size_t>(
-      ceil(MAX_THREADS / iteration.size()),
-      2);
+    // no point in running multiple iterations if deterministic
+    const auto concurrent_iterations = Settings::deterministic()
+                                       ? 1
+                                       : std::max<size_t>(
+                                         ceil(MAX_THREADS / iteration.size()),
+                                         2);
     // const auto concurrent_iterations = MAX_THREADS;
     for (size_t x = 1; x < concurrent_iterations; ++x)
     {
@@ -818,8 +867,7 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
         // clear so we don't double count
         kv.second->reset();
       }
-      if (!add_statistics(runs_done, &all_sizes, &means, &pct, *this, final_sizes))
-      // if (!add_statistics(runs_done, &means, &pct, *this, final_sizes))
+      if (!add_statistics(&all_sizes, &means, &pct, final_sizes))
       {
         // ran out of time but timer should cancel everything
         return finalize_probabilities();
@@ -844,6 +892,11 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
         // loop around to start if required
         cur_iter %= all_iterations.size();
       }
+      else
+      {
+        // no runs required, so stop
+        return finalize_probabilities();
+      }
     }
     // everything should be done when this section ends
   }
@@ -859,8 +912,7 @@ map<double, ProbabilityMap*> Model::runIterations(const topo::StartPoint& start_
         s->run(&probabilities);
       }
       ++runs_done;
-      if (!add_statistics(runs_done, &all_sizes, &means, &pct, *this, iteration.finalSizes()))
-      // if (!add_statistics(runs_done, &means, &pct, *this, iteration.finalSizes()))
+      if (!add_statistics(&all_sizes, &means, &pct, iteration.finalSizes()))
       {
         // ran out of time but timer should cance everything
         return finalize_probabilities();
@@ -966,6 +1018,9 @@ int Model::runScenarios(const char* const weather_input,
     const auto prob = by_time.second;
     prob->saveAll(model, start_time, time, start_day);
   }
+  // HACK: update last checked time to use in calculation
+  model.last_checked_ = Clock::now();
+  logging::note("Total simulation time was %ld seconds", model.runTime());
   for (const auto& kv : probabilities)
   {
     delete kv.second;
