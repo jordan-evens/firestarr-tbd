@@ -1,0 +1,51 @@
+name: Doxygen Action
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  doxygen:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+    - name: Doxygen TBD
+      uses: mattnotmitt/doxygen-action@v1.8.18
+      with:
+        doxyfile-path: "tbd.conf"
+        working-directory: "tbd"
+        additional-packages: |
+          graphviz
+          ttf-freefont
+    - name: Doxygen GIS
+      uses: mattnotmitt/doxygen-action@v1.8.18
+      with:
+        doxyfile-path: "gis.conf"
+        working-directory: "gis"
+        additional-packages: |
+          graphviz
+          ttf-freefont
+    - name: Doxygen Main
+      uses: mattnotmitt/doxygen-action@v1.8.18
+      with:
+        doxyfile-path: "main.conf"
+        working-directory: "documentation"
+        additional-packages: |
+          graphviz
+          ttf-freefont
+    - name: Manually link to sub documents
+      run: |
+        cd ./documentation/html
+        sed -i 's/\(.*id\="autotoc_md2".*\)/<h3>Other documentation<\/h3>\n\1/g' index.html
+        sed -i 's/\(.*id\="autotoc_md2".*\)/<ul><li><a href="firestarr\/index.html">Spread algorithm<\/a><\/li><\/ul>\n\1/g' index.html
+        sed -i 's/\(.*id\="autotoc_md2".*\)/<ul><li><a href="gis\/index.html">Raster creation scripts<\/a><\/li><\/ul>\n\1/g' index.html
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        # Default Doxyfile build documentation to html directory.
+        # Change the directory if changes in Doxyfile
+        publish_dir: ./documentation/html

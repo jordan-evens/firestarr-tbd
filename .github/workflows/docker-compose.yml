@@ -1,12 +1,29 @@
-name: Docker Compose
-on: push
+# Make Docker images
+
+name: Create Docker images
+
+on:
+  push:
+    branches: '*'
+
 jobs:
-  test:
+  build-images:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-    - name: Checkout repository and submodules
-      uses: actions/checkout@v2
-      with:
-        submodules: recursive
-    - name: Build the stack
-      run: docker-compose build
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends moby-cli docker-compose
+          sudo curl -kSL https://github.com/docker/compose/releases/download/v2.19.1/docker-compose-linux-x86_64 -o $(which docker-compose)
+
+      - name: Docker Compose
+        run: docker-compose build
