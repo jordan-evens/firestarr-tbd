@@ -937,7 +937,7 @@ def run_all_fires(
     dir_out, dir_current, results, dates_out, totaltime = run_fires_in_dir_by_priority(
         dir_current, df_bounds, do_publish
     )
-    logging.getLogger().removeHandler(LOG_RUN)
+    logging.removeHandler(LOG_RUN)
     LOG_RUN = None
     return dir_out, dir_current, results, dates_out, totaltime
 
@@ -995,7 +995,7 @@ def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=
             )
             publish_all(dir_current, force=True)
     if not had_log:
-        logging.getLogger().removeHandler(LOG_RUN)
+        logging.removeHandler(LOG_RUN)
         LOG_RUN = None
     return dir_out, dir_current, all_results, list(all_dates), total_time
 
@@ -1051,7 +1051,7 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, df_duration=None, verbose
     dirs_fire = list(fire_areas.index)
     durations = list(df_fires.set_index(["fire_name"]).loc[list(dirs_fire), "DURATION"])
     dirs_fire = [os.path.join(dir_out, x) for x in dirs_fire]
-    # verbose = logging.DEBUG >= logging.getLogger().level
+    # verbose = logging.DEBUG >= logging.level
     for_what = list(
         zip(dirs_fire, [dir_current] * len(dirs_fire), [verbose] * len(dirs_fire), durations)
     )
