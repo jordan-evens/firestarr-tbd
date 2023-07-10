@@ -885,6 +885,11 @@ def run_all_fires(
         df_fires["lon"] = centroids.x
         df_fires["lat"] = centroids.y
         # df_fires = df_fires.to_crs(CRS)
+    # filter out anything outside config bounds
+    df_fires = df_fires[df_fires['lon'] >= BOUNDS['longitude']['min']]
+    df_fires = df_fires[df_fires['lon'] <= BOUNDS['longitude']['max']]
+    df_fires = df_fires[df_fires['lat'] >= BOUNDS['latitude']['min']]
+    df_fires = df_fires[df_fires['lat'] <= BOUNDS['latitude']['max']]
     # cut out the row as a DataFrame still so we can use crs and centroid
     # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     file_bounds = BOUNDS["bounds"]
