@@ -38,10 +38,8 @@ jobs:
           ttf-freefont
     - name: Manually link to sub documents
       run: |
-        cd ./documentation/html
-        sed -i 's/\(.*id\="autotoc_md2".*\)/<h3>Other documentation<\/h3>\n\1/g' index.html
-        sed -i 's/\(.*id\="autotoc_md2".*\)/<ul><li><a href="firestarr\/index.html">Spread algorithm<\/a><\/li><\/ul>\n\1/g' index.html
-        sed -i 's/\(.*id\="autotoc_md2".*\)/<ul><li><a href="gis\/index.html">Raster creation scripts<\/a><\/li><\/ul>\n\1/g' index.html
+        cd documentation
+        ./fix_docs.sh
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
