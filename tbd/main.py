@@ -19,6 +19,8 @@ DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
 LOG_RUN = None
 
+PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
+
 # FORMAT_OUTPUT = "COG"
 FORMAT_OUTPUT = "GTiff"
 
@@ -41,6 +43,7 @@ import datetime
 import model_data
 import gis
 import tbd
+import time
 import timeit
 import shutil
 import shlex
@@ -208,7 +211,7 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
         #     + ["-o", file_tmp]
         #     + files_crs)
         # no point in doing this if nothing was added
-        if changed or not os.path.isfile(file_base):
+        if force or changed or not os.path.isfile(file_base):
             gdal_merge_max(
                 (
                     [
@@ -265,7 +268,7 @@ def find_latest(dir_input=None, prefix="m3"):
     return dir_input
 
 
-def merge_dirs(dir_input=None, dates=None):
+def merge_dirs(dir_input=None, dates=None, force=False):
     dir_input = find_latest(dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
@@ -276,7 +279,7 @@ def merge_dirs(dir_input=None, dates=None):
     for d in sorted(list_dirs(dir_initial)):
         if dates is None or d in dates:
             dir_in = os.path.join(dir_initial, d)
-            results.append(merge_dir(dir_in, run_id))
+            results.append(merge_dir(dir_in, run_id, force=force))
     if 0 == len(results):
         logging.warning("No directories merged from %s", dir_initial)
         return
@@ -990,21 +993,21 @@ def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=
                     n, total_time, total_time / n
                 )
             )
-            publish_all(dir_current)
+            publish_all(dir_current, force=True)
     if not had_log:
         logging.getLogger().removeHandler(LOG_RUN)
         LOG_RUN = None
     return dir_out, dir_current, all_results, list(all_dates), total_time
 
 
-def publish_all(dir_current=None):
+def publish_all(dir_current=None, force=False):
     dir_current = find_latest(dir_current)
-    merge_dirs(dir_current)
+    merge_dirs(dir_current, force=force)
     import publish_azure
-
     publish_azure.upload_dir(dir_current)
+    # HACK: might be my imagination, but maybe there's a delay so wait a bit
+    time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
     import publish_geoserver
-
     publish_geoserver.publish_folder(dir_current)
 
 
