@@ -10,9 +10,9 @@ import math
 # also too big
 # DEFAULT_GROUP_DISTANCE_KM = 40
 DEFAULT_GROUP_DISTANCE_KM = 20
-# DEFAULT_NUM_DAYS = 3
-# DEFAULT_NUM_DAYS = 7
-DEFAULT_NUM_DAYS = 14
+# MAX_NUM_DAYS = 3
+# MAX_NUM_DAYS = 7
+MAX_NUM_DAYS = 14
 # DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 7
 DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
@@ -626,7 +626,7 @@ def make_run_fire(
     return dir_fire
 
 
-def do_prep_fire(dir_fire):
+def do_prep_fire(dir_fire, duration=None):
     # load and update the configuration with more data
     try:
         with open(os.path.join(dir_fire, FILE_SIM)) as f:
@@ -750,6 +750,8 @@ def do_prep_fire(dir_fire):
         data["start_time"] = start_time.isoformat()
         data["offsets"] = offsets
         data["wx"] = file_wx
+    if duration:
+        data["offsets"] = [x for x in data["offsets"] if x <= duration]
     dump_json(data, os.path.join(dir_fire, FILE_SIM))
     return dir_fire
 
@@ -816,8 +818,9 @@ def check_failure(dir_fire, result, stop_on_any_failure):
 
 
 def do_prep_and_run_fire(for_what):
-    dir_fire, dir_current, verbose = for_what
-    dir_ready = do_prep_fire(dir_fire)
+    dir_fire, dir_current, verbose, duration = for_what
+    # change maximum duration if duration is lower
+    dir_ready = do_prep_fire(dir_fire, duration)
     return do_run_fire((dir_ready, dir_current, verbose))
 
 
@@ -936,7 +939,7 @@ def run_all_fires(
     return dir_out, dir_current, results, dates_out, totaltime
 
 
-def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=True):
+def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=True):
     global LOG_RUN
     dir_current = find_latest(dir_current)
     had_log = LOG_RUN is None
@@ -950,23 +953,29 @@ def run_fires_in_dir_by_priority(dir_current=None, df_bounds=None, do_publish=Tr
             os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
         )
     list_bounds = [None]
-    if df_bounds is None:
+    if df_priority is None:
         file_bounds = BOUNDS["bounds"]
         if file_bounds:
-            df_bounds = gpd.read_file(file_bounds)
-    if df_bounds is not None:
-        if "PRIORITY" in df_bounds.columns:
-            df_bounds["PRIORITY"] = df_bounds["PRIORITY"].astype(float)
-            df_bounds = df_bounds.sort_values(["PRIORITY"])
-        list_bounds = [df_bounds.iloc[i : i + 1] for i in range(len(df_bounds))]
+            df_priority = gpd.read_file(file_bounds)
+    if df_priority is not None:
+        if "PRIORITY" in df_priority.columns:
+            df_priority["PRIORITY"] = df_priority["PRIORITY"].astype(float)
+            df_priority = df_priority.sort_values(["PRIORITY"])
+        list_bounds = [df_priority.iloc[i : i + 1] for i in range(len(df_priority))]
+        if "DURATION" in df_priority.columns:
+            df_duration = df_priority.dissolve(by="DURATION")
+            df_duration = df_duration.sort_values("DURATION", ascending=False)
     # run for each boundary in order
     total_time = 0
     all_results = {}
     all_dates = set([])
-    for b in tqdm(list_bounds, desc="Running by area"):
+    for df_bounds in (pbar_area := tqdm(list_bounds, desc="Running by area")):
+        if "ID" in df_bounds.columns:
+            id_bounds = df_bounds.iloc[0]['ID']
+            pbar_area.set_description(f"Running by area: {id_bounds}")
         changed = False
         dir_out, dir_current, results, dates_out, cur_time = run_fires_in_dir(
-            dir_current, b
+            dir_current, df_bounds, df_duration
         )
         total_time += cur_time
         for k, v in results.items():
@@ -999,7 +1008,7 @@ def publish_all(dir_current=None):
     publish_geoserver.publish_folder(dir_current)
 
 
-def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
+def run_fires_in_dir(dir_current=None, df_bounds=None, df_duration=None, verbose=False):
     t0 = timeit.default_timer()
     dir_current = find_latest(dir_current)
     run_id = os.path.basename(dir_current)
@@ -1023,23 +1032,25 @@ def run_fires_in_dir(dir_current=None, df_bounds=None, verbose=False):
                 f"Directory and fire list don't match:\n{fire_names}\n{dir_names}"
             )
         df_bounds_crs = df_bounds.to_crs(df_fires.crs)
-        # HACK: changing bounds to fires bounds gives infinity
-        # df_fires_wgs84 = df_fires.to_crs("WGS84")
-        # df_bounds_wgs84 = df_bounds.to_crs("WGS84")
-        # FIX: get rid of duplicated code
         df_fires = df_fires[
             df_fires.intersects(df_bounds_crs.dissolve().iloc[0].geometry)
         ]
-        # df_fires_crs = df_fires_crs[df_fires_crs.intersects(df_bounds.dissolve().iloc[0].geometry)]
         # logging.info(f"Using groups in boundaries filters fires from {n_initial} to {len(df_fires)}")
-        fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(
-            ascending=False
-        )
-        dirs_fire = list(fire_areas.index)
+    if df_duration is not None:
+        df_duration_crs = df_duration.to_crs(df_fires.crs)
+        df_fires = df_fires.sjoin(df_duration_crs.reset_index()[['geometry', 'DURATION']])
+        del df_fires['index_right']
+    else:
+        df_fires['DURATION'] = MAX_NUM_DAYS
+    fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(
+        ascending=False
+    )
+    dirs_fire = list(fire_areas.index)
+    durations = list(df_fires.set_index(["fire_name"]).loc[list(dirs_fire), "DURATION"])
     dirs_fire = [os.path.join(dir_out, x) for x in dirs_fire]
     # verbose = logging.DEBUG >= logging.getLogger().level
     for_what = list(
-        zip(dirs_fire, [dir_current] * len(dirs_fire), [verbose] * len(dirs_fire))
+        zip(dirs_fire, [dir_current] * len(dirs_fire), [verbose] * len(dirs_fire), durations)
     )
     sim_results = tqdm_pool.pmap(
         do_prep_and_run_fire,
@@ -1117,7 +1128,7 @@ def resume():
 
 if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
-    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_NUM_DAYS
+    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else MAX_NUM_DAYS
     dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
     if dir_fires and tbd.DIR_OUTPUT in os.path.abspath(dir_fires):
         # if we give it a simulation directory then resume those sims
