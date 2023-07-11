@@ -69,7 +69,7 @@ RUN . /appl/.venv/bin/activate \
 FROM tbd_dev AS tbd_dev_svc
 #RUN echo "*/15 * * * * root sudo user bash -c '/appl/tbd/cronjob_update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 # run as root so we can redirect to where docker logs will show progress
-RUN sudo echo "*/15 * * * * root /usr/bin/flock -n /tmp/update.lockfile sudo user bash -c '(. /appl/confg && [[ ${CRONJOB_RUN} ]]  && /appl/tbd/update.sh)' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
+RUN sudo echo "*/15 * * * * root /usr/bin/flock -n /tmp/update.lockfile sudo user bash -c '(. /appl/confg && [[ \${CRONJOB_RUN} ]]  && /appl/tbd/update.sh)' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
 ENTRYPOINT sudo cron -f
 
