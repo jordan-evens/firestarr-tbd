@@ -4,7 +4,7 @@
 
 ## Overview
 
-FireSTARR is designed to support wildland fire response decicion-making, and is the fire growth algorithm originally in the FireGUARD suite of programs.
+FireSTARR is designed to support wildland fire response decision-making, and is the fire growth algorithm originally in the FireGUARD suite of programs.
 
 It focuses on the generation of burn probabilities from replicated simulation of fire growth, smouldering, and natural extinction under the weather and stochastic fire behaviour scenarios.
 
