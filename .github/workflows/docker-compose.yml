@@ -1,13 +1,16 @@
 # Make Docker images
 
-name: Create Docker images
+name: Create Docker images, test main binary, and publish
 
 on:
   push:
-    branches: '*'
+    branches: ['main']
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
-  build-images:
+  image-build-test-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,11 +22,46 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Docker Compose
+      - name: Set variables
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends moby-cli docker-compose
-          sudo curl -kSL https://github.com/docker/compose/releases/download/v2.19.1/docker-compose-linux-x86_64 -o $(which docker-compose)
+          echo "${{ github.repository }}" | sed "s/\(.*\)\/.*/ORG_NAME=\1/g" | tee -a $GITHUB_ENV
+          echo "${{ github.repository }}" | sed "s/.*\/\(.*\)/IMAGE_NAME=\1/g" | tee -a $GITHUB_ENV
+          echo "github.ref_name: ${{ github.ref_name }}"
+          VERSION_PREFIX=`echo "${{ github.ref_name }}-" | sed "s/main-$//g"`
+          echo ${VERSION_PREFIX} | sed "s/\(.*\)/VERSION_PREFIX=\1/g" | tee -a $GITHUB_ENV
+          # HACK: replace variable in .env
+          sed -i "s/^VERSION\=\(.*\)/VERSION=${VERSION_PREFIX}\1/g" .env
 
       - name: Docker Compose
-        run: docker-compose build
+        run: |
+          # HACK: docker compose doesn't seem to be using the .env file
+          source ./.env
+          echo VERSION=${VERSION}
+          docker compose --env-file .env build
+
+      - name: Test FireSTARR
+        run: |
+          docker compose run firestarr /appl/tbd/tbd test dir_test 12
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      # just publish the firestarr container for now
+      - name: Publish
+        run: |
+          IMAGE_ROOT=`docker images | grep -i "^${{ env.IMAGE_NAME }}" | awk '{print $1}' | uniq`
+          REPO_OUT=${{ env.REGISTRY }}/${{ env.ORG_NAME }}
+          # convert to lowecase
+          REPO_OUT=${REPO_OUT,,}
+          docker images | grep -i "^${IMAGE_ROOT}" | awk '{print $1":"$2}' | grep -i "^${IMAGE_ROOT}:${VERSION_PREFIX}" | xargs -t -I {} docker tag {} ${REPO_OUT}/{}
+          # if we have a prefix then get rid of "latest" tag so we don't overwrite main's "latest"
+          if [[ ${VERSION_PREFIX} ]]; then
+            BRANCH_LATEST=`docker images | grep -i "^${REPO_OUT}/${IMAGE_ROOT}" | awk '{print $1":"$2}' | grep -i "^${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}" | sort | head -n1`
+            docker tag ${BRANCH_LATEST} ${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}latest
+            docker rmi ${IMAGE_ROOT}:latest
+          fi
+          docker images | grep -i "^${REPO_OUT}/${IMAGE_ROOT}" | awk '{print $1":"$2}' | grep -i "^${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}" | xargs -t -I {} docker push {}
