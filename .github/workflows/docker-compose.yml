@@ -4,7 +4,7 @@ name: Create Docker images, test main binary, and publish
 
 on:
   push:
-    branches: ['main']
+    branches: ['main', 'dev']
 
 env:
   REGISTRY: ghcr.io
