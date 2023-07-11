@@ -2,15 +2,17 @@ import sys
 sys.path.append('../util')
 from common import *
 import geopandas as gpd
+import shapely.geometry
 
 DIR = ensure_dir('../data/tmp/bounds')
 CRS = 'WGS84'
 KM_TO_M = 1000
 
-def to_file(df, name):
+
+def to_file(df, name, dir=DIR):
     print(name)
-    df.to_file(os.path.join(DIR, f"{name}.geojson"))
-    df.to_file(os.path.join(DIR, f"{name}.shp"))
+    df.to_file(os.path.join(dir, f"{name}.geojson"))
+    df.to_file(os.path.join(dir, f"{name}.shp"))
     return df
 
 
@@ -32,13 +34,26 @@ def dissolve(df):
 
 def simplify(df, km):
     df = df.to_crs(CRS_ORIG)
-    df.simplify(tolerance=km * KM_TO_M)
+    df.geometry = df.simplify(tolerance=km * KM_TO_M)
     return df.to_crs(CRS)
+
 
 def convex_hull(df):
     df = df.to_crs(CRS_ORIG)
     df.geometry = df.convex_hull
     return df.to_crs(CRS)
+
+
+def fill(df):
+    df = df.iloc[:]
+    for i in range(len(df)):
+        b = df.iloc[i].geometry
+        polys = [shapely.geometry.Polygon(x) for x in b.interiors]
+        for p in polys:
+            b = b.union(p)
+        df.geometry.iloc[i] = b
+    return df
+
 
 df_bounds = to_file(gpd.read_file('bounds.geojson').sort_values(['EN']), "df_bounds")
 
@@ -46,43 +61,23 @@ df_canada = gpd.read_file('../data/tmp/canada/lpr_000b16a_e.shp').sort_values(['
 CRS_ORIG = df_canada.crs
 df_canada_wgs84 = df_canada.to_crs(CRS)
 df_bounds_exact = df_bounds.iloc[:]
-df_bounds_exact.geometry = df_canada.geometry
-to_file(df_bounds_exact, "df_bounds_exact")
+df_bounds_exact.geometry = df_canada_wgs84.geometry
+df_bounds_exact = to_file(df_bounds_exact, "df_bounds_exact")
 
 df_explode = to_file(df_bounds_exact.explode(index_parts=False), "df_explode")
 
-df_envelope = to_file(to_envelope(df_explode), "df_envelope")
+df_simplify = to_file(simplify(df_explode, 1), "df_simplify")
 
-df_envelope_dissolve = to_file(df_envelope.dissolve(by='ID'), "df_envelope_dissolve")
+df_buffer = to_file(buffer(df_simplify, 100), "df_buffer")
 
-df_buffer = to_file(buffer(df_envelope, 100), "df_buffer")
+df_hull = to_file(convex_hull(df_buffer), "df_hull")
 
-df_buffer_dissolve = to_file(df_buffer.dissolve(by='ID'), "df_buffer_dissolve")
+df_hull_dissolve = to_file(dissolve(df_hull), "df_hull_dissolve")
 
-df_buffer_envelope = to_file(to_envelope(df_buffer), "df_buffer_envelope")
+df_hull_fill = to_file(fill(df_hull_dissolve), "df_hull_fill")
 
-df_buffer_envelope_dissolve = to_file(dissolve(df_buffer_envelope), "df_buffer_envelope_dissolve")
+df_hull_fill_simplify = to_file(simplify(df_hull_fill, 100), "df_hull_fill_simplify")
 
-df_buffer_envelop_dissolve_simplify = to_file(simplify(df_buffer_envelope_dissolve, 10), "df_buffer_envelop_dissolve_simplify")
+bounds = to_file(df_hull_fill_simplify, 'bounds')
 
-df_buffer_envelope_buffer = to_file(buffer(df_buffer_envelope, 10), "df_buffer_envelope_buffer")
-
-df_buffer_envelope_buffer_envelope = to_file(to_envelope(df_buffer_envelope_buffer), "df_buffer_envelope_buffer_envelope")
-
-df_buffer_envelope_buffer_envelope_dissolve = to_file(dissolve(df_buffer_envelope_buffer_envelope), "df_buffer_envelope_buffer_envelope_dissolve")
-
-df_buffer_envelope_buffer_envelope_simplify = to_file(simplify(df_buffer_envelope_buffer_envelope, 10), "df_buffer_envelope_buffer_envelope_simplify")
-
-df_buffer_envelope_buffer_envelope_simplify = to_file(simplify(df_buffer_envelope_buffer_envelope, 10), "df_buffer_envelope_buffer_envelope_simplify")
-
-df_buffer_envelope_buffer_envelope_simplify_dissolve = to_file(dissolve(df_buffer_envelope_buffer_envelope_simplify), "df_buffer_envelope_buffer_envelope_simplify_dissolve")
-
-df_hull = to_file(convex_hull(df_buffer_envelope_buffer_envelope_simplify_dissolve), "df_hull")
-
-df_hull_direct = to_file(convex_hull(df_envelope_dissolve), "df_hull_direct")
-
-df_hull_buffer = to_file(convex_hull(df_buffer_dissolve), "df_hull_buffer")
-
-df_hull_buffer_envelope = to_file(convex_hull(df_buffer_envelope_buffer_envelope_dissolve), "df_hull_buffer_envelope")
-
-df_hull_buffer_envelope.reset_index()[['ID', 'EN', 'FR', 'PRIORITY', 'DURATION', 'geometry']].set_index(['ID']).to_file('bounds.geojson')
+bounds.reset_index()[['ID', 'EN', 'FR', 'PRIORITY', 'DURATION', 'geometry']].set_index(['ID']).to_file('bounds.geojson')
