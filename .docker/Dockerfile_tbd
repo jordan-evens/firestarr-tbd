@@ -135,16 +135,17 @@ ARG USERNAME
 WORKDIR /appl/
 COPY .docker/requirements_tbd.txt .
 RUN python -m pip install --no-warn-script-location --break-system-packages -r /appl/requirements_tbd.txt
+COPY ./config /appl/
 WORKDIR /appl/tbd/
 COPY --from=tbd_build /appl/tbd/tbd .
-COPY ./config /appl/
+COPY ./tbd/bounds.geojson /appl/tbd/
 COPY ./tbd/fuel.lut /appl/tbd/
+COPY ./tbd/settings.ini /appl/tbd/
 # HACK: ./tbd/*.py takes forever
 COPY ./tbd/gis.py /appl/tbd/
 COPY ./tbd/main.py /appl/tbd/
 COPY ./tbd/publish_azure.py /appl/tbd/
 COPY ./tbd/tbd.py /appl/tbd/
-COPY ./tbd/settings.ini /appl/tbd/
 WORKDIR /appl/util
 # COPY ./util/*.py .
 COPY ./util/common.py .

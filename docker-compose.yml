@@ -75,9 +75,6 @@ services:
       - tbd_prod:${VERSION}
     volumes:
       - type: bind
-        source: ./tbd/settings.ini
-        target: /appl/tbd/settings.ini
-      - type: bind
         source: ./data
         target: /appl/data
       - type: bind

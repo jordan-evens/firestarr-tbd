@@ -7,6 +7,7 @@ gis/**/__pycache__
 !tbd/cffdrs-ng/*.py
 !tbd/CMakeLists.txt
 !tbd/fuel.lut
+!tbd/bounds.geojson
 !tbd/src
 !tbd/*.py
 !tbd/settings.ini
