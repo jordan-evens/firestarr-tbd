@@ -54,13 +54,13 @@ def fill(df):
         df.geometry.iloc[i] = b
     return df
 
-
 df_bounds = to_file(gpd.read_file('bounds.geojson').sort_values(['EN']), "df_bounds")
 
 df_canada = gpd.read_file('../data/tmp/canada/lpr_000b16a_e.shp').sort_values(['PRENAME'])
 CRS_ORIG = df_canada.crs
 df_canada_wgs84 = df_canada.to_crs(CRS)
-df_bounds_exact = df_bounds.iloc[:]
+df_bounds_exact = df_bounds.sort_values(['EN'])
+assert list(df_bounds_exact['EN']) == list(df_canada_wgs84['PRENAME'])
 df_bounds_exact.geometry = df_canada_wgs84.geometry
 df_bounds_exact = to_file(df_bounds_exact, "df_bounds_exact")
 
