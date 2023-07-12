@@ -2,7 +2,6 @@
 FILE=$*
 MATCH=".*\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]\).*"
 REGEX="s/${MATCH}/\1/g"
-echo $FILE
 # get a few lines at either end in case first/last don't have timestamp
 START=`head -n10 ${FILE} | sed -n "/${MATCH}/p;" | head -n1 | sed "${REGEX}"`
 END=`tail -n10 ${FILE} | sed -n "/${MATCH}/p;" | tail -n1 | sed "${REGEX}"`
