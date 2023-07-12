@@ -3,45 +3,59 @@ sys.path.append('../util')
 from common import *
 import geopandas as gpd
 import shapely.geometry
+import numpy as np
 
 DIR = ensure_dir('../data/tmp/bounds')
-CRS = 'WGS84'
+CRS_WGS84 = 'WGS84'
 KM_TO_M = 1000
+BY_NAME = {}
 
 
 def to_file(df, name, dir=DIR):
     print(name)
-    df.to_file(os.path.join(dir, f"{name}.geojson"))
-    df.to_file(os.path.join(dir, f"{name}.shp"))
+    global BY_NAME
+    if name in BY_NAME and df.equals(BY_NAME[name]):
+        return df
+    df_wgs84 = df.to_crs(CRS_WGS84)
+    df_wgs84.to_file(os.path.join(dir, f"{name}.geojson"))
+    df_wgs84.to_file(os.path.join(dir, f"{name}.shp"))
+    try:
+        print(dist(centroids_canada, centroids(dissolve(df).set_index(['EN']))))
+    except:
+        print("problem comparing centroids")
+    BY_NAME[name] = df
     return df
 
 
 def to_envelope(df):
-    df = df.to_crs(CRS_ORIG)
+    df = df.iloc[:]
     df.geometry = df.envelope
-    return df.to_crs(CRS)
+    return df
 
 
 def buffer(df, km):
-    df = df.to_crs(CRS_ORIG)
+    df = df.iloc[:]
     df.geometry = df.buffer(km * KM_TO_M)
-    return df.to_crs(CRS)
+    return df
 
 
 def dissolve(df):
-    return df.dissolve(by='ID')
+    return df.dissolve(by='ID').reset_index().sort_values('EN')
+
+
+def explode(df):
+    return df.explode(index_parts=False)
 
 
 def simplify(df, km):
-    df = df.to_crs(CRS_ORIG)
+    df = df.iloc[:]
     df.geometry = df.simplify(tolerance=km * KM_TO_M)
-    return df.to_crs(CRS)
+    return df
 
 
 def convex_hull(df):
-    df = df.to_crs(CRS_ORIG)
     df.geometry = df.convex_hull
-    return df.to_crs(CRS)
+    return df
 
 
 def fill(df):
@@ -54,30 +68,52 @@ def fill(df):
         df.geometry.iloc[i] = b
     return df
 
-df_bounds = to_file(gpd.read_file('bounds.geojson').sort_values(['EN']), "df_bounds")
+
+def centroids(df):
+    c = df.centroid
+    return {idx: c.loc[idx] for idx in df.index}
+
+
+def dist(c1, c2):
+    assert c1.keys() == c2.keys()
+    return np.sum([v.distance(c2[k]) for k, v in c1.items()])
 
 df_canada = gpd.read_file('../data/tmp/canada/lpr_000b16a_e.shp').sort_values(['PRENAME'])
 CRS_ORIG = df_canada.crs
-df_canada_wgs84 = df_canada.to_crs(CRS)
-df_bounds_exact = df_bounds.sort_values(['EN'])
-assert list(df_bounds_exact['EN']) == list(df_canada_wgs84['PRENAME'])
-df_bounds_exact.geometry = df_canada_wgs84.geometry
-df_bounds_exact = to_file(df_bounds_exact, "df_bounds_exact")
+centroids_canada = centroids(df_canada.set_index(['PRENAME']))
 
-df_explode = to_file(df_bounds_exact.explode(index_parts=False), "df_explode")
+df_bounds = to_file(gpd.read_file('bounds.geojson').sort_values(['EN']).to_crs(CRS_ORIG), "df_bounds")
+centroids_orig = centroids(df_bounds.set_index(['EN']))
 
-df_simplify = to_file(simplify(df_explode, 1), "df_simplify")
+df_bounds_exact = gpd.GeoDataFrame(pd.merge(df_bounds[[x for x in df_bounds.columns if x != 'geometry']],
+                                            df_canada[['PRENAME', 'geometry']],
+                                            left_on=['EN'], right_on=['PRENAME']),
+                                    crs=CRS_ORIG)
+centroids_exact = centroids(df_bounds_exact.set_index(['EN']))
+assert centroids_exact == centroids_canada
 
-df_buffer = to_file(buffer(df_simplify, 100), "df_buffer")
+df = to_file(df_bounds_exact, "df_bounds_exact")
 
-df_hull = to_file(convex_hull(df_buffer), "df_hull")
+df = to_file(explode(df), "df_explode")
 
-df_hull_dissolve = to_file(dissolve(df_hull), "df_hull_dissolve")
+df = to_file(simplify(df, 1), "df_simplify")
 
-df_hull_fill = to_file(fill(df_hull_dissolve), "df_hull_fill")
+df = to_file(buffer(df, 100), "df_buffer")
 
-df_hull_fill_simplify = to_file(simplify(df_hull_fill, 100), "df_hull_fill_simplify")
+df = to_file(simplify(df, 100), "df_hull_fill_simplify")
 
-bounds = to_file(df_hull_fill_simplify, 'bounds')
+df = to_file(convex_hull(df), "df_hull")
 
-bounds.reset_index()[['ID', 'EN', 'FR', 'PRIORITY', 'DURATION', 'geometry']].set_index(['ID']).to_file('bounds.geojson')
+df = to_file(dissolve(df), "df_hull_dissolve")
+
+df = to_file(explode(df), "df_hull_dissolve_explode")
+
+df = to_file(fill(df), "df_hull_fill")
+
+df = to_file(simplify(df, 100), "df_hull_fill_simplify")
+
+assert list(df['EN']) == list(df_bounds['EN'])
+
+bounds = to_file(df, 'bounds')
+
+bounds.reset_index()[['ID', 'EN', 'FR', 'PRIORITY', 'DURATION', 'geometry']].set_index(['ID']).to_crs(CRS_WGS84).to_file('bounds.geojson')
