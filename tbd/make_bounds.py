@@ -9,7 +9,7 @@ DIR = ensure_dir('../data/tmp/bounds')
 CRS_WGS84 = 'WGS84'
 KM_TO_M = 1000
 BY_NAME = {}
-
+BUFFER_RESOLUTION=32
 
 def to_file(df, name, dir=DIR):
     print(name)
@@ -33,9 +33,9 @@ def to_envelope(df):
     return df
 
 
-def buffer(df, km):
+def buffer(df, km, resolution=BUFFER_RESOLUTION):
     df = df.iloc[:]
-    df.geometry = df.buffer(km * KM_TO_M)
+    df.geometry = df.buffer(km * KM_TO_M, resolution=resolution)
     return df
 
 
@@ -100,17 +100,15 @@ df = to_file(simplify(df, 1), "df_simplify")
 
 df = to_file(buffer(df, 100), "df_buffer")
 
-df = to_file(simplify(df, 100), "df_hull_fill_simplify")
+# df = to_file(simplify(df, 10), "df_buffer_simplify")
 
-df = to_file(convex_hull(df), "df_hull")
+df = to_file(dissolve(df), "df_buffer_simplify_dissolve")
 
-df = to_file(dissolve(df), "df_hull_dissolve")
+df = to_file(fill(df), "df_buffer_simplify_dissolve_fill")
 
-df = to_file(explode(df), "df_hull_dissolve_explode")
+df = to_file(simplify(df, 10), "df_simplify_10km")
 
-df = to_file(fill(df), "df_hull_fill")
-
-df = to_file(simplify(df, 100), "df_hull_fill_simplify")
+df = to_file(simplify(df, 100), "df_simplify_100km")
 
 assert list(df['EN']) == list(df_bounds['EN'])
 
