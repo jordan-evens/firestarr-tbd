@@ -977,10 +977,13 @@ def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=
     total_time = 0
     all_results = {}
     all_dates = set([])
+    i = 0
     for df_bounds in (pbar_area := tqdm(list_bounds, desc="Running by area")):
         if "ID" in df_bounds.columns:
             id_bounds = df_bounds.iloc[0]['ID']
             pbar_area.set_description(f"Running by area: {id_bounds}")
+        else:
+            id_bounds = i
         changed = False
         dir_out, dir_current, results, dates_out, cur_time = run_fires_in_dir(
             dir_current, df_bounds, df_duration
@@ -999,6 +1002,8 @@ def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=
                 )
             )
             publish_all(dir_current, force=True)
+            logging.debug(f"Done publishing results for {id_bounds}")
+        i += 1
     if not had_log:
         logging.removeHandler(LOG_RUN)
         LOG_RUN = None
