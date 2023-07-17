@@ -257,6 +257,7 @@ def get_http(url, save_as=None, mode="wb", ignore_existing=False, check_modified
                 usetime = time.mktime(tt)
                 os.utime(save_as, (usetime, usetime))
     except Exception as e:
+        logging.error(f"Failed getting {url}")
         if os.path.exists(save_as):
             try_remove(save_as)
         raise e
