@@ -76,6 +76,8 @@ def get_fires_dip(dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=datetime.da
     # filter = " or ".join([f'"stage_of_control"=\'{status}\'' for status in status_keep]) or None
     f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
     gdf = gpd.read_file(f_json)
+    # only get latest status for each fire
+    gdf = gdf.iloc[gdf.groupby(["firename"])["last_rep_date"].idxmax()]
     return gdf, f_json
 
 
