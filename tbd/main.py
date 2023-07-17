@@ -670,7 +670,11 @@ def do_prep_fire(dir_fire, duration=None):
             return ex
         df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
         df_wx_fire = df_wx_filled.rename(
-            columns={"datetime": "TIMESTAMP", "precip": "PREC"}
+            columns={
+                "lon": "long",
+                "datetime": "TIMESTAMP",
+                "precip": "PREC",
+            }
         ).loc[:]
         # HACK: just do the math for now, but don't apply a timezone
         df_wx_fire.loc[:, "TIMESTAMP"] = df_wx_fire["TIMESTAMP"] + utcoffset

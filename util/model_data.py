@@ -245,11 +245,11 @@ def get_spotwx_limit():
     return int(CONFIG.get("SPOTWX_API_LIMIT"))
 
 
-def get_wx_spotwx(lat, long):
+def get_wx_spotwx(lat, lon):
     SPOTWX_KEY = get_spotwx_key()
     metmodel = "gem_reg_10km" if lat > 67 else "gem_lam_continental"
     # HACK: can't figure out a way to just get a csv directly, so parsing html javascript array for data
-    url = f'https://spotwx.com/products/grib_index.php?key={SPOTWX_KEY}&model={metmodel}&lat={round(lat, 3)}&lon={round(long, 3)}&display=table_prometheus'
+    url = f'https://spotwx.com/products/grib_index.php?key={SPOTWX_KEY}&model={metmodel}&lat={round(lat, 3)}&lon={round(lon, 3)}&display=table_prometheus'
     response = requests.get(url, verify=False, headers=HEADERS)
     content = str(response.content, encoding='utf-8')
     start_pos = content.find("aDataSet = [\n")
@@ -262,19 +262,19 @@ def get_wx_spotwx(lat, long):
     cols = ["datetime", "temp", "rh", "wd", "ws", "precip"]
     df_spotwx = pd.DataFrame(data=wx, columns=cols)
     df_spotwx['lat'] = lat
-    df_spotwx['long'] = long
+    df_spotwx['lon'] = lon
     df_spotwx['source'] = f'spotwx_{metmodel}'
     return df_spotwx
 
 
 @sleep_and_retry
 @limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
-def get_wx_ensembles(lat, long):
+def get_wx_ensembles(lat, lon):
     SPOTWX_KEY = get_spotwx_key()
     model = "geps"
-    url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(lon, 3)}&ens_val=members'
     logging.debug(url)
-    # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(long, 3)}&ens_val=members'
+    # url = f'https://spotwx.io/api.php?key={SPOTWX_KEY}&model={model}&lat={round(lat, 3)}&lon={round(lon, 3)}&ens_val=members'
     content = None
     def get_initial(url):
         content = get_http(url)
@@ -311,11 +311,11 @@ def get_wx_ensembles(lat, long):
     assert [0] == np.unique(df['UTC_OFFSET'])
     df.columns = [x.lower() for x in df.columns]
     df['datetime'] = pd.to_datetime(df['datetime'])
-    df = df.rename(columns={'lon': 'long', 'tmp': 'temp',
+    df = df.rename(columns={'tmp': 'temp',
                             'wdir': 'wd',
                             'wspd': 'ws'})
     df['issuedate'] = pd.to_datetime(df['issuedate'])
-    index_final = ['model', 'lat', 'long', 'issuedate', 'id']
+    index_final = ['model', 'lat', 'lon', 'issuedate', 'id']
     df = df[index_final + ['datetime', 'temp', 'rh', 'wd', 'ws', 'precip']]
     df = df.set_index(index_final)
     return df
