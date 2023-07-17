@@ -329,7 +329,19 @@ def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
 
     # this isn't an option, because it filters out fires
     # df_dip = model_data.get_fires_dip(dir_out, status_ignore=None)
-    df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
+    try:
+        df_ciffc, ciffc_json = model_data.get_fires_ciffc(dir_out, status_ignore=None)
+        df_ciffc["fire_name"] = df_ciffc["field_agency_fire_id"].apply(fix_name)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        df_ciffc, ciffc_json = model_data.get_fires_dip(dir_out, status_ignore=None, year=YEAR)
+        df_ciffc["fire_name"] = df_ciffc["firename"].apply(fix_name)
+        df_ciffc = df_ciffc.rename(columns={
+            "stage_of_control": "field_stage_of_control_status",
+            "firename": "field_agency_fire_id",
+            "hectares": "field_fire_size",
+        })
     if DEFAULT_M3_LAST_ACTIVE_IN_DAYS:
         last_active_since = datetime.date.today() - datetime.timedelta(
             days=DEFAULT_M3_LAST_ACTIVE_IN_DAYS
@@ -344,7 +356,6 @@ def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
     df_m3["fire_name"] = df_m3.apply(
         lambda x: fix_name(x["guess_id"] or x["id"]), axis=1
     )
-    df_ciffc["fire_name"] = df_ciffc["field_agency_fire_id"].apply(fix_name)
     df_ciffc_non_geo = df_ciffc.loc[:]
     del df_ciffc_non_geo["id"]
     del df_ciffc_non_geo["geometry"]
