@@ -592,10 +592,12 @@ def unzip(path, to_dir, match=None):
         os.mkdir(to_dir)
     with zipfile.ZipFile(path, "r") as zip_ref:
         if match is None:
+            names = zip_ref.namelist()
             zip_ref.extractall(to_dir)
         else:
             names = [x for x in zip_ref.namelist() if match in x]
             zip_ref.extractall(to_dir, names)
+    return [os.path.join(to_dir, x) for x in names]
 
 
 def start_process(run_what, cwd):
