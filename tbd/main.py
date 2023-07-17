@@ -873,12 +873,12 @@ def run_all_fires(
     df_wx = df_wx_startup_wgs
     if dir_fires is None:
         df_fires_active = get_fires_active(dir_out)
-        df_fires_active.to_file(os.path.join(dir_out, "df_fires_active.shp"))
+        gis.save_shp(df_fires_active, os.path.join(dir_out, "df_fires_active"))
         df_fires_groups = group_fires(df_fires_active)
         df_fires = df_fires_groups
     else:
         df_fires = get_fires_folder(dir_fires, crs)
-        df_fires.to_file(os.path.join(dir_out, "df_fires_folder.shp"))
+        gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_folder"))
         df_fires = df_fires.to_crs(crs)
         # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
         centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
@@ -893,18 +893,18 @@ def run_all_fires(
     # cut out the row as a DataFrame still so we can use crs and centroid
     # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
     file_bounds = BOUNDS["bounds"]
-    df_fires.to_file(os.path.join(dir_out, "df_fires_groups.shp"))
+    gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_groups"))
     df_bounds = None
     if file_bounds:
         n_initial = len(df_fires)
         df_bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
-        df_bounds.to_file(os.path.join(dir_out, "bounds.shp"))
+        gis.save_shp(df_bounds, os.path.join(dir_out, "bounds"))
         # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
         df_fires = df_fires[df_fires.intersects(df_bounds.dissolve().iloc[0].geometry)]
         logging.info(
             f"Using groups in boundaries defined by {file_bounds} filters fires from {n_initial} to {len(df_fires)}"
         )
-        df_fires.to_file(os.path.join(dir_out, "df_fires_groups_bounds.shp"))
+        gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_groups_bounds"))
     # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
     # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
     # takes the longest to run?

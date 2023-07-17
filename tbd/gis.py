@@ -406,3 +406,24 @@ def save_geojson(df, path):
         logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
         raise ex
     return file
+
+
+def save_shp(df, path):
+    dir = os.path.dirname(path)
+    base = os.path.splitext(os.path.basename(path))[0]
+    file = os.path.join(dir, f"{base}.shp")
+    try:
+        cols = df.columns
+        df = df.reset_index()
+        keys = [x for x in df.columns if x not in cols]
+        for k in [x for x in df.columns if x != 'geometry']:
+            v = df.dtypes[k]
+            if np.issubdtype(v, np.datetime64):
+                df[k] = df[k].astype(str)
+        df.set_index(keys).to_file(file)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
+        raise ex
+    return file
