@@ -9,6 +9,7 @@ gis/**/__pycache__
 !tbd/fuel.lut
 !tbd/bounds.geojson
 !tbd/src
+!tbd/update.sh
 !tbd/*.py
 !tbd/settings.ini
 !util/*.py

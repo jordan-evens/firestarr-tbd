@@ -61,18 +61,18 @@ services:
         - SYS_PTRACE
 
 
-  tbd_prod:
-    image: tbd_prod
+  tbd_prod_svc:
+    image: tbd_prod_svc
     build:
       context: .
-      target: tbd_prod
+      target: tbd_prod_svc
       dockerfile: .docker/Dockerfile_tbd
       args:
         GCC_VERSION: ${GCC_VERSION}
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
       tags:
-      - tbd_prod:${VERSION}
+      - tbd_prod_svc:${VERSION}
     volumes:
       - type: bind
         source: ./data
