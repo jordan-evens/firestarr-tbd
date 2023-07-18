@@ -15,14 +15,11 @@ services:
         source: ./config
         target: /appl/config
       - type: bind
-        source: ./data
+        source: ../data
         target: /appl/data
       - type: bind
         source: ./gis
         target: /appl/gis
-      - type: bind
-        source: ./util
-        target: /appl/util
 
 
   tbd_dev_svc:
@@ -45,17 +42,14 @@ services:
         source: ./config
         target: /appl/config
       - type: bind
-        source: ./data
+        source: ../data
         target: /appl/data
       - type: bind
-        source: ./data/generated/grid
+        source: ../data/generated/grid
         target: /appl/100m/default
       - type: bind
         source: ./tbd
         target: /appl/tbd
-      - type: bind
-        source: ./util
-        target: /appl/util
     restart: on-failure
     cap_add:
         - SYS_PTRACE
@@ -75,10 +69,10 @@ services:
       - tbd_prod_svc:${VERSION}
     volumes:
       - type: bind
-        source: ./data
+        source: ../data
         target: /appl/data
       - type: bind
-        source: ./data/generated/grid
+        source: ../data/generated/grid
         target: /appl/100m/default
 
 
@@ -99,9 +93,9 @@ services:
         source: ./tbd/settings.ini
         target: /appl/tbd/settings.ini
       - type: bind
-        source: ./data
+        source: ../data
         target: /appl/data
       - type: bind
-        source: ./data/generated/grid
+        source: ../data/generated/grid
         target: /appl/100m/default
 

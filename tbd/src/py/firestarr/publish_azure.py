@@ -1,13 +1,8 @@
-import sys
-sys.path.append('../util')
 from common import *
 
 import os
 import datetime
 import urllib.parse
-
-DIR_ROOT = "/appl/data/output"
-
 
 from azure.storage.blob import BlobClient
 from azure.storage.blob import BlobServiceClient
@@ -87,86 +82,68 @@ def upload_dir(dir_run):
         logging.info(f"Azure not configured so not publishing {dir_run}")
         return False
     logging.info(f"Azure configured so publishing {dir_run}")
-    run_id = os.path.basename(dir_run)
+    run_name = os.path.basename(dir_run)
+    run_id = run_name[run_name.index("_") + 1:]
+    source = run_name[:run_name.index("_")]
+    date = pd.to_datetime(run_id).date().strftime("%Y%m%d")
     container = None
     dir_combined = os.path.join(dir_run, "combined")
-    dates = listdir_sorted(dir_combined)
-    source = os.path.basename(os.path.dirname(dir_run))
-    assert (1 == len(dates))
-    for date in dates:
-        dir_date = os.path.join(dir_combined, date)
-        files = listdir_sorted(dir_date)
-        # HACK: ignore perim for now
-        files = [f for f in files if 'perim' not in f]
-        # assert ('perim.tif' in files)
-        def get_day(f):
-            i = f.rindex("_")
-            n = int(f[(f[:i].rindex('_') + 1): i])
-            return n
-        days = {f: get_day(f) for f in files if f != 'perim.tif'}
-        run_length = max(days.values())
-        metadata = {
-            "model": "firestarr",
-            "run_id": run_id,
-            "source": source,
-            "run_length": f"{run_length}",
-            "origin_date": date,
-        }
-        origin = datetime.datetime.strptime(date, "%Y%m%d").date()
-        if container is None:
-            # wait until we know we need it
-            container = get_container()
-        # delete old blobs
-        blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
-        for blob in blob_list:
-            container.delete_blob(blob.name)
-        # archive_current(container)
-        for f in files:
-            if 'perim.tif' == f:
-                for_date = origin
-            else:
-                for_date = origin + datetime.timedelta(days=(days[f] - 1))
-            metadata['for_date'] = for_date.strftime('%Y%m%d')
-            path = os.path.join(dir_date, f)
-            # HACK: just upload into archive too so we don't have to move later
+    files = listdir_sorted(dir_combined)
+    # HACK: ignore perim for now
+    files = [f for f in files if 'perim' not in f]
+    # assert ('perim.tif' in files)
+    def get_day(f):
+        i = f.rindex("_")
+        n = int(f[(f[:i].rindex('_') + 1): i])
+        return n
+    days = {f: get_day(f) for f in files if f != 'perim.tif'}
+    run_length = max(days.values())
+    metadata = {
+        "model": "firestarr",
+        "run_id": run_id,
+        "run_length": f"{run_length}",
+        "source": source,
+        "origin_date": date,
+    }
+    origin = datetime.datetime.strptime(date, "%Y%m%d").date()
+    if container is None:
+        # wait until we know we need it
+        container = get_container()
+    # delete old blobs
+    blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
+    for blob in blob_list:
+        container.delete_blob(blob.name)
+    # archive_current(container)
+    for f in files:
+        if 'perim.tif' == f:
+            for_date = origin
+        else:
+            for_date = origin + datetime.timedelta(days=(days[f] - 1))
+        metadata['for_date'] = for_date.strftime('%Y%m%d')
+        path = os.path.join(dir_combined, f)
+        # HACK: just upload into archive too so we don't have to move later
+        with open(path, "rb") as data:
+            container.upload_blob(
+                name=f"current/{f}",
+                data=data,
+                metadata=metadata,
+                overwrite=True
+            )
+        archived = f"archive/{f}"
+        if 0 == len([x for x in container.list_blobs(archived)]):
+            # don't upload if already in archive
             with open(path, "rb") as data:
                 container.upload_blob(
-                    name=f"current/{f}",
+                    name=archived,
                     data=data,
                     metadata=metadata,
                     overwrite=True
                 )
-            archived = f"archive/{f}"
-            if 0 == len([x for x in container.list_blobs(archived)]):
-                # don't upload if already in archive
-                with open(path, "rb") as data:
-                    container.upload_blob(
-                        name=archived,
-                        data=data,
-                        metadata=metadata,
-                        overwrite=True
-                    )
 
 
-def upload_from_zip(z):
-    dir_main = os.path.dirname(z)
-    run_id = z[(z.rindex('_') + 1):z.rindex('.')]
-    dir_run = os.path.join(dir_main, run_id)
-    if os.path.isdir(dir_run):
-        upload_dir(dir_run)
-
-
-def upload_from_zips(source="current_m3"):
-    dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
-    for z in zips:
-        upload_from_zip(os.path.join(dir_main, z))
-
-
-def upload_latest(source="current_m3"):
-    dir_main = os.path.join(DIR_ROOT, source)
-    zips = [x for x in listdir_sorted(dir_main) if x.endswith('.zip')]
-    upload_from_zip(os.path.join(dir_main, zips[-1]))
+def upload_latest():
+    zips = [x for x in listdir_sorted(DIR_ZIP) if x.endswith('.zip')]
+    upload_dir(os.path.join(DIR_OUTPUT, os.path.splitext(zips[-1])[0]))
 
 
 if "__main__" == __name__:

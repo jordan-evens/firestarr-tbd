@@ -1,5 +1,3 @@
-import sys
-sys.path.append('../util')
 from common import *
 import json
 import sys
@@ -19,9 +17,6 @@ import numpy as np
 import shutil
 
 
-DIR_DATA = ensure_dir('/appl/data')
-DIR_ROOT = ensure_dir(os.path.join(DIR_DATA, 'sims'))
-DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, 'output'))
 FILE_SIM = "firestarr.json"
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -43,14 +38,8 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         logging.error(f"Can't read config for {dir_fire}")
         logging.error(ex)
         raise ex
-    region = os.path.basename(os.path.dirname(os.path.dirname(dir_fire)))
     dir_out = data['dir_out']
-    job_date = data['job_date']
     fire_name = data['fire_name']
-    # dir_out = os.path.join(ROOT_DIR, job_date, region, fire_name, job_time)
-    # outputs = listdir_sorted(dir_out)
-    # probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
-    # done_already = len(probs) > 0
     done_already = data.get("ran", False)
     log_file = os.path.join(dir_out, "log.txt")
     data['log_file'] = log_file
@@ -58,10 +47,6 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         if not done_already:
             lat = data['lat']
             lon = data['lon']
-            # job_name = os.path.basename(dir_in)
-            # job_time = job_name[job_name.rindex('_') + 1:]
-            # job_date = job_time[:8]
-            job_time = data['job_time']
             start_time = data['start_time']
             start_time = pd.to_datetime(start_time)
             log_info("Scenario start time is: {}".format(start_time))
@@ -150,7 +135,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         extent = None
         probs = [x for x in outputs if x.endswith('tif') and x.startswith('probability')]
         dates_out = []
-        dir_region = os.path.join(dir_current, "initial", job_date, region)
+        dir_region = os.path.join(dir_current, "initial")
         for prob in probs:
             logging.debug(f"Adding raster to final outputs: {prob}")
             # want to put each probability raster into the right date so we can combine them
@@ -200,24 +185,3 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         data['postprocessed'] = False
         # FIX: should we return e here?
     return data
-
-
-if __name__ == "__main__":
-    if 1 < len(sys.argv):
-        dir_fire = sys.argv[1]
-        if 2 < len(sys.argv):
-            dir_current = sys.argv[2]
-        else:
-            run_folder = os.path.dirname(dir_fire)
-            run_prefix = run_folder[:run_folder.find('_')]
-            dir_current = os.path.join(DIR_OUTPUT, f"current_{run_prefix}")
-        data = run_fire_from_folder(dir_fire, dir_current, verbose=True)
-        logging.info(f"Running fire in {dir_fire} completed")
-        if isinstance(data, Exception):
-            raise data
-        dates = [datetime.datetime.strftime(x, '%Y-%m-%d') for x in data['dates_out']]
-        logging.info(f"Produced results for days: [{', '.join(dates)}]")
-        logging.info(f"Outputs are in {data['dir_out']}")
-        logging.info(f"Log file is {data['log_file']}")
-    else:
-        logging.fatal("Must specify folder to run fire from")

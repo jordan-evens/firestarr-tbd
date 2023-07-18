@@ -4,13 +4,10 @@
 !.docker/requirements*.txt
 !gis
 gis/**/__pycache__
-!tbd/cffdrs-ng/*.py
+!tbd/src
 !tbd/CMakeLists.txt
 !tbd/fuel.lut
 !tbd/bounds.geojson
-!tbd/src
-!tbd/update.sh
-!tbd/*.py
+!tbd/scripts/*.sh
 !tbd/settings.ini
-!util/*.py
 !./config

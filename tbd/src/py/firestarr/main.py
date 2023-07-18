@@ -1,5 +1,3 @@
-import sys
-sys.path.append("../util")
 from common import *
 
 import os
@@ -17,7 +15,6 @@ MAX_NUM_DAYS = 14
 DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
-LOG_RUN = None
 
 PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
 
@@ -26,8 +23,6 @@ FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS = False
 
-DIR_LOG = "./logs"
-os.makedirs(DIR_LOG, exist_ok=True)
 LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
 )
@@ -73,14 +68,12 @@ import pytz
 import pyproj
 import subprocess
 
-sys.path.append("./cffdrs-ng")
+sys.path.append(DIR_SRC_PY_CFFDRSNG)
 import NG_FWI
 
 import tbd
 from tbd import FILE_SIM
 
-DIR_DATA = os.path.abspath("../data")
-DIR_SIMS = os.path.join(DIR_DATA, "sims")
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
     "TILED=YES",
@@ -95,88 +88,46 @@ CRS_OUTPUT = 3978
 # want a projection that's NAD83 based, project, and units are degrees
 # CRS = "ESRI:102002"
 CRS_SIMINPUT = 4269
-PLACEHOLDER_TITLE = "__TITLE__"
-FILE_HTML = os.path.join(DIR_DATA, "output/firestarr.html")
 WANT_DATES = [1, 2, 3, 7, 14]
 KM_TO_M = 1000
 # HACK: FIX: assume everything is this year
 YEAR = datetime.date.today().year
 
 
-def getPage(url):
-    logging.debug("Opening {}".format(url))
-    # query the website and return the html to the variable 'page'
-    page = urllib2.urlopen(url)
-    # parse the html using beautiful soup and return
-    return BeautifulSoup(page, "html.parser")
+def publish_all(dir_current=None, force=False):
+    dir_current = find_latest_outputs(dir_current)
+    merge_dirs(dir_current, force=force)
+    import publish_azure
+    publish_azure.upload_dir(dir_current)
+    # HACK: might be my imagination, but maybe there's a delay so wait a bit
+    time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
+    import publish_geoserver
+    publish_geoserver.publish_folder(dir_current)
 
 
-# ###################
-# import numpy as np
-# import rasterio
-# from rasterio.warp import calculate_default_transform, reproject, Resampling
-
-# def do_merge(file_out, files, dst_crs=CRS_DEFAULT):
-#     with rasterio.open('path/test.tif') as src:
-#         transform, width, height = calculate_default_transform(
-#             src.crs, dst_crs, src.width, src.height, *src.bounds)
-#         kwargs = src.meta.copy()
-#         kwargs.update({
-#             'crs': dst_crs,
-#             'transform': transform,
-#             'width': width,
-#             'height': height
-#         })
-#         with rasterio.open('path/test_wgs84.tif', 'w', **kwargs) as dst:
-#             for i in range(1, src.count + 1):
-#                 reproject(
-#                     source=rasterio.band(src, i),
-#                     destination=rasterio.band(dst, i),
-#                     src_transform=src.transform,
-#                     src_crs=src.crs,
-#                     dst_transform=transform,
-#                     dst_crs=dst_crs,
-#                     resampling=Resampling.nearest)
-# ###################
-
-
-def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
-    logging.info("Merging {}".format(dir_in))
-    # HACK: for some reason output tiles were both being called 'probability'
-    # import importlib
-    # importlib.reload(gr)
-    # TILE_SIZE = str(1024)
+def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
+    logging.info("Merging {}".format(dir_base))
     co = list(
         itertools.chain.from_iterable(map(lambda x: ["-co", x], creation_options))
     )
-    dir_base = os.path.dirname(dir_in)
     dir_parent = os.path.dirname(dir_base)
-    # dir_type = os.path.basename(dir_base)
     # want to put probability and perims together
-    dir_out = ensure_dir(
-        os.path.join(dir_parent, "combined", os.path.basename(dir_in))
-    )
+    dir_out = ensure_dir(os.path.join(dir_parent, "combined"))
     files_by_for_what = {}
-    for region in list_dirs(dir_in):
-        dir_region = os.path.join(dir_in, region)
-        if os.path.isdir(dir_region):
-            for for_what in list_dirs(dir_region):
-                dir_for_what = os.path.join(dir_region, for_what)
-                files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
-                    os.path.join(dir_for_what, x)
-                    for x in listdir_sorted(dir_for_what)
-                    if x.endswith(".tif")
-                ]
-    ymd_origin = os.path.basename(dir_in)
-    # HACK: need to worry about local vs UTC time here
-    # date_origin = datetime.datetime.strptime(ymd_origin, '%Y%m%d')
+    for for_what in list_dirs(dir_base):
+        dir_for_what = os.path.join(dir_base, for_what)
+        files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
+            os.path.join(dir_for_what, x)
+            for x in listdir_sorted(dir_for_what)
+            if x.endswith(".tif")
+        ]
     dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
     for_dates = [
         datetime.datetime.strptime(_, "%Y%m%d") for _ in dirs_what if "perim" != _
     ]
     date_origin = min(for_dates)
     # for_what, files = list(files_by_for_what.items())[-2]
-    for for_what, files in tqdm(files_by_for_what.items(), desc=f"Merging {dir_in}"):
+    for for_what, files in tqdm(files_by_for_what.items(), desc=f"Merging {dir_parent}"):
         dir_in_for_what = os.path.basename(for_what)
         # HACK: forget about tiling and just do what we need now
         if "perim" == dir_in_for_what:
@@ -253,64 +204,38 @@ def merge_dir(dir_in, run_id, force=False, creation_options=CREATION_OPTIONS):
     return dir_out
 
 
-def find_latest(dir_input=None, prefix="m3"):
-    if dir_input is None:
-        dir_default = os.path.join(tbd.DIR_OUTPUT, f"current_{prefix}")
-        dir_input = os.path.join(
-            dir_default,
-            [
+def find_latest_outputs(dir_output=None):
+    if dir_output is None:
+        dir_default = DIR_OUTPUT
+        dirs_with_initial =             [
                 x
                 for x in list_dirs(dir_default)
                 if os.path.isdir(os.path.join(dir_default, x, "initial"))
-            ][-1],
-        )
-        logging.info("Defaulting to directory %s", dir_input)
-    return dir_input
+            ]
+        if dirs_with_initial:
+            dir_output = os.path.join(
+                dir_default, dirs_with_initial[-1]
+            )
+            logging.info("Defaulting to directory %s", dir_output)
+            return dir_output
+        else:
+            raise RuntimeError(f"find_latest_outputs(\"{dir_output}\") failed: No run found")
+    return dir_output
 
 
 def merge_dirs(dir_input=None, dates=None, force=False):
-    dir_input = find_latest(dir_input)
+    dir_input = find_latest_outputs(dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
-    run_id = os.path.basename(dir_input)
-    results = []
-    # this expects folders to be '%Y%m%d' for start day for runs
-    # NOTE: should really only have one folder in here if we're saving to dir_input for each run
-    for d in sorted(list_dirs(dir_initial)):
-        if dates is None or d in dates:
-            dir_in = os.path.join(dir_initial, d)
-            results.append(merge_dir(dir_in, run_id, force=force))
-    if 0 == len(results):
-        logging.warning("No directories merged from %s", dir_initial)
-        return
-    # result = '/appl/data/output/combined/probability/20230610'
-    # result should now be the results for the most current day
-    # dir_out = os.path.join(os.path.dirname(dir_input), "current", os.path.basename(dir_input))
-    result = results[-1]
+    run_name = os.path.basename(dir_input)
+    run_id = run_name[run_name.index("_") + 1:]
+    result = merge_dir(dir_initial, run_id, force=force)
     logging.info("Final results of merge are in %s", result)
-    dir_zip = os.path.dirname(dir_input)
     run_id = os.path.basename(dir_input)
-    file_zip = os.path.join(dir_zip, f"{os.path.basename(dir_zip)}_{run_id}.zip")
+    file_zip = os.path.join(DIR_ZIP, f"{run_name}.zip")
     logging.info("Creating archive %s", file_zip)
     z = zip_folder(file_zip, result)
-    # # add a '/' so it uses the contents but not the folder
-    # args = [
-    #     "-c",
-    #     file_zip,
-    #     f"{result}/"
-    # ]
-    # # z = zipfile.main(*args)
-    # # args = f'-c "{file_zip}" "{result}    "'
-    # z = zipfile.main(args)
-    # want to zip up this folder
     return result
-    # dir_out = os.path.join(os.path.dirname(dir_input), "current")
-    # logging.info(f"Moving results to {dir_out}")
-    # if os.path.exists(dir_out):
-    #     logging.info("Removing existing results")
-    #     shutil.rmtree(dir_out)
-    # logging.info(f"Copying {result} to {dir_out}")
-    # shutil.copytree(result, dir_out)
 
 
 def get_fires_active(dir_out, status_include=None, status_omit=["OUT"]):
@@ -526,76 +451,6 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     return results
 
 
-# def group_fires(df_fires, group_distance_km=10):
-#     group_distance = group_distance_km * KM_TO_M
-#     crs = df_fires.crs
-#     groups = gpd.GeoDataFrame(geometry=df_fires['geometry'], crs=crs)
-#     pts = [x for x in groups.geometry if x.geom_type == 'Point']
-#     polys = [x for x in groups.geometry if x.geom_type != 'Point']
-#     df_polys = gpd.GeoDataFrame(geometry=polys, crs=crs)
-#     # we can check if any points are within polygons, and throw out any that are
-#     pts_keep = [p for p in pts if not np.any(df_polys.contains(p))]
-#     # just check polygon proximity to start
-#     # logging.info("Grouping polygons")
-#     with tqdm(desc="Grouping polygons", total=len(polys)) as tq:
-#         p_done = []
-#         while 1 < len(polys):
-#             p = polys.pop(0)
-#             compare_to = gpd.GeoDataFrame(geometry=polys, crs=crs)
-#             # distances should be in meters
-#             compare_to['dist'] = compare_to.geometry.distance(p)
-#             p_nearby = compare_to[compare_to.dist <= group_distance]
-#             if 0 < len(p_nearby):
-#                 p_far = compare_to[compare_to.dist > group_distance]
-#                 group = [p] + list(p_nearby.geometry)
-#                 tq.update(len(group))
-#                 # should be able to dissolve all polygons, but need to keep distinct points
-#                 # so do points later
-#                 p = gpd.GeoDataFrame(geometry=group, crs=crs).dissolve().geometry[0]
-#                 polys = [p] + list(p_far.geometry)
-#             else:
-#                 tq.update(1)
-#                 # nothing close to this, so done with it
-#                 p_done.append(p)
-#     # polys should just be 1 thing if we had any polygons
-#     df_polys = gpd.GeoDataFrame(geometry=p_done, crs=crs)
-#     df_pts = gpd.GeoDataFrame(geometry=pts_keep, crs=crs)
-#     df_closest = df_pts.sjoin_nearest(df_polys, how="left", max_distance=group_distance)
-#     results = []
-#     for i in range(len(df_polys)):
-#         p = df_polys.iloc[i].geometry
-#         pts = df_closest[df_closest.index_right == i]
-#         group = [p] + list(pts.geometry)
-#         results.append(gpd.GeoDataFrame(geometry=group, crs=crs))
-#     df_remaining = df_closest[np.isnan(df_closest.index_right)]
-#     results.extend([gpd.GeoDataFrame(geometry=[df_remaining.iloc[i].geometry], crs=crs) for i in range(len(df_remaining))])
-#     for i in range(len(results)):
-#         df_group = results[i]
-#         # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
-#         df_dissolve = df_group.dissolve()
-#         centroid = df_dissolve.centroid.to_crs(CRS).iloc[0]
-#         df_group['lon'] = centroid.x
-#         df_group['lat'] = centroid.y
-#         df_group['area_calc'] = df_group.area
-#         # # df_fires = df_fires.to_crs(CRS)
-#         # df_fires = df_fires.sort_values(['area_calc'])
-#         # HACK: name based on UTM coordinates
-#         r = gis.find_best_raster(centroid.x, YEAR)
-#         zone = gis.GetSpatialReference(r).ExportToWkt()
-#         zone_string = '_'.join(os.path.basename(r).split('_')[1:]).split('.')[0]
-#         # HACK: just use gpd since it's easier
-#         centroid_utm = gpd.GeoDataFrame(geometry=[centroid], crs=CRS).to_crs(zone).iloc[0].geometry
-#         df_group['fire_name'] = f"{zone_string}N_{int(centroid_utm.x)}_{int(centroid_utm.y)}"
-#         df_group['utm_zone'] = float(zone_string)
-#         BM_MULT = 10000
-#         easting = int((centroid_utm.x) // BM_MULT)
-#         northing = int((centroid_utm.y) // BM_MULT)
-#         df_group['basemap'] = int(f"{easting:02d}{northing:03d}")
-#         # it should be impossible for 2 groups to be in the same basemap, because they are 10km?
-#         results[i] = df_group
-#     results = pd.concat(results)
-#     return results
-
 
 def get_fires_folder(dir_fires, crs=CRS_DEFAULT):
     proj = pyproj.CRS(crs)
@@ -609,8 +464,6 @@ def get_fires_folder(dir_fires, crs=CRS_DEFAULT):
     return df_fires
 
 
-# def prepare_run_fire(dir_out, run_start, tf, df_fire, df_wx, max_days=None):
-# def run_fire(dir_out, run_start, tf, df_fire, df_wx, dir_current, max_days=None):
 def make_run_fire(
     dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days=None
 ):
@@ -775,7 +628,7 @@ def do_prep_fire(dir_fire, duration=None):
 
 
 def do_run_fire(for_what):
-    dir_fire, dir_current, verbose = for_what
+    dir_fire, dir_output, verbose = for_what
     # HACK: in case do_prep_fire() failed
     if isinstance(dir_fire, Exception):
         return dir_fire
@@ -800,7 +653,7 @@ def do_run_fire(for_what):
         return ex
     # at this point everything should be in the sim file, and we can just run it
     try:
-        result = tbd.run_fire_from_folder(dir_fire, dir_current, verbose=verbose)
+        result = tbd.run_fire_from_folder(dir_fire, dir_output, verbose=verbose)
         t = result["sim_time"]
         if t is not None:
             logging.debug("Took {}s to run simulations".format(t))
@@ -836,335 +689,326 @@ def check_failure(dir_fire, result, stop_on_any_failure):
 
 
 def do_prep_and_run_fire(for_what):
-    dir_fire, dir_current, verbose, duration = for_what
+    dir_fire, dir_output, verbose, duration = for_what
     # change maximum duration if duration is lower
     dir_ready = do_prep_fire(dir_fire, duration)
-    return do_run_fire((dir_ready, dir_current, verbose))
+    return do_run_fire((dir_ready, dir_output, verbose))
 
 
-def run_all_fires(
-    dir_fires=None, max_days=None, stop_on_any_failure=True, do_publish=True
-):
-    global LOG_RUN
-    # UTC time
-    run_start = datetime.datetime.now()
-    run_prefix = (
-        "m3"
-        if dir_fires is None
-        else dir_fires.replace("\\", "/").strip("/").replace("/", "_")
-    )
-    run_id = run_start.strftime("%Y%m%d%H%M")
-    run_name = f"{run_prefix}_{run_id}"
-    dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
-    LOG_RUN = add_log_file(
-        os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
-    )
-    logging.info("Starting run for %s", dir_out)
-    # UTC time
-    today = run_start.date()
-    yesterday = today - datetime.timedelta(days=1)
-    # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
-    crs = CRS_DEFAULT
-    proj = pyproj.CRS(crs)
-    # keep a copy of the settings for reference
-    shutil.copy("/appl/tbd/settings.ini", os.path.join(dir_out, "settings.ini"))
-    # also keep binary instead of trying to track source
-    shutil.copy("/appl/tbd/tbd", os.path.join(dir_out, "tbd"))
-    # "current" results folder to update based on new run data
-    dir_current = os.path.join(tbd.DIR_OUTPUT, f"current_{run_prefix}")
-    # HACK: want to keep all the runs and not just overwrite them, so use subfolder
-    dir_current = os.path.join(dir_current, run_id)
-    # only care about startup indices
-    if USE_CWFIS:
-        df_wx_startup = model_data.get_wx_cwfis(
-            dir_out, [today, yesterday], indices="ffmc,dmc,dc"
+class Run(object):
+    def __init__(self, dir_fires=None, dir=None) -> None:
+        self._dir_fires = dir_fires
+        self._prefix = (
+            "m3"
+            if self._dir_fires is None
+            else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
         )
-    else:
-        df_wx_startup = model_data.get_wx_cwfis_download(dir_out, [today, yesterday])
-    # we only want stations that have indices
-    for index in ["ffmc", "dmc", "dc"]:
-        df_wx_startup = df_wx_startup[~np.isnan(df_wx_startup[index])]
-    df_wx_startup_wgs = df_wx_startup.to_crs(proj)
-    df_wx = df_wx_startup_wgs
-    if dir_fires is None:
-        df_fires_active = get_fires_active(dir_out)
-        gis.save_shp(df_fires_active, os.path.join(dir_out, "df_fires_active"))
-        df_fires_groups = group_fires(df_fires_active)
-        df_fires = df_fires_groups
-    else:
-        df_fires = get_fires_folder(dir_fires, crs)
-        gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_folder"))
-        df_fires = df_fires.to_crs(crs)
-        # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
-        centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
-        df_fires["lon"] = centroids.x
-        df_fires["lat"] = centroids.y
-        # df_fires = df_fires.to_crs(CRS)
-    # filter out anything outside config bounds
-    df_fires = df_fires[df_fires['lon'] >= BOUNDS['longitude']['min']]
-    df_fires = df_fires[df_fires['lon'] <= BOUNDS['longitude']['max']]
-    df_fires = df_fires[df_fires['lat'] >= BOUNDS['latitude']['min']]
-    df_fires = df_fires[df_fires['lat'] <= BOUNDS['latitude']['max']]
-    # cut out the row as a DataFrame still so we can use crs and centroid
-    # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
-    file_bounds = BOUNDS["bounds"]
-    gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_groups"))
-    df_bounds = None
-    if file_bounds:
-        n_initial = len(df_fires)
-        df_bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
-        gis.save_shp(df_bounds, os.path.join(dir_out, "bounds"))
-        # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
-        df_fires = df_fires[df_fires.intersects(df_bounds.dissolve().iloc[0].geometry)]
-        logging.info(
-            f"Using groups in boundaries defined by {file_bounds} filters fires from {n_initial} to {len(df_fires)}"
-        )
-        gis.save_shp(df_fires, os.path.join(dir_out, "df_fires_groups_bounds"))
-    # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
-    # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
-    # takes the longest to run?
-    # FIX: consider sorting by startup indices or overall DSR for period instead?
-    fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(ascending=False)
-    dirs_fire = []
-    wx_failed = 0
-    # n = len(fire_areas.index)
-    # API_LIMIT=180
-    # API_LIMIT=150
-    # if n < API_LIMIT:
-    #     logging.info(f"Collecting weather right away since only {n} groups")
-    # for df_fire in tqdm(df_by_fire, desc='Separating fires'):
-    for fire_name in tqdm(fire_areas.index, desc="Separating fires"):
-        # fire_name = df_fire.iloc[0]['fire_name']
-        df_fire = df_fires[df_fires["fire_name"] == fire_name]
-        # NOTE: lat/lon are for centroid of group, not individual geometry
-        pt_centroid = df_fire.dissolve().centroid.iloc[0]
-        dists = df_wx.distance(pt_centroid)
-        # figure out startup indices yesterday
-        df_wx_actual = df_wx[dists == min(dists)]
-        ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][["ffmc", "dmc", "dc"]]
-        dir_fire = make_run_fire(
-            dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days
-        )
-        # get weather right away if not going to go over API limit
-        # if n < API_LIMIT:
-        #     wx_failed += check_failure(dir_fire, do_prep_fire(dir_fire), stop_on_any_failure)
-        dirs_fire.append(dir_fire)
-    # small limit due to amount of disk access
-    # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
-    logging.info(f"Getting weather for {len(dirs_fire)} fires")
-    dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
-    dirs_fire = dirs_ready
-    dir_out, dir_current, results, dates_out, totaltime = run_fires_in_dir_by_priority(
-        dir_current, df_bounds, do_publish
-    )
-    logging.removeHandler(LOG_RUN)
-    LOG_RUN = None
-    return dir_out, dir_current, results, dates_out, totaltime
+        self._log = None
+        FMT_RUNID = "%Y%m%d%H%M"
+        if dir is None:
+            self._start_time = datetime.datetime.now()
+            self._id = self._start_time.strftime(FMT_RUNID)
+            self._name = f"{self._prefix}_{self._id}"
+            self._dir = ensure_dir(os.path.join(DIR_SIMS, self._name))
+        else:
+            self._name = os.path.basename(dir)
+            if not self._name.startswith(self._prefix):
+                raise RuntimeError(f"Trying to resume simulation {dir} that didn't use fires from {self._prefix}")
+            self._dir = dir
+            self._id = self._name.replace(f"{self._prefix}_", "")
+            self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
+        self._start_time = self._start_time.astimezone(datetime.timezone.utc)
+        self._dir_data = ensure_dir(os.path.join(self._dir, "data"))
+        self._dir_model = ensure_dir(os.path.join(self._dir, "model"))
+        self._dir_sims = ensure_dir(os.path.join(self._dir, "sims"))
+        self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
 
+    def log_start(self):
+        if self._log is None:
+            self._log = add_log_file(
+                os.path.join(self._dir, f"log_{self._name}.log"),
+                  level=DEFAULT_FILE_LOG_LEVEL
+            )
 
-def run_fires_in_dir_by_priority(dir_current=None, df_priority=None, do_publish=True):
-    global LOG_RUN
-    dir_current = find_latest(dir_current)
-    had_log = LOG_RUN is None
-    if not had_log:
-        run_id = os.path.basename(dir_current)
-        prefix = os.path.basename(os.path.dirname(dir_current))
-        prefix = prefix[prefix.rindex("_") + 1 :]
-        run_name = f"{prefix}_{run_id}"
-        dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
-        LOG_RUN = add_log_file(
-            os.path.join(dir_out, "firestarr.txt"), level=DEFAULT_FILE_LOG_LEVEL
-        )
-    list_bounds = [None]
-    if df_priority is None:
+    def log_end(self):
+        if self._log:
+            logging.removeHandler(self._log)
+            self._log = None
+
+    def run_all_fires(self, max_days=None, do_publish=True):
+        self.log_start()
+        logging.info("Starting run for %s", self._name)
+        # UTC time
+        today = self._start_time.date()
+        yesterday = today - datetime.timedelta(days=1)
+        # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
+        crs = CRS_DEFAULT
+        proj = pyproj.CRS(crs)
+        # keep a copy of the settings for reference
+        shutil.copy("/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini"))
+        # also keep binary instead of trying to track source
+        shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
+        # only care about startup indices
+        if USE_CWFIS:
+            df_wx_startup = model_data.get_wx_cwfis(
+                self._dir_data, [today, yesterday], indices="ffmc,dmc,dc"
+            )
+        else:
+            df_wx_startup = model_data.get_wx_cwfis_download(self._dir_data, [today, yesterday])
+        # we only want stations that have indices
+        for index in ["ffmc", "dmc", "dc"]:
+            df_wx_startup = df_wx_startup[~np.isnan(df_wx_startup[index])]
+        df_wx_startup_wgs = df_wx_startup.to_crs(proj)
+        df_wx = df_wx_startup_wgs
+        if dir_fires is None:
+            # get perimeters from default service
+            df_fires_active = get_fires_active(self._dir_data)
+            gis.save_shp(df_fires_active, os.path.join(self._dir_data, "df_fires_active"))
+            df_fires_groups = group_fires(df_fires_active)
+            df_fires = df_fires_groups
+        else:
+            # get perimeters from a folder
+            df_fires = get_fires_folder(dir_fires, crs)
+            gis.save_shp(df_fires, os.path.join(self._dir_data, "df_fires_folder"))
+            df_fires = df_fires.to_crs(crs)
+            # HACK: can't just convert to lat/long crs and use centroids from that because it causes a warning
+            centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
+            df_fires["lon"] = centroids.x
+            df_fires["lat"] = centroids.y
+            # df_fires = df_fires.to_crs(CRS)
+        # filter out anything outside config bounds
+        df_fires = df_fires[df_fires['lon'] >= BOUNDS['longitude']['min']]
+        df_fires = df_fires[df_fires['lon'] <= BOUNDS['longitude']['max']]
+        df_fires = df_fires[df_fires['lat'] >= BOUNDS['latitude']['min']]
+        df_fires = df_fires[df_fires['lat'] <= BOUNDS['latitude']['max']]
+        # cut out the row as a DataFrame still so we can use crs and centroid
+        # df_by_fire = [df_fires.iloc[fire_id:(fire_id + 1)] for fire_id in range(len(df_fires))]
         file_bounds = BOUNDS["bounds"]
+        gis.save_shp(df_fires, os.path.join(self._dir_data, "df_fires_groups"))
+        df_bounds = None
         if file_bounds:
-            df_priority = gpd.read_file(file_bounds)
-    if df_priority is not None:
-        if "PRIORITY" in df_priority.columns:
-            df_priority["PRIORITY"] = df_priority["PRIORITY"].astype(float)
-            df_priority = df_priority.sort_values(["PRIORITY"])
-        list_bounds = [df_priority.iloc[i : i + 1] for i in range(len(df_priority))]
-        if "DURATION" in df_priority.columns:
-            df_duration = df_priority.dissolve(by="DURATION")
-            df_duration = df_duration.sort_values("DURATION", ascending=False)
-    # run for each boundary in order
-    total_time = 0
-    all_results = {}
-    all_dates = set([])
-    i = 0
-    for df_bounds in (pbar_area := tqdm(list_bounds, desc="Running by area")):
-        if "ID" in df_bounds.columns:
-            id_bounds = df_bounds.iloc[0]['ID']
-            pbar_area.set_description(f"Running by area: {id_bounds}")
-        else:
-            id_bounds = i
-        changed = False
-        dir_out, dir_current, results, dates_out, cur_time = run_fires_in_dir(
-            dir_current, df_bounds, df_duration
-        )
-        total_time += cur_time
-        for k, v in results.items():
-            changed = changed or v.get("ran", False)
-            if k not in all_results:
-                all_results[k] = v
-        all_dates = all_dates.union(set(dates_out))
-        n = len(results)
-        if do_publish and changed:
+            n_initial = len(df_fires)
+            df_bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
+            gis.save_shp(df_bounds, os.path.join(self._dir_data, "bounds"))
+            # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
+            df_fires = df_fires[df_fires.intersects(df_bounds.dissolve().iloc[0].geometry)]
             logging.info(
-                "Total of {} fires took {}s - average time is {}s".format(
-                    n, total_time, total_time / n
+                f"Using groups in boundaries defined by {file_bounds} filters fires from {n_initial} to {len(df_fires)}"
+            )
+            gis.save_shp(df_fires, os.path.join(self._dir_data, "df_fires_groups_bounds"))
+        # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
+        # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
+        # takes the longest to run?
+        # FIX: consider sorting by startup indices or overall DSR for period instead?
+        fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(ascending=False)
+        dirs_fire = []
+        wx_failed = 0
+        # n = len(fire_areas.index)
+        # API_LIMIT=180
+        # API_LIMIT=150
+        # if n < API_LIMIT:
+        #     logging.info(f"Collecting weather right away since only {n} groups")
+        # for df_fire in tqdm(df_by_fire, desc='Separating fires'):
+        for fire_name in tqdm(fire_areas.index, desc="Separating fires"):
+            # fire_name = df_fire.iloc[0]['fire_name']
+            df_fire = df_fires[df_fires["fire_name"] == fire_name]
+            # NOTE: lat/lon are for centroid of group, not individual geometry
+            pt_centroid = df_fire.dissolve().centroid.iloc[0]
+            dists = df_wx.distance(pt_centroid)
+            # figure out startup indices yesterday
+            df_wx_actual = df_wx[dists == min(dists)]
+            ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][["ffmc", "dmc", "dc"]]
+            dir_fire = make_run_fire(
+                self._dir_sims, df_fire, self._start_time, ffmc_old, dmc_old, dc_old, max_days
+            )
+            # get weather right away if not going to go over API limit
+            # if n < API_LIMIT:
+            #     wx_failed += check_failure(dir_fire, do_prep_fire(dir_fire), stop_on_any_failure)
+            dirs_fire.append(dir_fire)
+        # small limit due to amount of disk access
+        # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
+        logging.info(f"Getting weather for {len(dirs_fire)} fires")
+        dirs_ready = tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
+        # FIX: check the weather or folders here
+        results, dates_out, total_time = self.run_fires_in_dir_by_priority(df_bounds, do_publish)
+        self.log_end()
+        return results, dates_out, total_time
+
+    def run_fires_in_dir_by_priority(self, df_priority=None, do_publish=True):
+        self.log_start()
+        if df_priority is None:
+            file_bounds = BOUNDS["bounds"]
+            if file_bounds:
+                df_priority = gpd.read_file(file_bounds)
+        if df_priority is not None:
+            if "PRIORITY" in df_priority.columns:
+                df_priority["PRIORITY"] = df_priority["PRIORITY"].astype(float)
+                df_priority = df_priority.sort_values(["PRIORITY"])
+            list_bounds = [df_priority.iloc[i : i + 1] for i in range(len(df_priority))]
+            if "DURATION" in df_priority.columns:
+                df_duration = df_priority.dissolve(by="DURATION")
+                df_duration = df_duration.sort_values("DURATION", ascending=False)
+        # run for each boundary in order
+        total_time = 0
+        all_results = {}
+        all_dates = set([])
+        i = 0
+        for df_bounds in (pbar_area := tqdm(list_bounds, desc="Running by area")):
+            if "ID" in df_bounds.columns:
+                id_bounds = df_bounds.iloc[0]['ID']
+                pbar_area.set_description(f"Running by area: {id_bounds}")
+            else:
+                id_bounds = i
+            changed = False
+            results, dates_out, cur_time = self.run_fires_in_dir(
+                df_bounds, df_duration
+            )
+            total_time += cur_time
+            for k, v in results.items():
+                changed = changed or v.get("ran", False)
+                if k not in all_results:
+                    all_results[k] = v
+            all_dates = all_dates.union(set(dates_out))
+            n = len(results)
+            if do_publish and changed:
+                logging.info(
+                    "Total of {} fires took {}s - average time is {}s".format(
+                        n, total_time, total_time / n
+                    )
                 )
-            )
-            publish_all(dir_current, force=True)
-            logging.debug(f"Done publishing results for {id_bounds}")
-        i += 1
-    if not had_log:
-        logging.removeHandler(LOG_RUN)
-        LOG_RUN = None
-    return dir_out, dir_current, all_results, list(all_dates), total_time
+                publish_all(self._dir_output, force=True)
+                logging.debug(f"Done publishing results for {id_bounds}")
+            i += 1
+        self.log_end()
+        return all_results, list(all_dates), total_time
 
-
-def publish_all(dir_current=None, force=False):
-    dir_current = find_latest(dir_current)
-    merge_dirs(dir_current, force=force)
-    import publish_azure
-    publish_azure.upload_dir(dir_current)
-    # HACK: might be my imagination, but maybe there's a delay so wait a bit
-    time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
-    import publish_geoserver
-    publish_geoserver.publish_folder(dir_current)
-
-
-def run_fires_in_dir(dir_current=None, df_bounds=None, df_duration=None, verbose=False):
-    t0 = timeit.default_timer()
-    dir_current = find_latest(dir_current)
-    run_id = os.path.basename(dir_current)
-    prefix = os.path.basename(os.path.dirname(dir_current))
-    prefix = prefix[prefix.rindex("_") + 1 :]
-    run_name = f"{prefix}_{run_id}"
-    dir_out = ensure_dir(os.path.join(DIR_SIMS, run_name))
-    dirs_fire = list_dirs(dir_out)
-    if df_bounds is not None:
-        # logging.info("Clipping to bounds")
-        df_fires = gpd.read_file(os.path.join(dir_out, "df_fires_groups.shp"))
-        n_initial = len(dirs_fire)
-        if len(df_fires) != n_initial:
-            raise RuntimeError(
-                f"Expected {len(df_fires)} fire directories but have {n_initial}"
-            )
-        fire_names = set(df_fires["fire_name"])
-        dir_names = set(dirs_fire)
-        if len(fire_names.intersection(dir_names)) != len(fire_names):
-            raise RuntimeError(
-                f"Directory and fire list don't match:\n{fire_names}\n{dir_names}"
-            )
-        df_bounds_crs = df_bounds.to_crs(df_fires.crs)
-        df_fires = df_fires[
-            df_fires.intersects(df_bounds_crs.dissolve().iloc[0].geometry)
-        ]
-        # logging.info(f"Using groups in boundaries filters fires from {n_initial} to {len(df_fires)}")
-    if df_duration is not None:
-        df_duration_crs = df_duration.to_crs(df_fires.crs)
-        df_fires = df_fires.sjoin(df_duration_crs.reset_index()[['geometry', 'DURATION']])
-        del df_fires['index_right']
-    else:
-        df_fires['DURATION'] = MAX_NUM_DAYS
-    fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(
-        ascending=False
-    )
-    dirs_fire = list(fire_areas.index)
-    durations = list(df_fires.set_index(["fire_name"]).loc[list(dirs_fire), "DURATION"])
-    dirs_fire = [os.path.join(dir_out, x) for x in dirs_fire]
-    # verbose = logging.DEBUG >= logging.level
-    for_what = list(
-        zip(dirs_fire, [dir_current] * len(dirs_fire), [verbose] * len(dirs_fire), durations)
-    )
-    sim_results = tqdm_pool.pmap(
-        do_prep_and_run_fire,
-        for_what,
-        max_processes=CONCURRENT_SIMS,
-        desc="Running simulations",
-    )
-    dates_out = set([])
-    results = {}
-    sim_time = 0
-    sim_times = []
-    NUM_TRIES = 5
-    for i in range(len(sim_results)):
-        result = sim_results[i]
-        # HACK: should be in the same order as dirs_fire
-        dir_fire = dirs_fire[i]
-        if isinstance(result, Exception):
-            logging.warning(f"Exception running {dir_fire} was {result}")
-        tries = NUM_TRIES
-        # try again if failed
-        while (
-            isinstance(result, Exception)
-            or (not result.get("sim_finished", False))
-        ) and tries > 0:
-            logging.warning("Retrying running %s", dir_fire)
-            result = do_run_fire([dir_fire, dir_current, verbose])
-            tries -= 1
-        if (
-            isinstance(result, Exception)
-            or (not result.get("sim_finished", False))
-        ):
-            logging.warning("Could not run fire %s", dir_fire)
+    def run_fires_in_dir(self, df_bounds=None, df_duration=None, verbose=False):
+        t0 = timeit.default_timer()
+        dirs_fire = list_dirs(self._dir_sims)
+        if df_bounds is not None:
+            # logging.info("Clipping to bounds")
+            df_fires = gpd.read_file(os.path.join(self._dir_data, "df_fires_groups.shp"))
+            n_initial = len(dirs_fire)
+            if len(df_fires) != n_initial:
+                raise RuntimeError(
+                    f"Expected {len(df_fires)} fire directories but have {n_initial}"
+                )
+            fire_names = set(df_fires["fire_name"])
+            dir_names = set(dirs_fire)
+            if len(fire_names.intersection(dir_names)) != len(fire_names):
+                raise RuntimeError(
+                    f"Directory and fire list don't match:\n{fire_names}\n{dir_names}"
+                )
+            df_bounds_crs = df_bounds.to_crs(df_fires.crs)
+            df_fires = df_fires[
+                df_fires.intersects(df_bounds_crs.dissolve().iloc[0].geometry)
+            ]
+            # logging.info(f"Using groups in boundaries filters fires from {n_initial} to {len(df_fires)}")
+        if df_duration is not None:
+            df_duration_crs = df_duration.to_crs(df_fires.crs)
+            df_fires = df_fires.sjoin(df_duration_crs.reset_index()[['geometry', 'DURATION']])
+            del df_fires['index_right']
         else:
-            fire_name = result["fire_name"]
-            results[fire_name] = result
-            if result["sim_finished"]:
-                cur_time = result["sim_time"]
-                if cur_time:
-                    cur_time = int(cur_time)
-                    sim_time += cur_time
-                    sim_times.append(cur_time)
-                dates_out = dates_out.union(set(result.get("dates_out", [])))
-    logging.info("Done")
-    t1 = timeit.default_timer()
-    totaltime = t1 - t0
-    logging.info("Took %ds to run fires", totaltime)
-    logging.info("Successful simulations used %ds", sim_time)
-    if sim_times:
-        logging.info(
-            "Shortest simulation took %ds, longest took %ds",
-            min(sim_times),
-            max(sim_times),
+            df_fires['DURATION'] = MAX_NUM_DAYS
+        fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(
+            ascending=False
         )
-    return dir_out, dir_current, results, list(dates_out), totaltime
-
-
-# # FIX: need to update to work with new directory structure and return values
-# def merge_outputs(dir_out):
-#     for fire_name in list_dirs(dir_out))]:
-#         dir_fire = os.path.join(dir_out, fire_name)
-#         print(dir_fire)
-#         dir_out, log_name, dates_out = tbd.run_fire_from_folder(dir_fire)
-#     merge_dirs(dir_current)
-
-
-def merge_latest(dir_root):
-    dir_latest = list_dirs(dir_root)[-1]
-    return merge_dirs(os.path.join(dir_root, dir_latest))
+        dirs_fire = list(fire_areas.index)
+        durations = list(df_fires.set_index(["fire_name"]).loc[list(dirs_fire), "DURATION"])
+        dirs_fire = [os.path.join(self._dir_sims, x) for x in dirs_fire]
+        # verbose = logging.DEBUG >= logging.level
+        for_what = list(
+            zip(dirs_fire, [self._dir_output] * len(dirs_fire), [verbose] * len(dirs_fire), durations)
+        )
+        sim_results = tqdm_pool.pmap(
+            do_prep_and_run_fire,
+            for_what,
+            max_processes=CONCURRENT_SIMS,
+            desc="Running simulations",
+        )
+        dates_out = set([])
+        results = {}
+        sim_time = 0
+        sim_times = []
+        NUM_TRIES = 5
+        for i in range(len(sim_results)):
+            result = sim_results[i]
+            # HACK: should be in the same order as dirs_fire
+            dir_fire = dirs_fire[i]
+            if isinstance(result, Exception):
+                logging.warning(f"Exception running {dir_fire} was {result}")
+            tries = NUM_TRIES
+            # try again if failed
+            while (
+                isinstance(result, Exception)
+                or (not result.get("sim_finished", False))
+            ) and tries > 0:
+                logging.warning("Retrying running %s", dir_fire)
+                result = do_run_fire([dir_fire, self._dir_output, verbose])
+                tries -= 1
+            if (
+                isinstance(result, Exception)
+                or (not result.get("sim_finished", False))
+            ):
+                logging.warning("Could not run fire %s", dir_fire)
+            else:
+                fire_name = result["fire_name"]
+                results[fire_name] = result
+                if result["sim_finished"]:
+                    cur_time = result["sim_time"]
+                    if cur_time:
+                        cur_time = int(cur_time)
+                        sim_time += cur_time
+                        sim_times.append(cur_time)
+                    dates_out = dates_out.union(set(result.get("dates_out", [])))
+        logging.info("Done")
+        t1 = timeit.default_timer()
+        total_time = t1 - t0
+        logging.info("Took %ds to run fires", total_time)
+        logging.info("Successful simulations used %ds", sim_time)
+        if sim_times:
+            logging.info(
+                "Shortest simulation took %ds, longest took %ds",
+                min(sim_times),
+                max(sim_times),
+            )
+        return results, list(dates_out), total_time
 
 
 # alias just so it's easy to know how to resume last run
-def resume():
-    run_fires_in_dir_by_priority()
+def resume(dir_resume=None):
+    if dir_resume is None:
+        dirs = [
+            x
+            for x in list_dirs(DIR_SIMS)
+            if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
+        ]
+        if not dirs:
+            raise RuntimeError("No valid runs to resume")
+        dir_resume = dirs[-1]
+    dir_resume = os.path.join(DIR_SIMS, dir_resume)
+    logging.info(f"Resuming previous run in {dir_resume}")
+    run = Run(dir=dir_resume)
+    run.run_fires_in_dir_by_priority()
 
 
 if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
-    max_days = int(sys.argv[1]) if len(sys.argv) > 1 else MAX_NUM_DAYS
-    dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
-    if dir_fires and tbd.DIR_OUTPUT in os.path.abspath(dir_fires):
-        # if we give it a simulation directory then resume those sims
-        logging.info(f"Resuming simulations in {dir_fires}")
-        dir_out, dir_current, results, dates_out, totaltime = run_fires_in_dir_by_priority(dir_fires)
+    if "--resume" in sys.argv:
+        dir_resume = sys.argv[2] if 3 <= len(sys.argv) else None
+        resume(dir_resume)
     else:
-        dir_out, dir_current, results, dates_out, totaltime = run_all_fires(
-            dir_fires, max_days, do_publish=True
-        )
-    # simtimes, totaltime, dates = run_all_fires()
-    # dir_root = "/appl/data/output/current_m3"
+        max_days = int(sys.argv[1]) if len(sys.argv) > 1 else MAX_NUM_DAYS
+        dir_fires = sys.argv[2] if len(sys.argv) > 2 else None
+        if dir_fires and DIR_OUTPUT in os.path.abspath(dir_fires):
+            run = Run(dir=dir_fires)
+            # if we give it a simulation directory then resume those sims
+            logging.info(f"Resuming simulations in {dir_fires}")
+            dir_out, dir_current, results, dates_out, total_time = run.run_fires_in_dir_by_priority()
+        else:
+            run = Run(dir_fires=dir_fires)
+            dir_out, dir_current, results, dates_out, total_time = run.run_all_fires(
+                max_days, do_publish=True
+            )
+        # simtimes, total_time, dates = run_all_fires()
+        # dir_root = "/appl/data/output/current_m3"

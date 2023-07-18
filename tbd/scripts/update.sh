@@ -41,7 +41,7 @@ else
         || \
         ( \
             (echo ${CURDATE}: Running update  | tee -a ${FILE_LOG}) \
-            && (python main.py $*) \
+            && (python /appl/tbd/src/py/firestarr/main.py $*) \
             && (cp ${FILE_LATEST} ${FILE_CURRENT}) \
             && (echo $(date -u --rfc-3339=seconds): Done update  | tee -a ${FILE_LOG}) \
         ) \

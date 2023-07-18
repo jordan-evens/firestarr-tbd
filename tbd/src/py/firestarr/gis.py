@@ -1,7 +1,6 @@
 """Non-ArcGIS GIS utility code"""
 
 import sys
-sys.path.append("../util")
 from common import *
 import os
 

@@ -1,5 +1,3 @@
-import sys
-sys.path.append('../util')
 from common import *
 import geopandas as gpd
 import shapely.geometry

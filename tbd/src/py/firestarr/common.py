@@ -90,10 +90,16 @@ def ensure_dir(dir):
         sys.exit(-1)
     return dir
 
+DIR_SRC_PY_FIRSTARR = os.path.dirname(__file__)
+DIR_SRC_PY = os.path.dirname(DIR_SRC_PY_FIRSTARR)
+DIR_SRC_PY_CFFDRSNG = os.path.join(DIR_SRC_PY, "cffdrs-ng")
 
-DIR_OUT = "/appl/data/sims"
-DIR_DEFAULT_DOWNLOAD = ensure_dir(f"{DIR_OUT}/download/")
-
+DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
+DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))
+DIR_LOG = ensure_dir(os.path.join(DIR_DATA, "logs"))
+DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
+DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, 'output'))
+DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
 
 def listdir_sorted(path):
     return sorted(os.listdir(path))
@@ -276,7 +282,7 @@ def save_http(url, save_as=None, mode="wb", ignore_existing=False, check_modifie
     """
     # logging.debug("Saving {}".format(url))
     if save_as is None:
-        save_as = os.path.join(DIR_DEFAULT_DOWNLOAD, os.path.basename(url))
+        save_as = os.path.join(DIR_DOWNLOAD, os.path.basename(url))
     return get_http(url, save_as, mode, ignore_existing, check_modified)
 
 

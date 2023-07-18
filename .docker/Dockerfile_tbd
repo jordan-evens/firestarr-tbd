@@ -68,14 +68,14 @@ RUN . /appl/.venv/bin/activate \
 
 FROM tbd_dev AS tbd_dev_svc
 # run as root so we can redirect to where docker logs will show progress
-RUN sudo echo "*/15 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
+RUN sudo echo "*/5 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
 ENTRYPOINT sudo cron -f
 
 
 FROM gcc-cmake-with_libs AS tbd_build
 WORKDIR /appl/tbd
-COPY ./tbd/src src/
+COPY ./tbd/src/cpp src/cpp/
 COPY ./tbd/CMakeLists.txt .
 RUN cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
   && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
@@ -145,25 +145,13 @@ COPY --from=tbd_build /appl/tbd/tbd .
 COPY ./tbd/bounds.geojson /appl/tbd/
 COPY ./tbd/fuel.lut /appl/tbd/
 COPY ./tbd/settings.ini /appl/tbd/
-COPY ./tbd/update.sh /appl/tbd/
-RUN sed -i "/source \/appl\/.venv\/bin\/activate/d" /appl/tbd/update.sh
-# HACK: ./tbd/*.py takes forever
-COPY ./tbd/gis.py /appl/tbd/
-COPY ./tbd/main.py /appl/tbd/
-COPY ./tbd/publish_azure.py /appl/tbd/
-COPY ./tbd/publish_geoserver.py /appl/tbd/
-COPY ./tbd/publish_geoserver.sh /appl/tbd/
-COPY ./tbd/tbd.py /appl/tbd/
-WORKDIR /appl/util
-# COPY ./util/*.py .
-COPY ./util/common.py .
-COPY ./util/gdal_merge_max.py .
-COPY ./util/log.py .
-COPY ./util/model_data.py .
-COPY ./util/tqdm_pool.py .
-WORKDIR /appl/tbd/cffdrs-ng
-COPY ./tbd/cffdrs-ng/NG_FWI.py .
-COPY ./tbd/cffdrs-ng/util.py .
+COPY ./tbd/scripts /appl/tbd/scripts/
+RUN sed -i "/source \/appl\/.venv\/bin\/activate/d" /appl/tbd/scripts/update.sh
+COPY ./tbd/src/py/firestarr/*.py /appl/tbd/src/py/firestarr/
+WORKDIR /appl/tbd/src/py/cffdrs-ng
+COPY ./tbd/src/py/cffdrs-ng/NG_FWI.py .
+COPY ./tbd/src/py/cffdrs-ng/util.py .
+RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
 USER ${USERNAME}
 ENTRYPOINT /bin/bash
 
@@ -173,7 +161,7 @@ FROM tbd_prod AS tbd_prod_svc
 USER root
 RUN sed -i "s/CRONJOB_RUN=.*/CRONJOB_RUN=1/g" /appl/config
 # for some reason this is only set up for user to output to log
-# RUN sudo echo "*/15 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh > /proc/1/fd/1 2>/proc/1/fd/2'" > /etc/crontab
-RUN sudo echo "*/15 * * * * user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
+# RUN sudo echo "*/5 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/scripts/update.sh > /proc/1/fd/1 2>/proc/1/fd/2'" > /etc/crontab
+RUN sudo echo "*/5 * * * * user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
 ENTRYPOINT sudo cron -f
