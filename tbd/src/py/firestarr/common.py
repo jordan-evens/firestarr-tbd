@@ -33,6 +33,14 @@ import traceback
 import json
 import itertools
 
+CRS_LAMBERT_STATSCAN = 3347
+CRS_WGS84 = 4326
+CRS_LAMBERT_ATLAS = 3978
+CRS_NAD83 = 4269
+CRS_SIMINPUT = CRS_NAD83
+
+
+
 
 # still getting messages that look like they're from gdal when debug is on, but
 # maybe they're from a package that's using it?

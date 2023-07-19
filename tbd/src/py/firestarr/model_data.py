@@ -17,7 +17,6 @@ WFS_ROOT = 'https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&versi
 WFS_CIFFC = 'https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0'
 EPSG = 3978
 DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
-CRS_LAMBERT = "EPSG:3347"
 # DEFAULT_STATUS_KEEP = ["OC"]
 
 def query_geoserver(table_name, f_out, features=None, filter=None, wfs_root=WFS_ROOT, output_format="application/json"):
@@ -112,7 +111,7 @@ def get_m3_download(dir_out, df_fires, last_active_since=datetime.date.today()):
         perimeters = perimeters[perimeters['LASTDATE'] >= pd.to_datetime(last_active_since)]
     # hotspots = get_shp("hotspots")
     # don't have guess_id
-    df_perims = perimeters.to_crs(CRS_LAMBERT)
+    df_perims = perimeters.to_crs(CRS_LAMBERT_ATLAS)
     perimeters = perimeters.to_crs(EPSG)
     df_fires = df_fires.to_crs(df_perims.crs)
     df_join = df_fires.sjoin_nearest(df_perims, max_distance=1)

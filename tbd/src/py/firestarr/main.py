@@ -27,8 +27,6 @@ LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
 )
 logging.info("Starting main.py")
-CRS_LAMBERT = "EPSG:3347"
-CRS_DEFAULT = CRS_LAMBERT
 
 import urllib.request as urllib2
 from bs4 import BeautifulSoup
@@ -81,13 +79,6 @@ CREATION_OPTIONS = [
     "OVERVIEWS=AUTO",
     "NUM_THREADS=ALL_CPUS",
 ]
-CRS_OUTPUT = 3978
-
-# CRS_NAD83 = 4269
-# CRS_NAD83_CSRS = 4617
-# want a projection that's NAD83 based, project, and units are degrees
-# CRS = "ESRI:102002"
-CRS_SIMINPUT = 4269
 WANT_DATES = [1, 2, 3, 7, 14]
 KM_TO_M = 1000
 # HACK: FIX: assume everything is this year
@@ -147,7 +138,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full extent of the UTM zone?)
                 gis.project_raster(
-                    f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_OUTPUT}"
+                    f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_LAMBERT_ATLAS}"
                 )
                 changed = True
             return f_crs
@@ -187,7 +178,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                     nodata=-1,
                     resolution=100,
                     format=FORMAT_OUTPUT,
-                    crs=f"EPSG:{CRS_OUTPUT}",
+                    crs=f"EPSG:{CRS_LAMBERT_ATLAS}",
                     options=creation_options
                     + [
                         # shouldn't need much precision just for web display
@@ -452,7 +443,7 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
 
 
 
-def get_fires_folder(dir_fires, crs=CRS_DEFAULT):
+def get_fires_folder(dir_fires, crs=CRS_LAMBERT_STATSCAN):
     proj = pyproj.CRS(crs)
     df_fires = None
     for root, dirs, files in os.walk(dir_fires):
@@ -742,7 +733,7 @@ class Run(object):
         today = self._start_time.date()
         yesterday = today - datetime.timedelta(days=1)
         # NOTE: use NAD 83 / Statistics Canada Lambert since it should do well with distances
-        crs = CRS_DEFAULT
+        crs = CRS_LAMBERT_STATSCAN
         proj = pyproj.CRS(crs)
         # keep a copy of the settings for reference
         shutil.copy("/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini"))

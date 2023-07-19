@@ -4,7 +4,6 @@ import shapely.geometry
 import numpy as np
 
 DIR = ensure_dir('../data/tmp/bounds')
-CRS_WGS84 = 'WGS84'
 KM_TO_M = 1000
 BY_NAME = {}
 BUFFER_RESOLUTION=32
