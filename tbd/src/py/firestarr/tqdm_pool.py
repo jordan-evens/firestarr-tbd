@@ -1,5 +1,5 @@
-from tqdm import tqdm
 import multiprocess as mp
+from tqdm import tqdm
 
 MAX_PROCESSES = mp.cpu_count()
 # # HACK: trying to keep things from freezing all the time lately
@@ -9,6 +9,7 @@ MAX_PROCESSES = mp.cpu_count()
 def initializer():
     # get an error if don't import in initalizer
     import signal
+
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
@@ -24,18 +25,21 @@ def init_pool(processes=None, no_limit=False):
 
 
 def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
-    if (1 == max_processes
-        or (not no_limit
-            and 1 == MAX_PROCESSES)):
+    if 1 == max_processes or (not no_limit and 1 == MAX_PROCESSES):
         # don't bother with pool if only one process
         return [fct(x) for x in tqdm(values, *args, **kwargs)]
     pool = init_pool(max_processes, no_limit)
     try:
-        kwargs['total'] = len(values)
-        results = list(tqdm(pool.imap_unordered(lambda p: (p[0], fct(p[1])),
-                                                [(i, v) for i, v in enumerate(values)]),
-                            *args,
-                            **kwargs))
+        kwargs["total"] = len(values)
+        results = list(
+            tqdm(
+                pool.imap_unordered(
+                    lambda p: (p[0], fct(p[1])), [(i, v) for i, v in enumerate(values)]
+                ),
+                *args,
+                **kwargs
+            )
+        )
         result = [v[1] for v in sorted(results, key=lambda v: v[0])]
         # avoid Exception ignored in: <function Pool.__del__ at 0x7f8fd4c75d30>
         pool.terminate()

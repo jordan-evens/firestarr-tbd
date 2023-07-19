@@ -1,37 +1,32 @@
 """Shared code"""
 
-from log import *
-
-import math
-import urllib.request as urllib2
-import urllib.error
-from urllib.parse import urlparse
-import dateutil
-import time
-import dateutil.parser
-import datetime
-import os
-import io
-import subprocess
-import shlex
-import pandas as pd
 import configparser
+import datetime
+import itertools
+import json
+import os
 import re
-import numpy as np
 import shutil
-import certifi
 import ssl
-import sys
-import copy
-import zipfile
-import requests
-import zipfile
-from tqdm import tqdm
+import subprocess
 import sys
 import time
 import traceback
-import json
-import itertools
+import urllib.error
+import urllib.request as urllib2
+import zipfile
+from logging import getLogger
+from urllib.parse import urlparse
+
+import dateutil
+import dateutil.parser
+import pandas as pd
+import requests
+import tqdm_pool
+from log import logging
+from osgeo import gdal
+from tqdm import tqdm
+from urllib3.exceptions import InsecureRequestWarning
 
 CRS_LAMBERT_STATSCAN = 3347
 CRS_WGS84 = 4326
@@ -57,7 +52,6 @@ FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS = False
 
-import tqdm_pool
 # use default for pmap() if None
 # CONCURRENT_SIMS = None
 # # HACK: try just running a few at a time since time limit is low
@@ -76,28 +70,20 @@ KM_TO_M = 1000
 YEAR = datetime.date.today().year
 
 
-# still getting messages that look like they're from gdal when debug is on, but
+# was still getting messages that look like they're from gdal when debug is on, but
 # maybe they're from a package that's using it?
-from osgeo import gdal, ogr, osr
 
 gdal.UseExceptions()
 gdal.SetConfigOption("CPL_LOG", "/dev/null")
 gdal.SetConfigOption("CPL_DEBUG", "OFF")
 gdal.PushErrorHandler("CPLQuietErrorHandler")
-from logging import getLogger
 
 getLogger("gdal").setLevel(logging.WARNING)
-
-import fiona
-from fiona import collection
-from fiona.crs import from_epsg
-
 getLogger("fiona").setLevel(logging.WARNING)
 
-## So HTTPS transfers work properly
+# So HTTPS transfers work properly
 ssl._create_default_https_context = ssl._create_unverified_context
 
-from urllib3.exceptions import InsecureRequestWarning
 
 # Suppress only the single warning from urllib3 needed.
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
@@ -105,18 +91,24 @@ requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 VERIFY = False
 # VERIFY = True
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+    "User-Agent": " ".join(
+        [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "AppleWebKit/537.36 (KHTML, like Gecko)",
+            "Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
+        ]
+    ),
 }
 # HEADERS = {'User-Agent': 'WeatherSHIELD/0.93'}
 RETRY_MAX_ATTEMPTS = 10
 RETRY_DELAY = 2
 
-## bounds to use for clipping data
+# bounds to use for clipping data
 BOUNDS = None
 
-## file to load settings from
+# file to load settings from
 SETTINGS_FILE = r"../config"
-## loaded configuration
+# loaded configuration
 CONFIG = None
 
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
@@ -135,16 +127,21 @@ def ensure_dir(dir):
         sys.exit(-1)
     return dir
 
+
 DIR_SRC_PY_FIRSTARR = os.path.dirname(__file__)
 DIR_SRC_PY = os.path.dirname(DIR_SRC_PY_FIRSTARR)
 DIR_SRC_PY_CFFDRSNG = os.path.join(DIR_SRC_PY, "cffdrs-ng")
+sys.path.append(DIR_SRC_PY_CFFDRSNG)
+
+DIR_SCRIPTS = "/appl/tbd/scripts"
 
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
 DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))
 DIR_LOG = ensure_dir(os.path.join(DIR_DATA, "logs"))
 DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
-DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, 'output'))
+DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, "output"))
 DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
+
 
 def listdir_sorted(path):
     return sorted(os.listdir(path))
@@ -198,10 +195,13 @@ def read_config(force=False):
                 config.read_file(
                     itertools.chain(["[GLOBAL]"], configfile), source=SETTINGS_FILE
                 )
-        except:
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
             logging.info("Creating new config file {}".format(SETTINGS_FILE))
             # HACK: don't output section header because it breaks bash
             from io import StringIO
+
             buffer = StringIO()
             config.write(buffer)
             buffer.seek(0)
@@ -420,161 +420,12 @@ def copy_file(filename, toname):
     os.utime(toname, (filetime, filetime))
 
 
-def calc_rh(Td, T):
-    """!
-    Calculate RH based on dewpoint temp and temp
-    @param Td Dewpoint temperature (Celcius)
-    @param T Temperature (Celcius)
-    @return Relative Humidity (%)
-    """
-    m = 7.591386
-    Tn = 240.7263
-    return 100 * pow(10, (m * ((Td / (Td + Tn)) - (T / (T + Tn)))))
-
-
-def calc_ws(u, v):
-    """!
-    Calculate wind speed in km/h from U and V wind given in m/s
-    @param u Wind vector in U direction (m/s)
-    @param v Wind vector in V direction (m/s)
-    @return Calculated wind speed (km/h)
-    """
-    # NOTE: convert m/s to km/h
-    return 3.6 * math.sqrt(u * u + v * v)
-
-
-def calc_wd(u, v):
-    """!
-    Calculate wind direction from U and V wind given in m/s
-    @param u Wind vector in U direction (m/s)
-    @param v Wind vector in V direction (m/s)
-    @return Wind direction (degrees)
-    """
-    return ((180 / math.pi * math.atan2(-u, -v)) + 360) % 360
-
-
-def kelvin_to_celcius(t):
-    """!
-    Convert temperature in Kelvin to Celcius
-    @param t Temperature (Celcius)
-    @return Temperature (Kelvin)
-    """
-    return t - 273.15
-
-
-def apply_wind(w):
-    return w.apply(calc_wind, axis=1)
-
-
 def filterXY(data):
     data = data[data[:, :, 0] >= BOUNDS["latitude"]["min"]]
     data = data[data[:, 0] <= BOUNDS["latitude"]["max"]]
     data = data[data[:, 1] >= BOUNDS["longitude"]["min"]]
     data = data[data[:, 1] <= BOUNDS["longitude"]["max"]]
     return data
-
-
-def read_all_data(lib, coords, mask, matches, indices):
-    # def read_data(args):
-    # coords, mask, select, m = args
-    # logging.debug('{} => {}'.format(mask.format(m), select))
-    results = wgrib2.get_all_data(lib, mask, indices, matches)
-    # now we have an array of all the ensemble members
-    final = {}
-    for m in results.keys():
-        final[m] = []
-        for r in results[m]:
-            data = np.dstack([coords, r])
-            data = filterXY(data)
-            final[m].append(data[:, 2])
-        # logging.debug("Slice")
-    return final
-
-
-k_to_c = np.vectorize(kelvin_to_celcius)
-
-
-import concurrent.futures
-
-
-# def read_member(mask, select, coords, member, apcp):
-def read_members(lib, mask, matches, coords, members, apcp):
-    indices = ["TMP", "RH", "UGRD", "VGRD"]
-    if apcp:
-        indices = indices + ["APCP"]
-    results = read_all_data(lib, coords, mask, matches, indices)
-    temp = results["TMP"]
-    rh = results["RH"]
-    ugrd = results["UGRD"]
-    vgrd = results["VGRD"]
-    # temp = read_data(coords, mask, matches, 'TMP')
-    # rh = read_data(coords, mask, matches, 'RH')
-    # ugrd = read_data(coords, mask, matches, 'UGRD')
-    # vgrd = read_data(coords, mask, matches, 'VGRD')
-    # logging.debug("Kelvin")
-    temp = k_to_c(temp)
-    ws = []
-    wd = []
-    for u, v in zip(ugrd, vgrd):
-        # logging.debug("Speed")
-        u_2 = u * u
-        v_2 = v * v
-        sq = u_2 + v_2
-        ws.append(3.6 * np.sqrt(sq))
-        # logging.debug("Direction")
-        a = np.arctan2(-u, -v)
-        wd.append(((180 / math.pi * a) + 360) % 360)
-    # logging.debug("Stack")
-    columns = ["latitude", "longitude", "TMP", "RH", "WS", "WD"]
-    if apcp:
-        # pcp = read_data(coords, mask, matches, 'APCP')
-        pcp = results["APCP"]
-    coords = filterXY(coords)
-    # logging.debug("DataFrame")
-    results = []
-    for i in range(len(members)):
-        member = members[i]
-        wx = pd.DataFrame(coords, columns=["latitude", "longitude"])
-        wx["TMP"] = temp[i]
-        wx["RH"] = rh[i]
-        wx["WS"] = ws[i]
-        wx["WD"] = wd[i]
-        wx["APCP"] = pcp[i] if apcp else 0
-        wx["Member"] = member
-        results.append(wx)
-    # logging.debug("Done")
-    return pd.concat(results)
-
-
-from multiprocessing import Pool
-
-
-def read_grib(mask, apcp=True):
-    """!
-    Read grib data for desired time and field
-    @param mask File mask for path to source grib2 file to read
-    @return DataFrame with data read from file
-    """
-    lib = wgrib2.open()
-    matches = wgrib2.match(lib, mask.format("TMP"))
-    members = list(
-        map(
-            lambda x: 0
-            if -1 != x.find("low-res ctl")
-            else int(x[x.find("ENS=") + 4 :]),
-            matches,
-        )
-    )
-    matches = list(map(lambda x: x[x.rfind(":") :], matches))
-    coords = wgrib2.coords(lib, mask.format("TMP"))
-    results = read_members(lib, mask, matches, coords, members, apcp)
-    # logging.debug(output)
-    output = results.set_index(["latitude", "longitude", "Member"])
-    output = output[["TMP", "RH", "WS", "WD", "APCP"]]
-    # need to add fortime and generated
-    wgrib2.close(lib)
-    del lib
-    return output
 
 
 def try_remove(file):
@@ -586,7 +437,9 @@ def try_remove(file):
     try:
         logging.debug("Trying to delete file {}".format(file))
         os.remove(file)
-    except:
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception:
         pass
 
 
@@ -605,28 +458,13 @@ def download(url, suppress_exceptions=True):
         # logging.debug("Saving {}".format(url))
         return response.read()
     except urllib.error.URLError as ex:
-        # provide option so that we can call this from multiprocessing and still handle errors
+        # provide option so that we can call this from multiprocessing and
+        # still handle errors
         if suppress_exceptions:
             # HACK: return type and url for exception
             return {"type": type(ex), "url": url}
         ex.url = url
         raise ex
-
-
-def download_many(urls, fct=download):
-    """!
-    Download multiple URLs
-    @param urls List of multiple URLs to download
-    @param processes Number of processes to use for downloading
-    @return List of paths that files have been saved to
-    """
-    results = list(map(fct, list(urls)))
-    for i, result in enumerate(results):
-        if isinstance(result, dict):
-            # HACK: recreate error by trying to open it again
-            # if this works this time then everything is fine right?
-            results[i] = fct(get_what[i], suppress_exceptions=False)
-    return results
 
 
 def split_line(line):
@@ -670,7 +508,8 @@ def start_process(run_what, cwd):
 def finish_process(process):
     stdout, stderr = process.communicate()
     if process.returncode != 0:
-        # HACK: seems to be the exit code for ctrl + c events loop tries to run it again before it exits without this
+        # HACK: seems to be the exit code for ctrl + c events loop tries to run
+        # it again before it exits without this
         if -1073741510 == process.returncode:
             sys.exit(process.returncode)
         raise RuntimeError(
@@ -707,7 +546,7 @@ def dump_json(data, path):
         #      file is okay if dump fails
         # FIX: this is overkill but just want it to work for now
         s = json.dumps(data)
-        d = json.loads(s)
+        json.loads(s)
         with open(file, "w") as f:
             # HACK: not getting full string when using f.write(s)
             json.dump(data, f)

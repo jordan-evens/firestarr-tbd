@@ -1,7 +1,16 @@
-from logging import DEBUG, INFO, WARN, WARNING, ERROR, FATAL
-from logging import getLogger, StreamHandler, Formatter, FileHandler
-
 import logging.handlers as handlers
+from logging import (
+    DEBUG,
+    ERROR,
+    FATAL,
+    INFO,
+    WARN,
+    WARNING,
+    FileHandler,
+    Formatter,
+    StreamHandler,
+    getLogger,
+)
 
 DEFAULT_LEVEL = INFO
 DEFAULT_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
@@ -45,9 +54,7 @@ def add_log_file(file_log, level=None):
 
 
 def add_log_rotating(file_log, when="d", interval=1, level=None):
-    handler = handlers.TimedRotatingFileHandler(
-        file_log, when=when, interval=interval
-    )
+    handler = handlers.TimedRotatingFileHandler(file_log, when=when, interval=interval)
     return add_handler(handler, level)
 
 
