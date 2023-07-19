@@ -39,7 +39,41 @@ CRS_LAMBERT_ATLAS = 3978
 CRS_NAD83 = 4269
 CRS_SIMINPUT = CRS_NAD83
 
+# makes groups that are too big because it joins mutiple groups into a chain
+# DEFAULT_GROUP_DISTANCE_KM = 60
+# also too big
+# DEFAULT_GROUP_DISTANCE_KM = 40
+DEFAULT_GROUP_DISTANCE_KM = 20
+# MAX_NUM_DAYS = 3
+# MAX_NUM_DAYS = 7
+MAX_NUM_DAYS = 14
+# DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 7
+DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
 
+PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
+
+# FORMAT_OUTPUT = "COG"
+FORMAT_OUTPUT = "GTiff"
+
+USE_CWFIS = False
+
+import tqdm_pool
+# use default for pmap() if None
+# CONCURRENT_SIMS = None
+# # HACK: try just running a few at a time since time limit is low
+CONCURRENT_SIMS = max(1, tqdm_pool.MAX_PROCESSES // 2)
+
+CREATION_OPTIONS = [
+    "COMPRESS=LZW",
+    "TILED=YES",
+    "BLOCKSIZE=512",
+    "OVERVIEWS=AUTO",
+    "NUM_THREADS=ALL_CPUS",
+]
+WANT_DATES = [1, 2, 3, 7, 14]
+KM_TO_M = 1000
+# HACK: FIX: assume everything is this year
+YEAR = datetime.date.today().year
 
 
 # still getting messages that look like they're from gdal when debug is on, but
@@ -84,6 +118,9 @@ BOUNDS = None
 SETTINGS_FILE = r"../config"
 ## loaded configuration
 CONFIG = None
+
+DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
+# DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
 
 def ensure_dir(dir):

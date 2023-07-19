@@ -3,26 +3,6 @@ from common import *
 import os
 import math
 
-# makes groups that are too big because it joins mutiple groups into a chain
-# DEFAULT_GROUP_DISTANCE_KM = 60
-# also too big
-# DEFAULT_GROUP_DISTANCE_KM = 40
-DEFAULT_GROUP_DISTANCE_KM = 20
-# MAX_NUM_DAYS = 3
-# MAX_NUM_DAYS = 7
-MAX_NUM_DAYS = 14
-# DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 7
-DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
-DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
-# DEFAULT_FILE_LOG_LEVEL = logging.INFO
-
-PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
-
-# FORMAT_OUTPUT = "COG"
-FORMAT_OUTPUT = "GTiff"
-
-USE_CWFIS = False
-
 LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
 )
@@ -44,11 +24,6 @@ import sys
 import numpy as np
 import geopandas as gpd
 from tqdm import tqdm
-import tqdm_pool
-# use default for pmap() if None
-# CONCURRENT_SIMS = None
-# # HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = max(1, tqdm_pool.MAX_PROCESSES // 2)
 
 
 sys.path.append(os.path.dirname(sys.executable))
@@ -71,18 +46,6 @@ import NG_FWI
 
 import tbd
 from tbd import FILE_SIM
-
-CREATION_OPTIONS = [
-    "COMPRESS=LZW",
-    "TILED=YES",
-    "BLOCKSIZE=512",
-    "OVERVIEWS=AUTO",
-    "NUM_THREADS=ALL_CPUS",
-]
-WANT_DATES = [1, 2, 3, 7, 14]
-KM_TO_M = 1000
-# HACK: FIX: assume everything is this year
-YEAR = datetime.date.today().year
 
 
 def publish_all(dir_current=None, force=False):
