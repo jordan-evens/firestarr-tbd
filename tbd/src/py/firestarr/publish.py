@@ -8,7 +8,7 @@ import gis
 import tqdm_pool
 from common import (
     CREATION_OPTIONS,
-    CRS_LAMBERT_ATLAS,
+    CRS_COMPARISON,
     DIR_OUTPUT,
     DIR_ZIP,
     FORMAT_OUTPUT,
@@ -81,7 +81,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full extent of the UTM zone?)
                 gis.project_raster(
-                    f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_LAMBERT_ATLAS}"
+                    f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{CRS_COMPARISON}"
                 )
                 changed = True
             return f_crs
@@ -124,7 +124,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                     nodata=-1,
                     resolution=100,
                     format=FORMAT_OUTPUT,
-                    crs=f"EPSG:{CRS_LAMBERT_ATLAS}",
+                    crs=f"EPSG:{CRS_COMPARISON}",
                     options=creation_options
                     + [
                         # shouldn't need much precision just for web display

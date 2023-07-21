@@ -9,20 +9,19 @@ import gis
 import model_data
 import NG_FWI
 import numpy as np
-import pyproj
 import pytz
 import tqdm
 import tqdm_pool
 from common import (
     BOUNDS,
     CONCURRENT_SIMS,
-    CRS_LAMBERT_STATSCAN,
+    CRS_COMPARISON,
     CRS_SIMINPUT,
+    CRS_WGS84,
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
     MAX_NUM_DAYS,
-    USE_CWFIS,
     WANT_DATES,
     ParseError,
     dump_json,
@@ -30,7 +29,8 @@ from common import (
     list_dirs,
     logging,
 )
-from fires import get_fires_active, get_fires_folder, group_fires
+from datasources.cwfis import SourceFireActive, SourceFwiCwfis
+from fires import get_fires_folder, group_fires
 from log import add_log_file
 from publish import publish_all
 
@@ -316,8 +316,8 @@ class Run(object):
         today = self._start_time.date()
         yesterday = today - datetime.timedelta(days=1)
         # NOTE: use NAD 83 / Statistics Canada Lambert since it work with distances
-        crs = CRS_LAMBERT_STATSCAN
-        proj = pyproj.CRS(crs)
+        crs = CRS_COMPARISON
+        # proj = pyproj.CRS(crs)
         # keep a copy of the settings for reference
         shutil.copy(
             "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
@@ -325,22 +325,11 @@ class Run(object):
         # also keep binary instead of trying to track source
         shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
         # only care about startup indices
-        if USE_CWFIS:
-            df_wx_startup = model_data.get_wx_cwfis(
-                self._dir_data, [today, yesterday], indices="ffmc,dmc,dc"
-            )
-        else:
-            df_wx_startup = model_data.get_wx_cwfis_download(
-                self._dir_data, [today, yesterday]
-            )
-        # we only want stations that have indices
-        for index in ["ffmc", "dmc", "dc"]:
-            df_wx_startup = df_wx_startup[~np.isnan(df_wx_startup[index])]
-        df_wx_startup_wgs = df_wx_startup.to_crs(proj)
-        df_wx = df_wx_startup_wgs
+        src_fwi = SourceFwiCwfis(self._dir_data)
         if self._dir_fires is None:
             # get perimeters from default service
-            df_fires_active = get_fires_active(self._dir_data)
+            src_fires_active = SourceFireActive(self._dir_data)
+            df_fires_active = src_fires_active.get_fires()
             gis.save_shp(
                 df_fires_active, os.path.join(self._dir_data, "df_fires_active")
             )
@@ -397,11 +386,14 @@ class Run(object):
             # fire_name = df_fire.iloc[0]['fire_name']
             df_fire = df_fires[df_fires["fire_name"] == fire_name]
             # NOTE: lat/lon are for centroid of group, not individual geometry
-            pt_centroid = df_fire.dissolve().centroid.iloc[0]
-            dists = df_wx.distance(pt_centroid)
-            # figure out startup indices yesterday
-            df_wx_actual = df_wx[dists == min(dists)]
-            ffmc_old, dmc_old, dc_old = df_wx_actual.iloc[0][["ffmc", "dmc", "dc"]]
+            pt_centroid = df_fire.dissolve().centroid.to_crs(CRS_WGS84).iloc[0]
+            lat, lon = pt_centroid.y, pt_centroid.x
+            df_wx_actual = src_fwi.get_fwi(
+                lat, lon, datetime_start=yesterday, datetime_end=today
+            )
+            ffmc_old, dmc_old, dc_old, date_fwi = df_wx_actual.sort_values(
+                ["date"], ascending=False
+            ).iloc[0][["ffmc", "dmc", "dc", "date"]]
             dir_fire = make_run_fire(
                 self._dir_sims,
                 df_fire,

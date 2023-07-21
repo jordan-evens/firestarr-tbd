@@ -13,4 +13,5 @@ pyfire/venv
 *.whl
 **/logs
 **/build
+**/private
 

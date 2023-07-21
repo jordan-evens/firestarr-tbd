@@ -1,24 +1,11 @@
-import configparser
 import datetime
-import io
 import os
 import urllib
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from common import (
-    CONFIG,
-    CRS_LAMBERT_ATLAS,
-    ParseError,
-    get_http,
-    logging,
-    save_http,
-    try_save,
-)
-from ratelimit import limits, sleep_and_retry
-
-ONE_MINUTE = 60
+from common import CRS_COMPARISON, logging, save_http, try_save
 
 WFS_ROOT = (
     "https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0"
@@ -37,7 +24,7 @@ def query_geoserver(
     wfs_root=WFS_ROOT,
     output_format="application/json",
 ):
-    logging.debug(f"Getting table {table_name} in projection {str(CRS_LAMBERT_ATLAS)}")
+    logging.debug(f"Getting table {table_name} in projection {str(CRS_COMPARISON)}")
     request_url = "&".join(
         [
             f"{wfs_root}&request=GetFeature",
@@ -57,21 +44,6 @@ def query_geoserver(
         request_url,
         check_code=False,
     )
-
-
-def get_fires_m3(dir_out, last_active_since=datetime.date.today()):
-    f_out = f"{dir_out}/m3_polygons.json"
-    features = "uid,geometry,hcount,firstdate,lastdate,area,guess_id"
-    table_name = "public:m3_polygons"
-    if last_active_since:
-        filter = f"lastdate >= {last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
-    f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
-    logging.debug(f"Reading {f_json}")
-    gdf = gpd.read_file(f_json)
-    return gdf, f_json
-    # fires_shp = f_out.replace('.json', '.shp')
-    # gdf.to_file(fires_shp)
-    # return gdf, fires_shp
 
 
 # def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
@@ -124,46 +96,6 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     )
     gdf = gpd.read_file(f_json)
     return gdf, f_json
-
-
-def get_m3_download(dir_out, df_fires, last_active_since=datetime.date.today()):
-    def get_shp(filename):
-        for ext in ["dbf", "prj", "shx", "shp"]:
-            url = f"https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/{filename}.{ext}"
-            f_out = os.path.join(dir_out, os.path.basename(url))
-            f = try_save(lambda _: save_http(_, f_out), url)
-        gdf = gpd.read_file(f)
-        return gdf
-
-    perimeters = get_shp("perimeters")
-    perimeters["LASTDATE"] = pd.to_datetime(perimeters["LASTDATE"])
-    if last_active_since:
-        perimeters = perimeters[
-            perimeters["LASTDATE"] >= pd.to_datetime(last_active_since)
-        ]
-    # hotspots = get_shp("hotspots")
-    # don't have guess_id
-    df_perims = perimeters.to_crs(CRS_LAMBERT_ATLAS)
-    perimeters = perimeters.to_crs(CRS_LAMBERT_ATLAS)
-    df_fires = df_fires.to_crs(df_perims.crs)
-    df_join = df_fires.sjoin_nearest(df_perims, max_distance=1)
-    groups = df_join.groupby(["UID"])
-    STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
-    perimeters["guess_id"] = None
-
-    def find_rank(x):
-        # rank is highest if unknown value
-        return STATUS_RANK.index(x) if x in STATUS_RANK else (len(STATUS_RANK) - 1)
-
-    # use fire with highest ranking status
-    for k, v in groups.groups.items():
-        g = groups.get_group(k)[:]
-        g["status"] = g["field_stage_of_control_status"].apply(find_rank)
-        f = g.sort_values(["status"], ascending=False).iloc[0]
-        perimeters.loc[perimeters["UID"] == k, "guess_id"] = f.field_agency_fire_id
-    perimeters.columns = [x.lower() for x in perimeters.columns]
-    perimeters = perimeters.rename(columns={"uid": "id"})
-    return perimeters
 
 
 def get_wx_cwfis_download(dir_out, dates, indices=""):
@@ -253,96 +185,9 @@ def get_wx_cwfis(
     df["day"] = df.apply(lambda x: "{:02d}".format(x["date"].day), axis=1)
     df = df.sort_values(["year", "month", "day", "lat", "lon"])
     # from looking at wms capabilities
-    crs = CRS_LAMBERT_ATLAS
+    crs = CRS_COMPARISON
     gdf = gpd.GeoDataFrame(df, geometry=df["the_geom"], crs=crs)
     return gdf
-
-
-def get_spotwx_key():
-    try:
-        key = CONFIG.get("SPOTWX_API_KEY", "")
-    except configparser.NoSectionError:
-        key = None
-    if key is None or 0 == len(key):
-        raise RuntimeError("spotwx api key is required")
-    # get rid of any quotes that might be in settings file
-    key = key.replace('"', "").replace("'", "")
-    return key
-
-
-def get_spotwx_limit():
-    return int(CONFIG.get("SPOTWX_API_LIMIT"))
-
-
-@sleep_and_retry
-@limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
-def get_wx_ensembles(lat, lon):
-    SPOTWX_KEY = get_spotwx_key()
-    model = "geps"
-    url = "https://spotwx.io/api.php3?" + "&".join(
-        [
-            f"key={SPOTWX_KEY}",
-            f"model={model}",
-            f"lat={round(lat, 3)}",
-            f"lon={round(lon, 3)}",
-            "ens_val=members",
-        ]
-    )
-    logging.debug(url)
-
-    def get_initial(url):
-        content = get_http(url)
-        content = str(content, encoding="utf-8")
-        df_initial = pd.read_csv(io.StringIO(content))
-        if "UTC_OFFSET" not in df_initial.columns:
-            raise ParseError(content)
-        return df_initial
-
-    # HACK: wrap initial parse with this so it retries if we get a page that
-    # isn't what we want back
-    df_initial = try_save(get_initial, url, check_code=False)
-    if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
-        raise RuntimeError("Expected weather in UTC time")
-    index = ["MODEL", "LAT", "LON", "ISSUEDATE", "UTC_OFFSET", "DATETIME"]
-    # all_cols = np.unique([x[: x.index("_")] for x in df_initial.columns if "_" in x])
-    cols = ["TMP", "RH", "WSPD", "WDIR", "PRECIP"]
-    keep_cols = [
-        x
-        for x in df_initial.columns
-        if x in index or np.any([x.startswith(f"{_}_") for _ in cols])
-    ]
-    df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
-    df_by_var["var"] = df_by_var["variable"].apply(lambda x: x[: x.rindex("_")])
-    df_by_var["id"] = [
-        0 if "CONTROL" == id else int(id)
-        for id in df_by_var["variable"].apply(lambda x: x[x.rindex("_") + 1 :])
-    ]
-    del df_by_var["variable"]
-    df_wx = pd.pivot(
-        df_by_var, index=index + ["id"], columns="var", values="value"
-    ).reset_index()
-    df_wx.groupby(["id"])["PRECIP_ttl"]
-    df = None
-    for i, g in df_wx.groupby(["id"]):
-        g["PRECIP"] = (g["PRECIP_ttl"] - g["PRECIP_ttl"].shift(1)).fillna(0)
-        df = pd.concat([df, g])
-    # HACK: for some reason rain is less in subsequent hours sometimes, so make
-    # sure nothing is negative
-    df.loc[df["PRECIP"] < 0, "PRECIP"] = 0
-    del df["PRECIP_ttl"]
-    df = df.reset_index()
-    del df["index"]
-    df.columns.name = ""
-    # make sure we're in UTC and use that for now
-    assert [0] == np.unique(df["UTC_OFFSET"])
-    df.columns = [x.lower() for x in df.columns]
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
-    df["issuedate"] = pd.to_datetime(df["issuedate"])
-    index_final = ["model", "lat", "lon", "issuedate", "id"]
-    df = df[index_final + ["datetime", "temp", "rh", "wd", "ws", "precip"]]
-    df = df.set_index(index_final)
-    return df
 
 
 def wx_interpolate(df):

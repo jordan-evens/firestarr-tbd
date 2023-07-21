@@ -338,7 +338,8 @@ def save_shp(df, path):
         keys = [x for x in df.columns if x not in cols]
         for k in [x for x in df.columns if x != "geometry"]:
             v = df.dtypes[k]
-            if np.issubdtype(v, np.datetime64):
+            # HACK: convert any type of date into string
+            if "date" in str(v).lower():
                 df[k] = df[k].astype(str)
         df.set_index(keys).to_file(file)
     except KeyboardInterrupt as ex:
