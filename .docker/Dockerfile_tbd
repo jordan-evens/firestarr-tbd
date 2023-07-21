@@ -147,7 +147,7 @@ COPY ./tbd/fuel.lut /appl/tbd/
 COPY ./tbd/settings.ini /appl/tbd/
 COPY ./tbd/scripts /appl/tbd/scripts/
 RUN sed -i "/source \/appl\/.venv\/bin\/activate/d" /appl/tbd/scripts/update.sh
-COPY ./tbd/src/py/firestarr/*.py /appl/tbd/src/py/firestarr/
+COPY ./tbd/src/py/firestarr /appl/tbd/src/py/firestarr/
 WORKDIR /appl/tbd/src/py/cffdrs-ng
 COPY ./tbd/src/py/cffdrs-ng/NG_FWI.py .
 COPY ./tbd/src/py/cffdrs-ng/util.py .

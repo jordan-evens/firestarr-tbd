@@ -3,7 +3,6 @@
 
 !.docker/requirements*.txt
 !gis
-gis/**/__pycache__
 !tbd/src
 !tbd/CMakeLists.txt
 !tbd/fuel.lut
@@ -11,3 +10,5 @@ gis/**/__pycache__
 !tbd/scripts/*.sh
 !tbd/settings.ini
 !./config
+
+**/__pycache__
