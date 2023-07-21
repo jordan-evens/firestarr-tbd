@@ -10,7 +10,8 @@ import model_data
 import NG_FWI
 import numpy as np
 import pytz
-import tqdm
+from tqdm import tqdm
+from datasources.datatypes import SourceFeature, SourceFire
 import tqdm_pool
 from common import (
     BOUNDS,
@@ -267,6 +268,44 @@ def do_prep_and_run_fire(for_what):
     return do_run_fire((dir_ready, dir_output, verbose))
 
 
+class SourceFireGroup(SourceFire):
+    def __init__(self, dir_out, dir_fires) -> None:
+        super().__init__(bounds=None)
+        self._dir_out = dir_out
+        self._dir_fires = dir_fires
+
+    def _get_fires(self):
+        if self._dir_fires is None:
+            # get perimeters from default service
+            src_fires_active = SourceFireActive(self._dir_out)
+            df_fires_active = src_fires_active.get_fires()
+            gis.save_shp(
+                df_fires_active, os.path.join(self._dir_out, "df_fires_active")
+            )
+            # don't add in fires that don't match because they're out
+            df_fires_groups = group_fires(df_fires_active)
+            df_fires_groups["status"] = None
+            df_fires = df_fires_groups
+        else:
+            # get perimeters from a folder
+            df_fires = get_fires_folder(self._dir_fires, CRS_COMPARISON)
+            gis.save_shp(df_fires, os.path.join(self._dir_out, "df_fires_folder"))
+            df_fires = df_fires.to_crs(CRS_COMPARISON)
+            # HACK: can't just convert to lat/long crs and use centroids from that
+            # because it causes a warning
+            centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
+            df_fires["lon"] = centroids.x
+            df_fires["lat"] = centroids.y
+            # df_fires = df_fires.to_crs(CRS)
+        # filter out anything outside config bounds
+        df_fires = df_fires[df_fires["lon"] >= BOUNDS["longitude"]["min"]]
+        df_fires = df_fires[df_fires["lon"] <= BOUNDS["longitude"]["max"]]
+        df_fires = df_fires[df_fires["lat"] >= BOUNDS["latitude"]["min"]]
+        df_fires = df_fires[df_fires["lat"] <= BOUNDS["latitude"]["max"]]
+        gis.save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups"))
+        return df_fires
+
+
 class Run(object):
     def __init__(self, dir_fires=None, dir=None) -> None:
         self._dir_fires = dir_fires
@@ -315,8 +354,6 @@ class Run(object):
         # UTC time
         today = self._start_time.date()
         yesterday = today - datetime.timedelta(days=1)
-        # NOTE: use NAD 83 / Statistics Canada Lambert since it work with distances
-        crs = CRS_COMPARISON
         # proj = pyproj.CRS(crs)
         # keep a copy of the settings for reference
         shutil.copy(
@@ -326,34 +363,9 @@ class Run(object):
         shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
         # only care about startup indices
         src_fwi = SourceFwiCwfis(self._dir_data)
-        if self._dir_fires is None:
-            # get perimeters from default service
-            src_fires_active = SourceFireActive(self._dir_data)
-            df_fires_active = src_fires_active.get_fires()
-            gis.save_shp(
-                df_fires_active, os.path.join(self._dir_data, "df_fires_active")
-            )
-            # don't add in fires that don't match because they're out
-            df_fires_groups = group_fires(df_fires_active)
-            df_fires = df_fires_groups
-        else:
-            # get perimeters from a folder
-            df_fires = get_fires_folder(self._dir_fires, crs)
-            gis.save_shp(df_fires, os.path.join(self._dir_data, "df_fires_folder"))
-            df_fires = df_fires.to_crs(crs)
-            # HACK: can't just convert to lat/long crs and use centroids from that
-            # because it causes a warning
-            centroids = df_fires.centroid.to_crs(CRS_SIMINPUT)
-            df_fires["lon"] = centroids.x
-            df_fires["lat"] = centroids.y
-            # df_fires = df_fires.to_crs(CRS)
-        # filter out anything outside config bounds
-        df_fires = df_fires[df_fires["lon"] >= BOUNDS["longitude"]["min"]]
-        df_fires = df_fires[df_fires["lon"] <= BOUNDS["longitude"]["max"]]
-        df_fires = df_fires[df_fires["lat"] >= BOUNDS["latitude"]["min"]]
-        df_fires = df_fires[df_fires["lat"] <= BOUNDS["latitude"]["max"]]
+        src_groups = SourceFireGroup(self._dir_data, self._dir_fires)
+        df_fires = src_groups.get_fires()
         file_bounds = BOUNDS["bounds"]
-        gis.save_shp(df_fires, os.path.join(self._dir_data, "df_fires_groups"))
         df_bounds = None
         if file_bounds:
             n_initial = len(df_fires)
@@ -404,8 +416,6 @@ class Run(object):
                 max_days,
             )
             dirs_fire.append(dir_fire)
-        # small limit due to amount of disk access
-        # num_threads = int(min(len(df_fires), multiprocessing.cpu_count() / 4))
         logging.info(f"Getting weather for {len(dirs_fire)} fires")
         tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
         # FIX: check the weather or folders here

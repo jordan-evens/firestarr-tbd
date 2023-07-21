@@ -368,11 +368,8 @@ def find_sources_in_module(module, class_type):
 
 def find_sources(class_type, dir_search="private"):
     path = os.path.join(DIR_SRC_PY_FIRSTARR, "datasources", dir_search)
-    files = listdir_sorted(path)
-    modules = [
-        f"datasources.{dir_search.replace('/', '.')}.{f.replace('.py', '')}"
-        for f in files
-    ]
+    files = [f.replace(".py", "") for f in listdir_sorted(path) if f.endswith(".py")]
+    modules = [f"datasources.{dir_search.replace('/', '.')}.{f}" for f in files]
     from itertools import chain
 
     return list(
