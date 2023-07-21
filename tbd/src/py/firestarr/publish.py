@@ -11,6 +11,7 @@ from common import (
     CRS_COMPARISON,
     DIR_OUTPUT,
     DIR_ZIP,
+    FMT_DATE,
     FORMAT_OUTPUT,
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
     ensure_dir,
@@ -54,7 +55,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
         ]
     dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
     for_dates = [
-        datetime.datetime.strptime(_, "%Y%m%d") for _ in dirs_what if "perim" != _
+        datetime.datetime.strptime(_, FMT_DATE) for _ in dirs_what if "perim" != _
     ]
     date_origin = min(for_dates)
     # for_what, files = list(files_by_for_what.items())[-2]
@@ -67,7 +68,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
             dir_for_what = "perim"
             date_cur = for_dates[0]
         else:
-            date_cur = datetime.datetime.strptime(dir_in_for_what, "%Y%m%d")
+            date_cur = datetime.datetime.strptime(dir_in_for_what, FMT_DATE)
             offset = (date_cur - date_origin).days + 1
             dir_for_what = f"day_{offset:02d}"
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))

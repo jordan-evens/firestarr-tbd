@@ -31,54 +31,6 @@ from model_data import DEFAULT_STATUS_IGNORE, query_geoserver
 ONE_DAY = datetime.timedelta(days=1)
 
 
-# class SourceFireM3Service(SourceFire):
-#     def __init__(
-#         self, dir_out, df_fires, last_active_since=datetime.date.today()
-#     ) -> None:
-#         super().__init__(bounds=None)
-#         self._dir_out = dir_out
-#         self._df_fires = df_fires
-#         self._last_active_since = last_active_since
-
-#     def _get_fires(self):
-#         return model_data.get_fires_m3(
-#             self._dir_out, self._df_fires, last_active_since=self._last_active_since
-#         )
-
-
-# class SourceFireM3Download(SourceFire):
-#     def __init__(
-#         self, dir_out, df_fires, last_active_since=datetime.date.today()
-#     ) -> None:
-#         super().__init__(bounds=None)
-#         self._dir_out = dir_out
-#         self._df_fires = df_fires
-#         self._last_active_since = last_active_since
-
-#     def _get_fires(self):
-#         return model_data.get_m3_download(
-#             self._dir_out, self._df_fires, last_active_since=self._last_active_since
-#         )
-
-
-# class SourceFireM3(SourceFire):
-#     def __init__(self, dir_out, df_fires) -> None:
-#         super().__init__(bounds=None)
-#         if DEFAULT_M3_LAST_ACTIVE_IN_DAYS:
-#             last_active_since = datetime.date.today() - datetime.timedelta(
-#                 days=DEFAULT_M3_LAST_ACTIVE_IN_DAYS
-#             )
-#         else:
-#             last_active_since = None
-#         if USE_CWFIS_SERVICE:
-#             self._source = SourceFireM3Service(dir_out, df_fires, last_active_since)
-#         else:
-#             self._source = SourceFireM3Download(dir_out, df_fires, last_active_since)
-
-#     def _get_fires(self):
-#         return self._source.get_fires()
-
-
 class SourceFeatureM3Service(SourceFeature):
     def __init__(self, dir_out, last_active_since=datetime.date.today()) -> None:
         super().__init__(bounds=None)
@@ -228,6 +180,18 @@ class SourceFireCiffc(SourceFire):
             return self._source_dip.get_fires()
 
 
+def get_fwi(lat, lon, df_wx, columns):
+    for index in columns:
+        df_wx = df_wx.loc[~df_wx[index].isna()]
+    cols_float = [x for x in df_wx.columns if x not in ["datetime", "geometry"]]
+    df_wx[cols_float] = df_wx[cols_float].astype(float)
+    df_wx = df_wx.to_crs(CRS_COMPARISON)
+    pt = make_point(lat, lon, CRS_COMPARISON)
+    dists = df_wx.distance(pt)
+    df_wx = df_wx.loc[dists == min(dists)]
+    return df_wx
+
+
 class SourceFwiCwfisDownload(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
@@ -238,46 +202,52 @@ class SourceFwiCwfisDownload(SourceFwi):
             datetime_start = datetime.date.today() - ONE_DAY
         if datetime_end is None:
             datetime_end = datetime.date.today()
-        dates = pd.date_range(start=datetime_start, end=datetime_end, freq="D")
-        df_wx = model_data.get_wx_cwfis_download(self._dir_out, dates)
-        # we only want stations that have indices
-        # FIX: duplicated
-        for index in ["ffmc", "dmc", "dc"]:
-            df_wx = df_wx[~np.isnan(df_wx[index])]
-        df_wx = df_wx.to_crs(CRS_COMPARISON)
-        pt = make_point(lat, lon, CRS_COMPARISON)
-        dists = df_wx.distance(pt)
-        return df_wx[dists == min(dists)]
+        dates = list(pd.date_range(start=datetime_start, end=datetime_end, freq="D"))
+        df_wx = None
+        # do individually so @cache can hash arguments
+        for date in dates:
+            df_wx = pd.concat(
+                [
+                    df_wx,
+                    model_data.get_wx_cwfis_download(
+                        self._dir_out, date, ",".join(self.columns)
+                    ),
+                ]
+            )
+        df_wx["datetime"] = df_wx["datetime"] + datetime.timedelta(hours=12)
+        return get_fwi(lat, lon, df_wx, self.columns)
 
 
 class SourceFwiCwfisService(SourceFwi):
-    def __init__(self, dir_out, indices="") -> None:
+    def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        self._indices = indices
 
     def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
         if datetime_start is None:
             datetime_start = datetime.date.today() - ONE_DAY
         if datetime_end is None:
             datetime_end = datetime.date.today()
-        dates = pd.date_range(start=datetime_start, end=datetime_end, timedelta=ONE_DAY)
-        df_wx = model_data.get_wx_cwfis(self._dir_out, dates, indices=self._indices)
-        # FIX: duplicated
-        # we only want stations that have indices
-        for index in ["ffmc", "dmc", "dc"]:
-            df_wx = df_wx[~np.isnan(df_wx[index])]
-        df_wx = df_wx.to_crs(CRS_COMPARISON)
-        pt = make_point(lat, lon, CRS_COMPARISON)
-        dists = df_wx.distance(pt)
-        return df_wx[dists == min(dists)]
+        dates = list(pd.date_range(start=datetime_start, end=datetime_end, freq="D"))
+        df_wx = None
+        # do individually so @cache can hash arguments
+        for date in dates:
+            df_wx = pd.concat(
+                [
+                    df_wx,
+                    model_data.get_wx_cwfis(
+                        self._dir_out, date, indices=",".join(self.columns)
+                    ),
+                ]
+            )
+        return get_fwi(lat, lon, df_wx, self.columns)
 
 
 class SourceFwiCwfis(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         if USE_CWFIS_SERVICE:
-            self._source = SourceFwiCwfisService(dir_out, "ffmc,dmc,dc")
+            self._source = SourceFwiCwfisService(dir_out)
         else:
             self._source = SourceFwiCwfisDownload(dir_out)
 
@@ -368,6 +338,8 @@ def find_sources_in_module(module, class_type):
 
 def find_sources(class_type, dir_search="private"):
     path = os.path.join(DIR_SRC_PY_FIRSTARR, "datasources", dir_search)
+    if not os.path.isdir(path):
+        return []
     files = [f.replace(".py", "") for f in listdir_sorted(path) if f.endswith(".py")]
     modules = [f"datasources.{dir_search.replace('/', '.')}.{f}" for f in files]
     from itertools import chain
@@ -414,14 +386,14 @@ class SourceFireActive(SourceFire):
         if self._status_include:
             df_fires = df_fires.loc[df_fires.status.isin(self._status_include)]
             logging.info(
-                "Have %d polygons that are tied to %s fires",
+                "Have %d features that are tied to %s fires",
                 len(df_fires),
                 self._status_include,
             )
         if self._status_omit:
             df_fires = df_fires.loc[~df_fires.status.isin(self._status_omit)]
             logging.info(
-                "Have %d polygons that aren't tied to %s fires",
+                "Have %d features that aren't tied to %s fires",
                 len(df_fires),
                 self._status_omit,
             )

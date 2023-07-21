@@ -4,14 +4,14 @@ import os
 import shutil
 import timeit
 
+import datasources.spotwx
 import geopandas as gpd
 import gis
 import model_data
 import NG_FWI
 import numpy as np
+import pandas as pd
 import pytz
-from tqdm import tqdm
-from datasources.datatypes import SourceFeature, SourceFire
 import tqdm_pool
 from common import (
     BOUNDS,
@@ -22,36 +22,52 @@ from common import (
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
+    FMT_DATE,
+    FMT_TIME,
     MAX_NUM_DAYS,
     WANT_DATES,
     ParseError,
+    area_ha,
     dump_json,
     ensure_dir,
     list_dirs,
     logging,
 )
 from datasources.cwfis import SourceFireActive, SourceFwiCwfis
+from datasources.datatypes import SourceFire
 from fires import get_fires_folder, group_fires
 from log import add_log_file
 from publish import publish_all
+from tqdm import tqdm
 
 import tbd
 from tbd import FILE_SIM
 
 
 def make_run_fire(
-    dir_out, df_fire, run_start, ffmc_old, dmc_old, dc_old, max_days=None
+    dir_out,
+    df_fire,
+    lat,
+    lon,
+    run_start,
+    date_startup,
+    ffmc_old,
+    dmc_old,
+    dc_old,
+    max_days=None,
 ):
+    df_fire = df_fire.reset_index()
     if 1 != len(np.unique(df_fire["fire_name"])):
         raise RuntimeError("Expected exactly one fire_name run_fire()")
-    fire_name, lat, lon = df_fire[["fire_name", "lat", "lon"]].iloc[0]
+    fire_name = df_fire["fire_name"].iloc[0]
     dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
     logging.debug("Saving %s to %s", fire_name, dir_fire)
     file_fire = gis.save_geojson(df_fire, os.path.join(dir_fire, fire_name))
     data = {
         # UTC time
-        "job_date": run_start.strftime("%Y%m%d"),
-        "job_time": run_start.strftime("%H%M"),
+        "job_date": run_start.strftime(FMT_DATE),
+        "job_time": run_start.strftime(FMT_TIME),
+        "date_startup": date_startup.isoformat(),
         "ffmc_old": ffmc_old,
         "dmc_old": dmc_old,
         "dc_old": dc_old,
@@ -86,7 +102,7 @@ def do_prep_fire(dir_fire, duration=None):
     tf = timezonefinder.TimezoneFinder()
     tzone = tf.timezone_at(lng=lon, lat=lat)
     timezone = pytz.timezone(tzone)
-    if "utc_offset_hours" not in data.keys():
+    if "utcoffset_hours" not in data.keys():
         # UTC time
         # HACK: America/Inuvik is giving an offset of 0 when applied directly,
         # but says -6 otherwise
@@ -96,12 +112,18 @@ def do_prep_fire(dir_fire, duration=None):
         utcoffset = timezone.utcoffset(run_start)
         utcoffset_hours = utcoffset.total_seconds() / 60 / 60
         data["utcoffset_hours"] = utcoffset_hours
+        # shouldn't be any way this already has a timezone if other key not present
+        date_startup = (
+            pd.to_datetime(data["date_startup"]).tz_localize(timezone).tz_convert("UTC")
+        )
+        data["date_startup"] = date_startup.isoformat()
     if "wx" not in data.keys():
         ffmc_old = data["ffmc_old"]
         dmc_old = data["dmc_old"]
         dc_old = data["dc_old"]
         try:
-            df_wx_spotwx = model_data.get_wx_ensembles(lat, lon)
+            src_spotwx = datasources.spotwx.SourceGEPS()
+            df_wx_spotwx = src_spotwx.get_wx_model(lat, lon)
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
@@ -109,13 +131,19 @@ def do_prep_fire(dir_fire, duration=None):
             # logging.fatal(ex)
             return ex
         df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
-        df_wx_fire = df_wx_filled.rename(
-            columns={
-                "lon": "long",
-                "datetime": "TIMESTAMP",
-                "precip": "PREC",
-            }
-        ).loc[:]
+        gdf_geom = df_wx_filled[["lat", "lon", "geometry"]].drop_duplicates()
+        # HACK: some kind of issue with NG_FWI - maybe gdf?
+        df_wx_fire = (
+            df_wx_filled.drop(["geometry"], axis=1)
+            .rename(
+                columns={
+                    "lon": "long",
+                    "datetime": "TIMESTAMP",
+                    "precip": "PREC",
+                }
+            )
+            .loc[:]
+        )
         # HACK: just do the math for now, but don't apply a timezone
         df_wx_fire.loc[:, "TIMESTAMP"] = df_wx_fire["TIMESTAMP"] + utcoffset
         df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
@@ -282,9 +310,13 @@ class SourceFireGroup(SourceFire):
             gis.save_shp(
                 df_fires_active, os.path.join(self._dir_out, "df_fires_active")
             )
+            date_latest = np.max(df_fires_active["datetime"])
             # don't add in fires that don't match because they're out
             df_fires_groups = group_fires(df_fires_active)
             df_fires_groups["status"] = None
+            # HACK: everything assumed to be up to date as of last observed change
+            df_fires_groups["datetime"] = date_latest
+            df_fires_groups["area"] = area_ha(df_fires_groups)
             df_fires = df_fires_groups
         else:
             # get perimeters from a folder
@@ -390,26 +422,30 @@ class Run(object):
         # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
         # takes the longest to run?
         # FIX: consider sorting by startup indices or overall DSR for period instead?
-        fire_areas = df_fires.dissolve(by=["fire_name"]).area.sort_values(
+        df_fires_crs = df_fires.to_crs(CRS_COMPARISON)
+        fire_areas = df_fires_crs.dissolve(by=["fire_name"]).area.sort_values(
             ascending=False
         )
         dirs_fire = []
         for fire_name in tqdm(fire_areas.index, desc="Separating fires"):
-            # fire_name = df_fire.iloc[0]['fire_name']
-            df_fire = df_fires[df_fires["fire_name"] == fire_name]
+            # do this way so it's still a gdf
+            df_fire = df_fires_crs.loc[df_fires_crs.index == fire_name]
             # NOTE: lat/lon are for centroid of group, not individual geometry
             pt_centroid = df_fire.dissolve().centroid.to_crs(CRS_WGS84).iloc[0]
             lat, lon = pt_centroid.y, pt_centroid.x
             df_wx_actual = src_fwi.get_fwi(
                 lat, lon, datetime_start=yesterday, datetime_end=today
             )
-            ffmc_old, dmc_old, dc_old, date_fwi = df_wx_actual.sort_values(
-                ["date"], ascending=False
-            ).iloc[0][["ffmc", "dmc", "dc", "date"]]
+            ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values(
+                ["datetime"], ascending=False
+            ).iloc[0][["ffmc", "dmc", "dc", "datetime"]]
             dir_fire = make_run_fire(
                 self._dir_sims,
                 df_fire,
+                lat,
+                lon,
                 self._start_time,
+                date_startup,
                 ffmc_old,
                 dmc_old,
                 dc_old,

@@ -1,12 +1,12 @@
-import io
 import configparser
+import io
+
 import numpy as np
-
 import pandas as pd
+from agency import to_gdf
 from common import CONFIG, ParseError, get_http, logging, try_save
+from datasources.datatypes import SourceModel
 from ratelimit import limits, sleep_and_retry
-
-from datatypes import SourceModel
 
 ONE_MINUTE = 60
 
@@ -32,7 +32,7 @@ def get_spotwx_limit():
 def get_wx_ensembles(lat, lon):
     SPOTWX_KEY = get_spotwx_key()
     model = "geps"
-    url = "https://spotwx.io/api.php3?" + "&".join(
+    url = "https://spotwx.io/api.php?" + "&".join(
         [
             f"key={SPOTWX_KEY}",
             f"model={model}",
@@ -99,8 +99,8 @@ def get_wx_ensembles(lat, lon):
 
 
 class SourceGEPS(SourceModel):
-    def __init__(self, api_key=get_spotwx_key()) -> None:
-        self._api_key = api_key
+    def __init__(self) -> None:
+        super().__init__(bounds=None)
 
-    def _get_wx_forecast(self, lat, lon):
-        return get_wx_ensembles(lat, lon)
+    def _get_wx_model(self, lat, lon):
+        return to_gdf(get_wx_ensembles(lat, lon).reset_index())

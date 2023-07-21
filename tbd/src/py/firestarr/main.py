@@ -35,8 +35,6 @@ if __name__ == "__main__":
             ) = run.run_fires_in_dir_by_priority()
         else:
             run = Run(dir_fires=dir_fires)
-            dir_out, dir_current, results, dates_out, total_time = run.run_all_fires(
+            results, dates_out, total_time = run.run_all_fires(
                 max_days, do_publish=True
             )
-        # simtimes, total_time, dates = run_all_fires()
-        # dir_root = "/appl/data/output/current_m3"

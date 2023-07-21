@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import geopandas as gpd
 import numpy as np
-from common import CRS_COMPARISON, CRS_WGS84
+from common import CRS_COMPARISON, CRS_WGS84, logging
 
 
 def make_empty_gdf(columns):
@@ -34,15 +34,24 @@ def check_columns(df, template):
     key, columns = get_columns(template)
     try:
         # sort based on columns in order from left to right
-        df = df.reset_index()[columns].sort_values(columns)
+        # logging.debug("reset_index")
+        df = df.reset_index()
+        # logging.debug("columns")
+        df = df[columns]
+        # logging.debug("sort_values")
+        df = df.sort_values([x for x in columns if x != "geometry"])
         if key:
+            # logging.debug("set_index")
             df = df.set_index(key)
         else:
+            # logging.debug("reset_index")
             # renumber rows if no key
             df = df.reset_index(drop=True)
         # HACK: keep everything in WGS84
         if isinstance(df, gpd.GeoDataFrame):
+            # logging.debug("to_crs")
             df = df.to_crs(CRS_WGS84)
+            # logging.debug("return")
         return df
     except KeyError:
         ERR = "Columns do not match expected columns"
@@ -95,6 +104,14 @@ class Source(ABC):
     def bounds(self) -> gpd.GeoDataFrame:
         # copy so it can't be modified
         return None if self._bounds is None else self._bounds.loc[:]
+
+    @property
+    def columns(self):
+        return COLUMNS[self._provides]["columns"]
+
+    @property
+    def key(self):
+        return COLUMNS[self._provides]["key"]
 
     def applies_to(self, lat, lon) -> bool:
         return self._bounds is None or self._bounds.contains(

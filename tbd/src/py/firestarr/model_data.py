@@ -1,11 +1,12 @@
 import datetime
 import os
 import urllib
+from functools import cache
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
-from common import CRS_COMPARISON, logging, save_http, try_save
+from agency import to_gdf
+from common import CRS_COMPARISON, FMT_DATE, logging, save_http, try_save
 
 WFS_ROOT = (
     "https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0"
@@ -46,7 +47,7 @@ def query_geoserver(
     )
 
 
-# def get_fires_dip(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+@cache
 def get_fires_dip(
     dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=datetime.date.today().year
 ):
@@ -73,7 +74,7 @@ def get_fires_dip(
     return gdf, f_json
 
 
-# def get_fires_ciffc(dir_out, status_keep=DEFAULT_STATUS_KEEP):
+@cache
 def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     table_name = "ciffc:ytd_fires"
     f_out = f"{dir_out}/ciffc_current.json"
@@ -98,7 +99,8 @@ def get_fires_ciffc(dir_out, status_ignore=DEFAULT_STATUS_IGNORE):
     return gdf, f_json
 
 
-def get_wx_cwfis_download(dir_out, dates, indices=""):
+@cache
+def get_wx_cwfis_download_stns(dir_out):
     url_stns = "https://cwfis.cfs.nrcan.gc.ca/downloads/fwi_obs/cwfis_allstn2022.csv"
     stns = try_save(
         lambda _: save_http(_, os.path.join(dir_out, os.path.basename(url_stns))),
@@ -106,87 +108,68 @@ def get_wx_cwfis_download(dir_out, dates, indices=""):
     )
     gdf_stns = gpd.read_file(stns)
     stns = gdf_stns[["aes", "wmo", "lat", "lon"]]
-    df = pd.DataFrame()
-    for date in dates:
-        ymd = date.strftime("%Y%m%d")
-        url = f"{URL_DOWNLOADS}/fwi_obs/current/cwfis_fwi_{ymd}.csv"
-        year = date.year
-        month = date.month
-        day = date.day
-        file_out = os.path.join(
-            dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day)
-        )
-        if not os.path.exists(file_out):
-            file_out = try_save(lambda _: save_http(_, file_out), url)
-        logging.debug("Reading {}".format(file_out))
-        try:
-            df_day = pd.read_csv(file_out, skipinitialspace=True)
-            # HACK: remove extra header rows in source
-            df_day = df_day[df_day["NAME"] != "NAME"]
-            df_day = df_day[~df_day["FFMC"].isna()]
-            df_day.columns = [x.lower() for x in df_day.columns]
-            df_day = df_day.drop(["name", "agency", "opts", "calcstatus"], axis=1)
-            # col_int = ["aes", "wmo"]
-            if [ymd] != np.unique(df_day["repdate"]):
-                raise RuntimeError("Wrong day returned")
-            df_day = pd.merge(df_day, stns, on=["aes", "wmo"])
-            df_day = df_day.drop(["aes", "wmo", "repdate"], axis=1).astype(float)
-            df_day["date"] = date
-            df = pd.concat([df, df_day])
-        except KeyboardInterrupt as ex:
-            raise ex
-        except pd.errors.ParserError:
-            logging.warning(f"Ignoring invalid file {file_out}")
-    df["year"] = df.apply(lambda x: x["date"].year, axis=1)
-    df["month"] = df.apply(lambda x: "{:02d}".format(x["date"].month), axis=1)
-    df["day"] = df.apply(lambda x: "{:02d}".format(x["date"].day), axis=1)
-    df = df.sort_values(["year", "month", "day", "lat", "lon"])
-    # # from looking at wms capabilities
-    # crs = 3978
-    # gdf = gpd.GeoDataFrame(df, geometry=df['the_geom'], crs=crs)
-    crs = "NAD83"
-    # is there any reason to make actual geometry?
-    gdf = gpd.GeoDataFrame(
-        df, geometry=gpd.points_from_xy(df["lon"], df["lat"]), crs=crs
+    return stns
+
+
+@cache
+def get_wx_cwfis_download(
+    dir_out, date, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr"
+):
+    stns = get_wx_cwfis_download_stns(dir_out)
+    ymd = date.strftime(FMT_DATE)
+    url = f"{URL_DOWNLOADS}/fwi_obs/current/cwfis_fwi_{ymd}.csv"
+    year = date.year
+    month = date.month
+    day = date.day
+    file_out = os.path.join(
+        dir_out, "cwfis_download_{:04d}-{:02d}-{:02d}.csv".format(year, month, day)
     )
+    if not os.path.exists(file_out):
+        file_out = try_save(lambda _: save_http(_, file_out), url)
+    logging.debug("Reading {}".format(file_out))
+    df = pd.read_csv(file_out, skipinitialspace=True)
+    df = df.loc[df["NAME"] != "NAME"]
+    df.columns = [x.lower() for x in df.columns]
+    df = df.loc[~df["ffmc"].isna()]
+    df["wmo"] = df["wmo"].astype(str)
+    df = pd.merge(df, stns, on=["aes", "wmo"])
+    df = df[["lat", "lon"] + indices.split(",")]
+    # df = df.drop(["aes", "wmo", "repdate"], axis=1).astype(float)
+    df["datetime"] = date
+    df = df.sort_values(["datetime", "lat", "lon"])
+    gdf = to_gdf(df)
     return gdf
 
 
+@cache
 def get_wx_cwfis(
-    dir_out, dates, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr"
+    dir_out, date, indices="temp,rh,ws,wdir,precip,ffmc,dmc,dc,bui,isi,fwi,dsr"
 ):
     # layer = 'public:firewx_stns_current'
     # HACK: use 2022 because it has 2023 in it right now
     layer = "public:firewx_stns_2022"
-    df = pd.DataFrame()
-    for date in dates:
-        year = date.year
-        month = date.month
-        day = date.day
-        file_out = os.path.join(
-            dir_out, "{:04d}-{:02d}-{:02d}.csv".format(year, month, day)
+    year = date.year
+    month = date.month
+    day = date.day
+    file_out = os.path.join(
+        dir_out, "cwfis_layer_{:04d}-{:02d}-{:02d}.csv".format(year, month, day)
+    )
+    if not os.path.exists(file_out):
+        file_out = query_geoserver(
+            layer,
+            file_out,
+            features=f"rep_date,prov,lat,lon,elev,the_geom,{indices}",
+            filter=f"rep_date={year:04d}-{month:02d}-{day:02d}T12:00:00",
+            output_format="csv",
         )
-        if not os.path.exists(file_out):
-            file_out = query_geoserver(
-                layer,
-                file_out,
-                features=f"rep_date,prov,lat,lon,elev,the_geom,{indices}",
-                filter=f"rep_date={year:04d}-{month:02d}-{day:02d}T12:00:00",
-                output_format="csv",
-            )
-        logging.debug("Reading {}".format(file_out))
-        df_day = pd.read_csv(file_out)
-        df = pd.concat([df, df_day])
-    df["date"] = df.apply(
+    logging.debug("Reading {}".format(file_out))
+    df = pd.read_csv(file_out)
+    df["datetime"] = df.apply(
         lambda x: datetime.datetime.strptime(x["rep_date"], "%Y-%m-%dT%H:00:00"), axis=1
     )
-    df["year"] = df.apply(lambda x: x["date"].year, axis=1)
-    df["month"] = df.apply(lambda x: "{:02d}".format(x["date"].month), axis=1)
-    df["day"] = df.apply(lambda x: "{:02d}".format(x["date"].day), axis=1)
-    df = df.sort_values(["year", "month", "day", "lat", "lon"])
-    # from looking at wms capabilities
-    crs = CRS_COMPARISON
-    gdf = gpd.GeoDataFrame(df, geometry=df["the_geom"], crs=crs)
+    df = df[["lat", "lon"] + indices.split(",") + ["datetime"]]
+    df = df.sort_values(["datetime", "lat", "lon"])
+    gdf = to_gdf(df)
     return gdf
 
 
@@ -196,7 +179,12 @@ def wx_interpolate(df):
     times = pd.DataFrame(
         pd.date_range(date_min, date_max, freq="H").values, columns=["datetime"]
     )
+    crs = df.crs
     index_names = df.index.names
+    df = df.reset_index()
+    idx_geom = ["lat", "lon", "geometry"]
+    gdf_geom = df[idx_geom].drop_duplicates().reset_index(drop=True)
+    del df["geometry"]
     groups = []
     for i, g in df.groupby(index_names):
         g_fill = pd.merge(times, g, how="left")
@@ -205,6 +193,6 @@ def wx_interpolate(df):
         g_fill = g_fill.fillna(method="ffill")
         g_fill[index_names] = i
         groups.append(g_fill)
-    df_filled = pd.concat(groups)
+    df_filled = to_gdf(pd.merge(pd.concat(groups), gdf_geom), crs)
     df_filled.set_index(index_names)
     return df_filled

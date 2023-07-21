@@ -76,9 +76,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             tz = start_time.tz.utcoffset(start_time).total_seconds() / 60.0 / 60.0
             # HACK: I think there might be issues with forecasts being at the half hour?
             if math.floor(tz) != tz:
-                logging.warning(
-                    "Rounding down to deal with partial hour timezone"
-                )
+                logging.warning("Rounding down to deal with partial hour timezone")
                 tz = math.floor(tz)
             tz = int(tz)
             log_info("Timezone offset is {}".format(tz))
@@ -139,7 +137,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             # want to put each probability raster into right date so we can combine them
             d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
             # NOTE: json doesn't work with datetime, so don't parse
-            # dates_out.append(datetime.datetime.strptime(d, "%Y%m%d"))
+            # dates_out.append(datetime.datetime.strptime(d, FMT_DATE))
             dates_out.append(d)
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated

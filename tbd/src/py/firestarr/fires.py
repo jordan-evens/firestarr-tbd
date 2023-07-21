@@ -24,7 +24,33 @@ def separate_points(f):
     return pts, polys
 
 
-def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
+def group_fires_by_buffer(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
+    df_fires = df_fires.to_crs(CRS_COMPARISON)
+    # buffer half distance because buffers will just touch at the original distance
+    group_distance = group_distance_km * KM_TO_M / 2
+    crs = df_fires.crs
+
+    def to_gdf(d):
+        return gpd.GeoDataFrame(geometry=d, crs=crs)
+
+    groups = to_gdf(df_fires["geometry"])
+    pts, polys = separate_points(groups.geometry)
+    df_polys = to_gdf(polys)
+    # instead of comparing distance between everything just buffer, merge, and select
+    df_simplify = to_gdf(df_polys.simplify(100))
+    df_buffer = to_gdf(df_simplify.buffer(group_distance))
+    df_dissolve = df_buffer.dissolve()
+    df_explode = df_dissolve.explode(index_parts=False)
+    df_groups = None
+    for i in tqdm(range(len(df_explode)), desc="Grouping fires"):
+        a = df_explode.iloc[i].geometry
+        g = df_polys.loc[df_polys.intersects(a)]
+        df_polys = df_polys.loc[~df_polys.intersects(a)]
+        df_groups = pd.concat([df_groups, g.dissolve()])
+    return df_groups
+
+
+def group_fires_by_distance(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
     df_fires = df_fires.to_crs(CRS_COMPARISON)
     group_distance = group_distance_km * KM_TO_M
     crs = df_fires.crs
@@ -68,6 +94,10 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
             tq.update(n_prev - len(p_check))
     tq.update(1)
     merged = [p] + p_done
+    return pd.concat(merged)
+
+
+def name_groups(df):
     # NOTE: year should not be relevant, because we just care about the
     # projection, not the data
     zone_rasters = gis.find_raster_meridians(YEAR)
@@ -80,43 +110,48 @@ def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
                 best = i
         return zone_rasters[best]
 
-    for i in tqdm(range(len(merged)), desc="Naming groups"):
-        df_group = merged[i]
-        # HACK: can't just convert to lat/long crs and use centroids from that
-        # because it causes a warning
-        df_dissolve = df_group.dissolve()
-        centroid = df_dissolve.centroid.to_crs(CRS_SIMINPUT).iloc[0]
-        df_group["lon"] = centroid.x
-        df_group["lat"] = centroid.y
-        # # df_fires = df_fires.to_crs(CRS)
-        # df_fires = df_fires.sort_values(['area_calc'])
-        # HACK: name based on UTM coordinates
-        r = find_best_zone_raster(centroid.x)
-        zone_wkt = gis.GetSpatialReference(r).ExportToWkt()
-        zone = int(os.path.basename(r).split("_")[1])
-        # HACK: just use gpd since it's easier
-        centroid_utm = (
-            gpd.GeoDataFrame(geometry=[centroid], crs=CRS_SIMINPUT)
-            .to_crs(zone_wkt)
-            .iloc[0]
-            .geometry
-        )
-        # this is too hard to follow
-        # df_group['fire_name'] = f"{zone}N_{int(centroid_utm.x)}_{int(centroid_utm.y)}"
+    df_groups = df.loc[:]
+    # HACK: can't just convert to lat/long crs and use centroids from that
+    # because it causes a warning
+    centroids = df_groups.centroid.to_crs(CRS_SIMINPUT)
+    df_groups["lon"] = centroids.x
+    df_groups["lat"] = centroids.y
+    # HACK: name based on UTM coordinates
+    df_groups["raster"] = centroids.x.apply(find_best_zone_raster)
+    df_rasters = pd.DataFrame({"raster": np.unique(df_groups[["raster"]])})
+    df_rasters["wkt"] = df_rasters["raster"].apply(
+        lambda r: gis.GetSpatialReference(r).ExportToWkt()
+    )
+    df_rasters["zone"] = df_rasters["raster"].apply(
+        lambda r: int(os.path.basename(r).split("_")[1])
+    )
+    df_groups = pd.merge(df_groups, df_rasters)
+    df_centroids = df_groups.loc[:]
+    df_centroids["geometry"] = df_centroids.centroid
+
+    def find_zone_basemap(zone, lat, centroid_utm):
         BM_MULT = 10000
         easting = int((centroid_utm.x) // BM_MULT)
         northing = int((centroid_utm.y) // BM_MULT)
         basemap = easting * 1000 + northing
-        # df_group['utm_zone'] = zone
-        # df_group['basemap'] = int(f"{easting:02d}{northing:03d}")
-        n_or_s = "N" if centroid.y >= 0 else "S"
-        df_group["fire_name"] = f"{zone}{n_or_s}_{basemap}"
-        # it should be impossible for 2 groups to be in the same basemap
-        # because they are grouped within > 10km
-        merged[i] = df_group
-    results = pd.concat(merged)
-    logging.info("Created %d groups", len(results))
-    return results
+        n_or_s = "N" if lat >= 0 else "S"
+        return f"{zone:02d}{n_or_s}_{basemap:05d}"
+
+    for i, g in df_centroids.groupby(["zone"]):
+        wkt = g["wkt"].iloc[0]
+        g_zone = g.to_crs(wkt)
+        df_groups.loc[g_zone.index, "fire_name"] = g_zone.apply(
+            lambda x: find_zone_basemap(x["zone"], x["lat"], x["geometry"]), axis=1
+        )
+    # it should be impossible for 2 groups to be in the same basemap
+    # because they are grouped within > 10km
+    logging.info("Created %d groups", len(df))
+    return df_groups
+
+
+def group_fires(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM):
+    df_groups = group_fires_by_buffer(df_fires, group_distance_km)
+    return name_groups(df_groups)
 
 
 def get_fires_folder(dir_fires, crs=CRS_COMPARISON):

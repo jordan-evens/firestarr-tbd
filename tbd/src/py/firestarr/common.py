@@ -37,6 +37,10 @@ CRS_COMPARISON = CRS_LAMBERT_ATLAS
 CRS_NAD83 = 4269
 CRS_SIMINPUT = CRS_NAD83
 
+FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
+FMT_DATE = "%Y%m%d"
+FMT_TIME = "%H%M"
+
 # makes groups that are too big because it joins mutiple groups into a chain
 # DEFAULT_GROUP_DISTANCE_KM = 60
 # also too big

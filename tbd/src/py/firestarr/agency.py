@@ -38,9 +38,12 @@ def check_columns(df, template):
 
 
 def to_gdf(df, crs=CRS_WGS84):
-    return gpd.GeoDataFrame(
-        df, crs=crs, geometry=gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
+    geometry = (
+        df["geometry"]
+        if "geometry" in df
+        else gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
     )
+    return gpd.GeoDataFrame(df, crs=crs, geometry=geometry)
 
 
 def make_point(lat, lon, crs=CRS_WGS84):
