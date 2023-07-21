@@ -47,6 +47,7 @@ def get_blob_service_client():
 
 
 def get_container():
+    logging.info("Getting container")
     blob_service_client = get_blob_service_client()
     container = blob_service_client.get_container_client(AZURE_CONTAINER)
     return container
@@ -59,10 +60,17 @@ def show_blobs(container):
         print(f"{container.container_name}: {blob.name}")
 
 
-def upload_dir(dir_run):
+def find_latest():
+    zips = [x for x in listdir_sorted(DIR_ZIP) if x.endswith(".zip")]
+    return os.path.join(DIR_OUTPUT, os.path.splitext(zips[-1])[0])
+
+
+def upload_dir(dir_run=None):
     if not read_config():
         logging.info(f"Azure not configured so not publishing {dir_run}")
         return False
+    if dir_run is None:
+        dir_run = find_latest()
     logging.info(f"Azure configured so publishing {dir_run}")
     run_name = os.path.basename(dir_run)
     run_id = run_name[run_name.index("_") + 1 :]
@@ -93,12 +101,15 @@ def upload_dir(dir_run):
     if container is None:
         # wait until we know we need it
         container = get_container()
+    logging.info("Listing blobs")
     # delete old blobs
     blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
     for blob in blob_list:
+        logging.info(f"Deleting {blob.name}")
         container.delete_blob(blob.name)
     # archive_current(container)
     for f in files:
+        logging.info(f"Pushing {f}")
         if "perim.tif" == f:
             for_date = origin
         else:
@@ -119,10 +130,5 @@ def upload_dir(dir_run):
                 )
 
 
-def upload_latest():
-    zips = [x for x in listdir_sorted(DIR_ZIP) if x.endswith(".zip")]
-    upload_dir(os.path.join(DIR_OUTPUT, os.path.splitext(zips[-1])[0]))
-
-
 if "__main__" == __name__:
-    upload_latest()
+    upload_dir()
