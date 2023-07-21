@@ -16,7 +16,7 @@
               </sld:GrayChannel>
             </sld:ChannelSelection>
             <sld:ColorMap type="intervals">
-              <sld:ColorMapEntry opacity="0" label="&lt;= 0.000000" color="#ffffff" quantity="0"/>
+              <sld:ColorMapEntry color="#ffffff" opacity="0" quantity="0.0000001" label="&lt;= 0.0"/>
               <sld:ColorMapEntry label="0.000000 - 0.100000" color="#00b2f2" quantity="0.1"/>
               <sld:ColorMapEntry label="0.100000 - 0.200000" color="#25bce3" quantity="0.2"/>
               <sld:ColorMapEntry label="0.200000 - 0.300000" color="#fbf17d" quantity="0.3"/>
