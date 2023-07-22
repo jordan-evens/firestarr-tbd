@@ -458,6 +458,9 @@ class Run(object):
         results, dates_out, total_time = self.run_fires_in_dir_by_priority(
             df_bounds, do_publish
         )
+        logging.info(
+            f"Done running {len(dirs_fire)} fires with a total time of {total_time}"
+        )
         self.log_end()
         return results, dates_out, total_time
 
