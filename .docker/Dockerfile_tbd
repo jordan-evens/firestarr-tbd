@@ -121,7 +121,7 @@ RUN sudo chown -R ${USERNAME}:${USERNAME} /appl/tbd \
   && apt-get install -y --no-install-recommends python3-pip \
       libgdal-dev libgeotiff5 \
       python3-numpy python3-gdal \
-      cron curl nano procps \
+      cron curl nano procps psmisc \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
   && apt-get clean \
   && rm -rf \
