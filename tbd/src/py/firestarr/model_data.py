@@ -4,9 +4,9 @@ import urllib
 from functools import cache
 
 import geopandas as gpd
+from gis import CRS_COMPARISON, to_gdf
 import pandas as pd
-from agency import to_gdf
-from common import CRS_COMPARISON, FMT_DATE, logging, save_http, try_save
+from common import FMT_DATE, logging, save_http, try_save
 
 WFS_ROOT = (
     "https://cwfis.cfs.nrcan.gc.ca/geoserver/public/wms?service=wfs&version=2.0.0"

@@ -6,7 +6,15 @@ import timeit
 
 import datasources.spotwx
 import geopandas as gpd
-import gis
+from gis import (
+    CRS_COMPARISON,
+    CRS_SIMINPUT,
+    CRS_WGS84,
+    area_ha,
+    save_geojson,
+    save_shp,
+    to_gdf,
+)
 import model_data
 import NG_FWI
 import numpy as np
@@ -16,9 +24,6 @@ import tqdm_pool
 from common import (
     BOUNDS,
     CONCURRENT_SIMS,
-    CRS_COMPARISON,
-    CRS_SIMINPUT,
-    CRS_WGS84,
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
@@ -27,7 +32,6 @@ from common import (
     MAX_NUM_DAYS,
     WANT_DATES,
     ParseError,
-    area_ha,
     dump_json,
     ensure_dir,
     list_dirs,
@@ -56,13 +60,13 @@ def make_run_fire(
     dc_old,
     max_days=None,
 ):
-    df_fire = df_fire.reset_index()
-    if 1 != len(np.unique(df_fire["fire_name"])):
+    if 1 != len(df_fire):
         raise RuntimeError("Expected exactly one fire_name run_fire()")
     fire_name = df_fire["fire_name"].iloc[0]
+    df_fire = df_fire.reset_index()
     dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
     logging.debug("Saving %s to %s", fire_name, dir_fire)
-    file_fire = gis.save_geojson(df_fire, os.path.join(dir_fire, fire_name))
+    file_fire = save_geojson(df_fire, os.path.join(dir_fire, fire_name))
     data = {
         # UTC time
         "job_date": run_start.strftime(FMT_DATE),
@@ -131,7 +135,7 @@ def do_prep_fire(dir_fire, duration=None):
             # logging.fatal(ex)
             return ex
         df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
-        gdf_geom = df_wx_filled[["lat", "lon", "geometry"]].drop_duplicates()
+        # gdf_geom = df_wx_filled[["lat", "lon", "geometry"]].drop_duplicates()
         # HACK: some kind of issue with NG_FWI - maybe gdf?
         df_wx_fire = (
             df_wx_filled.drop(["geometry"], axis=1)
@@ -307,9 +311,7 @@ class SourceFireGroup(SourceFire):
             # get perimeters from default service
             src_fires_active = SourceFireActive(self._dir_out)
             df_fires_active = src_fires_active.get_fires()
-            gis.save_shp(
-                df_fires_active, os.path.join(self._dir_out, "df_fires_active")
-            )
+            save_shp(df_fires_active, os.path.join(self._dir_out, "df_fires_active"))
             date_latest = np.max(df_fires_active["datetime"])
             # don't add in fires that don't match because they're out
             df_fires_groups = group_fires(df_fires_active)
@@ -321,7 +323,7 @@ class SourceFireGroup(SourceFire):
         else:
             # get perimeters from a folder
             df_fires = get_fires_folder(self._dir_fires, CRS_COMPARISON)
-            gis.save_shp(df_fires, os.path.join(self._dir_out, "df_fires_folder"))
+            save_shp(df_fires, os.path.join(self._dir_out, "df_fires_folder"))
             df_fires = df_fires.to_crs(CRS_COMPARISON)
             # HACK: can't just convert to lat/long crs and use centroids from that
             # because it causes a warning
@@ -334,12 +336,16 @@ class SourceFireGroup(SourceFire):
         df_fires = df_fires[df_fires["lon"] <= BOUNDS["longitude"]["max"]]
         df_fires = df_fires[df_fires["lat"] >= BOUNDS["latitude"]["min"]]
         df_fires = df_fires[df_fires["lat"] <= BOUNDS["latitude"]["max"]]
-        gis.save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups"))
+        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups"))
         return df_fires
 
 
 class Run(object):
-    def __init__(self, dir_fires=None, dir=None) -> None:
+    def __init__(
+        self, dir_fires=None, dir=None, max_days=None, do_publish=True
+    ) -> None:
+        self._max_days = max_days
+        self._do_publish = do_publish
         self._dir_fires = dir_fires
         self._prefix = (
             "m3"
@@ -380,7 +386,7 @@ class Run(object):
             logging.removeHandler(self._log)
             self._log = None
 
-    def run_all_fires(self, max_days=None, do_publish=True):
+    def run_all_fires(self):
         self.log_start()
         logging.info("Starting run for %s", self._name)
         # UTC time
@@ -402,7 +408,7 @@ class Run(object):
         if file_bounds:
             n_initial = len(df_fires)
             df_bounds = gpd.read_file(file_bounds).to_crs(df_fires.crs)
-            gis.save_shp(df_bounds, os.path.join(self._dir_data, "bounds"))
+            save_shp(df_bounds, os.path.join(self._dir_data, "bounds"))
             # df_fires = df_fires.reset_index(drop=True).set_index(['fire_name'])
             df_fires = df_fires[
                 df_fires.intersects(df_bounds.dissolve().iloc[0].geometry)
@@ -415,30 +421,30 @@ class Run(object):
                     ]
                 )
             )
-            gis.save_shp(
-                df_fires, os.path.join(self._dir_data, "df_fires_groups_bounds")
-            )
-        # fire_areas = df_fires.dissolve(by=['fire_name']).area.sort_values()
+            save_shp(df_fires, os.path.join(self._dir_data, "df_fires_groups_bounds"))
         # NOTE: if we do biggest first then shorter ones can fill in gaps as that one
         # takes the longest to run?
         # FIX: consider sorting by startup indices or overall DSR for period instead?
-        df_fires_crs = df_fires.to_crs(CRS_COMPARISON)
-        fire_areas = df_fires_crs.dissolve(by=["fire_name"]).area.sort_values(
-            ascending=False
+        df_fires = df_fires.to_crs(CRS_COMPARISON)
+        df_fires["area"] = area_ha(df_fires)
+        df_fires = df_fires.sort_values(["area"], ascending=False)
+        # HACK: make into list to get rid of index so multi-column assignment works
+        df_fires[["lat", "lon"]] = list(
+            df_fires.centroid.to_crs(CRS_WGS84).apply(lambda pt: [pt.y, pt.x])
         )
-        dirs_fire = []
-        for fire_name in tqdm(fire_areas.index, desc="Separating fires"):
-            # do this way so it's still a gdf
-            df_fire = df_fires_crs.loc[df_fires_crs.index == fire_name]
-            # NOTE: lat/lon are for centroid of group, not individual geometry
-            pt_centroid = df_fire.dissolve().centroid.to_crs(CRS_WGS84).iloc[0]
-            lat, lon = pt_centroid.y, pt_centroid.x
+        # get fire_name back into columns
+        df_fires = df_fires.reset_index()
+
+        def prep_row(row_fire):
+            lat = row_fire["lat"]
+            lon = row_fire["lon"]
             df_wx_actual = src_fwi.get_fwi(
                 lat, lon, datetime_start=yesterday, datetime_end=today
             )
             ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values(
                 ["datetime"], ascending=False
             ).iloc[0][["ffmc", "dmc", "dc", "datetime"]]
+            df_fire = to_gdf(row_fire.to_frame().transpose(), df_fires.crs)
             dir_fire = make_run_fire(
                 self._dir_sims,
                 df_fire,
@@ -449,22 +455,23 @@ class Run(object):
                 ffmc_old,
                 dmc_old,
                 dc_old,
-                max_days,
+                self._max_days,
             )
-            dirs_fire.append(dir_fire)
+            return dir_fire
+
+        tqdm.pandas(desc="Separating fires")
+        dirs_fire = df_fires.progress_apply(prep_row, axis=1)
         logging.info(f"Getting weather for {len(dirs_fire)} fires")
         tqdm_pool.pmap(do_prep_fire, dirs_fire, desc="Gathering weather")
         # FIX: check the weather or folders here
-        results, dates_out, total_time = self.run_fires_in_dir_by_priority(
-            df_bounds, do_publish
-        )
+        results, dates_out, total_time = self.run_fires_in_dir_by_priority(df_bounds)
         logging.info(
             f"Done running {len(dirs_fire)} fires with a total time of {total_time}"
         )
         self.log_end()
         return results, dates_out, total_time
 
-    def run_fires_in_dir_by_priority(self, df_priority=None, do_publish=True):
+    def run_fires_in_dir_by_priority(self, df_priority=None):
         self.log_start()
         if df_priority is None:
             file_bounds = BOUNDS["bounds"]
@@ -498,7 +505,7 @@ class Run(object):
                     all_results[k] = v
             all_dates = all_dates.union(set(dates_out))
             n = len(results)
-            if do_publish and changed:
+            if self._do_publish and changed:
                 logging.info(
                     "Total of {} fires took {}s - average time is {}s".format(
                         n, total_time, total_time / n

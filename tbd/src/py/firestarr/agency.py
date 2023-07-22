@@ -1,6 +1,5 @@
 import geopandas as gpd
-import numpy as np
-from common import CRS_COMPARISON, CRS_WGS84
+from gis import CRS_WGS84
 
 
 def make_empty_gdf(columns):
@@ -35,28 +34,6 @@ def check_columns(df, template):
     except KeyError:
         ERR = "Columns do not match expected columns"
         raise RuntimeError(f"{ERR}\nExpected:\n\t{columns}\nGot:\n\t{df.columns}")
-
-
-def to_gdf(df, crs=CRS_WGS84):
-    geometry = (
-        df["geometry"]
-        if "geometry" in df
-        else gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
-    )
-    return gpd.GeoDataFrame(df, crs=crs, geometry=geometry)
-
-
-def make_point(lat, lon, crs=CRS_WGS84):
-    # always take lat lon as WGS84 but project to requested crs
-    pt = gpd.points_from_xy([lon], [lat], crs=CRS_WGS84)
-    if crs != CRS_WGS84:
-        pt = gpd.GeoDataFrame(geometry=pt, crs=crs).to_crs(crs).iloc[0].geometry
-    return pt
-
-
-def find_closest(df, lat, lon, crs=CRS_COMPARISON):
-    df["dist"] = df.to_crs(crs).distance(make_point(lat, lon, crs))
-    return df.loc[df["dist"] == np.min(df["dist"])]
 
 
 def make_error(signature, template):

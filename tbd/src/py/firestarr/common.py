@@ -4,7 +4,6 @@ import configparser
 import datetime
 import itertools
 import json
-import math
 import os
 import re
 import shutil
@@ -29,13 +28,6 @@ from log import logging
 from osgeo import gdal
 from tqdm import tqdm
 from urllib3.exceptions import InsecureRequestWarning
-
-CRS_LAMBERT_STATSCAN = 3347
-CRS_WGS84 = 4326
-CRS_LAMBERT_ATLAS = 3978
-CRS_COMPARISON = CRS_LAMBERT_ATLAS
-CRS_NAD83 = 4269
-CRS_SIMINPUT = CRS_NAD83
 
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE = "%Y%m%d"
@@ -73,8 +65,6 @@ CREATION_OPTIONS = [
     "NUM_THREADS=ALL_CPUS",
 ]
 WANT_DATES = [1, 2, 3, 7, 14]
-KM_TO_M = 1000
-HA_TO_MSQ = 10000
 
 # HACK: FIX: assume everything is this year
 YEAR = datetime.date.today().year
@@ -586,11 +576,3 @@ def pick_max_by_column(a, b, column, index=None):
     if index is None:
         index = a.index
     return pick_max(a.loc[index, column], b.loc[index, column])
-
-
-def area_ha(df):
-    return np.round(df.to_crs(CRS_COMPARISON).area / HA_TO_MSQ, 2)
-
-
-def area_ha_to_radius_m(a):
-    return math.sqrt(a * HA_TO_MSQ / math.pi)

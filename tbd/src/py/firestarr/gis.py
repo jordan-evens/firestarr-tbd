@@ -1,5 +1,6 @@
 """Non-ArcGIS GIS utility code"""
 import collections
+import math
 import os
 import sys
 
@@ -10,6 +11,16 @@ from common import ensure_dir, logging
 from osgeo import gdal, ogr, osr
 
 RASTER_DIR = "/appl/100m"
+
+KM_TO_M = 1000
+HA_TO_MSQ = 10000
+
+CRS_LAMBERT_STATSCAN = 3347
+CRS_WGS84 = 4326
+CRS_LAMBERT_ATLAS = 3978
+CRS_COMPARISON = CRS_LAMBERT_ATLAS
+CRS_NAD83 = 4269
+CRS_SIMINPUT = CRS_NAD83
 
 
 def GetFeatureCount(shp):
@@ -348,3 +359,37 @@ def save_shp(df, path):
         logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
         raise ex
     return file
+
+
+def to_gdf(df, crs=CRS_WGS84):
+    geometry = (
+        df["geometry"]
+        if "geometry" in df
+        else gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
+    )
+    return gpd.GeoDataFrame(df, crs=crs, geometry=geometry)
+
+
+def make_point(lat, lon, crs=CRS_WGS84):
+    # always take lat lon as WGS84 but project to requested crs
+    pt = gpd.points_from_xy([lon], [lat], crs=CRS_WGS84)
+    if crs != CRS_WGS84:
+        pt = gpd.GeoDataFrame(geometry=pt, crs=crs).to_crs(crs).iloc[0].geometry
+    return pt
+
+
+def find_closest(df, lat, lon, crs=CRS_COMPARISON):
+    df["dist"] = df.to_crs(crs).distance(make_point(lat, lon, crs))
+    return df.loc[df["dist"] == np.min(df["dist"])]
+
+
+def area_ha(df):
+    return np.round(df.to_crs(CRS_COMPARISON).area / HA_TO_MSQ, 2)
+
+
+def area_ha_to_radius_m(a):
+    return math.sqrt(a * HA_TO_MSQ / math.pi)
+
+
+def make_empty_gdf(columns):
+    return gpd.GeoDataFrame({k: [] for k in columns + ["geometry"]}, crs=CRS_WGS84)

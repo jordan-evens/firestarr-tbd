@@ -1,9 +1,9 @@
 import configparser
 import io
+from gis import to_gdf
 
 import numpy as np
 import pandas as pd
-from agency import to_gdf
 from common import CONFIG, ParseError, get_http, logging, try_save
 from datasources.datatypes import SourceModel
 from ratelimit import limits, sleep_and_retry
@@ -29,7 +29,7 @@ def get_spotwx_limit():
 
 @sleep_and_retry
 @limits(calls=get_spotwx_limit(), period=ONE_MINUTE)
-def get_wx_ensembles(lat, lon):
+def query_wx_ensembles(lat, lon):
     SPOTWX_KEY = get_spotwx_key()
     model = "geps"
     url = "https://spotwx.io/api.php?" + "&".join(
@@ -56,6 +56,12 @@ def get_wx_ensembles(lat, lon):
     df_initial = try_save(get_initial, url, check_code=False)
     if list(np.unique(df_initial.UTC_OFFSET)) != [0]:
         raise RuntimeError("Expected weather in UTC time")
+    return df_initial
+
+
+def get_wx_ensembles(lat, lon):
+    # only care about limiting queries - processing time doesn't matter
+    df_initial = query_wx_ensembles(lat, lon)
     index = ["MODEL", "LAT", "LON", "ISSUEDATE", "UTC_OFFSET", "DATETIME"]
     # all_cols = np.unique([x[: x.index("_")] for x in df_initial.columns if "_" in x])
     cols = ["TMP", "RH", "WSPD", "WDIR", "PRECIP"]

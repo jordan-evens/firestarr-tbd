@@ -1,22 +1,19 @@
 import datetime
+from functools import cache
 import os
 from collections import Counter
 
 import geopandas as gpd
+from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha, area_ha_to_radius_m
 import model_data
 import numpy as np
 import pandas as pd
 from common import (
-    CRS_COMPARISON,
-    CRS_WGS84,
     DEFAULT_M3_LAST_ACTIVE_IN_DAYS,
     DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
     DIR_SRC_PY_FIRSTARR,
-    KM_TO_M,
     USE_CWFIS_SERVICE,
     YEAR,
-    area_ha,
-    area_ha_to_radius_m,
     listdir_sorted,
     logging,
     pick_max,
@@ -37,6 +34,7 @@ class SourceFeatureM3Service(SourceFeature):
         self._dir_out = dir_out
         self._last_active_since = last_active_since
 
+    @cache
     def _get_features(self):
         f_out = f"{self._dir_out}/m3_polygons.json"
         features = "lastdate,geometry"
@@ -60,6 +58,7 @@ class SourceFeatureM3Download(SourceFeature):
         self._dir_out = dir_out
         self._last_active_since = last_active_since
 
+    @cache
     def _get_features(self):
         def get_shp(filename):
             for ext in ["dbf", "prj", "shx", "shp"]:
@@ -114,6 +113,7 @@ class SourceFireDipService(SourceFire):
         self._status_ignore = status_ignore
         self._year = year
 
+    @cache
     def _get_fires(self):
         df, j = model_data.get_fires_dip(self._dir_out, self._status_ignore, self._year)
         df = df.rename(
@@ -136,6 +136,7 @@ class SourceFireCiffcService(SourceFire):
         self._dir_out = dir_out
         self._status_ignore = status_ignore
 
+    @cache
     def _get_fires(self):
         df, j = model_data.get_fires_ciffc(self._dir_out, self._status_ignore)
         df = df.rename(
@@ -365,6 +366,7 @@ class SourceFireActive(SourceFire):
         # sources for features that area associated with specific fires
         self._source_fires = [s(self._dir_out) for s in find_sources(SourceFire)]
 
+    @cache
     def _get_fires(self):
         df_ciffc = self._source_ciffc.get_fires()
         df_fires = df_ciffc.loc[:]

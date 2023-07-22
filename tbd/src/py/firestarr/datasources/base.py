@@ -1,5 +1,6 @@
-from datatypes import make_empty_gdf, check_columns
-import spotwx
+from datasources.datatypes import check_columns
+import datasources.spotwx
+from gis import make_empty_gdf
 
 
 class SourceSelector(object):
@@ -11,7 +12,7 @@ class SourceSelector(object):
             "hourly": [],
             "fwi": [],
         }
-        self._sources["model"].append(spotwx.SourceGEPS())
+        self._sources["model"].append(datasources.spotwx.SourceGEPS())
 
     def register(self, source):
         if source.provides not in self._sources.keys():

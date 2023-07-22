@@ -1,12 +1,8 @@
 from abc import ABC, abstractmethod
 
 import geopandas as gpd
+from gis import CRS_COMPARISON, CRS_WGS84
 import numpy as np
-from common import CRS_COMPARISON, CRS_WGS84, logging
-
-
-def make_empty_gdf(columns):
-    return gpd.GeoDataFrame({k: [] for k in columns + ["geometry"]}, crs=CRS_WGS84)
 
 
 COLUMNS_MODEL = ["model", "id"]

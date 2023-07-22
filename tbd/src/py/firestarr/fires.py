@@ -1,15 +1,18 @@
 import os
 
 import geopandas as gpd
-import gis
+from gis import (
+    CRS_COMPARISON,
+    CRS_SIMINPUT,
+    KM_TO_M,
+    GetSpatialReference,
+    find_raster_meridians,
+)
 import numpy as np
 import pandas as pd
 import pyproj
 from common import (
-    CRS_COMPARISON,
-    CRS_SIMINPUT,
     DEFAULT_GROUP_DISTANCE_KM,
-    KM_TO_M,
     YEAR,
     logging,
 )
@@ -100,7 +103,7 @@ def group_fires_by_distance(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_K
 def name_groups(df):
     # NOTE: year should not be relevant, because we just care about the
     # projection, not the data
-    zone_rasters = gis.find_raster_meridians(YEAR)
+    zone_rasters = find_raster_meridians(YEAR)
     zone_rasters = {k: v for k, v in zone_rasters.items() if not v.endswith("_5.tif")}
 
     def find_best_zone_raster(lon):
@@ -120,7 +123,7 @@ def name_groups(df):
     df_groups["raster"] = centroids.x.apply(find_best_zone_raster)
     df_rasters = pd.DataFrame({"raster": np.unique(df_groups[["raster"]])})
     df_rasters["wkt"] = df_rasters["raster"].apply(
-        lambda r: gis.GetSpatialReference(r).ExportToWkt()
+        lambda r: GetSpatialReference(r).ExportToWkt()
     )
     df_rasters["zone"] = df_rasters["raster"].apply(
         lambda r: int(os.path.basename(r).split("_")[1])
