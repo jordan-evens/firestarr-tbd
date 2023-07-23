@@ -76,7 +76,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             tz = start_time.tz.utcoffset(start_time).total_seconds() / 60.0 / 60.0
             # HACK: I think there might be issues with forecasts being at the half hour?
             if math.floor(tz) != tz:
-                logging.warning("Rounding down to deal with partial hour timezone")
+                # logging.warning("Rounding down to deal with partial hour timezone")
                 tz = math.floor(tz)
             tz = int(tz)
             log_info("Timezone offset is {}".format(tz))

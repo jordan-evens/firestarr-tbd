@@ -1,10 +1,10 @@
 import datetime
-from functools import cache
 import os
+import threading
 from collections import Counter
+from functools import cache
 
 import geopandas as gpd
-from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha, area_ha_to_radius_m
 import model_data
 import numpy as np
 import pandas as pd
@@ -23,6 +23,7 @@ from common import (
     try_save,
 )
 from datasources.datatypes import SourceFeature, SourceFire, SourceFwi, make_point
+from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha, area_ha_to_radius_m
 from model_data import DEFAULT_STATUS_IGNORE, query_geoserver
 
 ONE_DAY = datetime.timedelta(days=1)
@@ -194,9 +195,16 @@ def get_fwi(lat, lon, df_wx, columns):
 
 
 class SourceFwiCwfisDownload(SourceFwi):
+    # lock_download = threading.Lock()
+
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
+        # HACK: load on init so values are cached
+        today = datetime.date.today()
+        yesterday = today - ONE_DAY
+        for date in [yesterday, today]:
+            model_data.get_wx_cwfis_download(self._dir_out, date)
 
     def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
         if datetime_start is None:
@@ -204,17 +212,14 @@ class SourceFwiCwfisDownload(SourceFwi):
         if datetime_end is None:
             datetime_end = datetime.date.today()
         dates = list(pd.date_range(start=datetime_start, end=datetime_end, freq="D"))
-        df_wx = None
         # do individually so @cache can hash arguments
-        for date in dates:
-            df_wx = pd.concat(
-                [
-                    df_wx,
-                    model_data.get_wx_cwfis_download(
-                        self._dir_out, date, ",".join(self.columns)
-                    ),
-                ]
+        dfs_wx = [
+            model_data.get_wx_cwfis_download(
+                self._dir_out, date, ",".join(self.columns)
             )
+            for date in dates
+        ]
+        df_wx = pd.concat(dfs_wx)
         df_wx["datetime"] = df_wx["datetime"] + datetime.timedelta(hours=12)
         return get_fwi(lat, lon, df_wx, self.columns)
 
@@ -223,6 +228,11 @@ class SourceFwiCwfisService(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
+        # HACK: load on init so values are cached
+        today = datetime.date.today()
+        yesterday = today - ONE_DAY
+        for date in [yesterday, today]:
+            model_data.get_wx_cwfis(self._dir_out, date)
 
     def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
         if datetime_start is None:

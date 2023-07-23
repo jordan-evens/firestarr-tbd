@@ -126,19 +126,25 @@ def get_wx_cwfis_download(
     )
     if not os.path.exists(file_out):
         file_out = try_save(lambda _: save_http(_, file_out), url)
-    logging.debug("Reading {}".format(file_out))
-    df = pd.read_csv(file_out, skipinitialspace=True)
-    df = df.loc[df["NAME"] != "NAME"]
-    df.columns = [x.lower() for x in df.columns]
-    df = df.loc[~df["ffmc"].isna()]
-    df["wmo"] = df["wmo"].astype(str)
-    df = pd.merge(df, stns, on=["aes", "wmo"])
-    df = df[["lat", "lon"] + indices.split(",")]
-    # df = df.drop(["aes", "wmo", "repdate"], axis=1).astype(float)
-    df["datetime"] = date
-    df = df.sort_values(["datetime", "lat", "lon"])
-    gdf = to_gdf(df)
-    return gdf
+    try:
+        logging.debug("Reading {}".format(file_out))
+        df = pd.read_csv(file_out, skipinitialspace=True)
+        df = df.loc[df["NAME"] != "NAME"]
+        df.columns = [x.lower() for x in df.columns]
+        df = df.loc[~df["ffmc"].isna()]
+        df["wmo"] = df["wmo"].astype(str)
+        df = pd.merge(df, stns, on=["aes", "wmo"])
+        df = df[["lat", "lon"] + indices.split(",")]
+        # df = df.drop(["aes", "wmo", "repdate"], axis=1).astype(float)
+        df["datetime"] = date
+        df = df.sort_values(["datetime", "lat", "lon"])
+        gdf = to_gdf(df)
+        return gdf
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(ex)
+        return None
 
 
 @cache
@@ -164,8 +170,14 @@ def get_wx_cwfis(
         )
     logging.debug("Reading {}".format(file_out))
     df = pd.read_csv(file_out)
-    df["datetime"] = df.apply(
-        lambda x: datetime.datetime.strptime(x["rep_date"], "%Y-%m-%dT%H:00:00"), axis=1
+    # HACK: doesn't make column if df is empty
+    df["datetime"] = (
+        None
+        if 0 == len(df)
+        else df.apply(
+            lambda x: datetime.datetime.strptime(x["rep_date"], "%Y-%m-%dT%H:00:00"),
+            axis=1,
+        )
     )
     df = df[["lat", "lon"] + indices.split(",") + ["datetime"]]
     df = df.sort_values(["datetime", "lat", "lon"])

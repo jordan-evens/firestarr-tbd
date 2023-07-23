@@ -1,4 +1,5 @@
 import configparser
+from functools import cache
 import io
 from gis import to_gdf
 
@@ -59,6 +60,7 @@ def query_wx_ensembles(lat, lon):
     return df_initial
 
 
+@cache
 def get_wx_ensembles(lat, lon):
     # only care about limiting queries - processing time doesn't matter
     df_initial = query_wx_ensembles(lat, lon)
