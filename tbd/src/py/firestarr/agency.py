@@ -71,11 +71,9 @@ class AgencyData(object):
             self._get_wx_hourly(lat, lon, datetime_start, datetime_end), "weather"
         )
 
-    def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        signature = "_get_fwi(lat, lon, datetime_start, datetime_end)"
+    def _get_fwi(self, lat, lon, date):
+        signature = "_get_fwi(lat, lon, date)"
         raise make_error(signature, "fwi")
 
-    def get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        return check_columns(
-            self._get_fwi(lat, lon, datetime_start, datetime_end), "fwi"
-        )
+    def get_fwi(self, lat, lon, date):
+        return check_columns(self._get_fwi(lat, lon, date), "fwi")

@@ -236,7 +236,7 @@ def sum_raster(raster, band_number=1):
 MERIDIANS = None
 
 
-def find_raster_meridians(year):
+def find_raster_meridians(year=None):
     """!
     Find the meridians of input rasters for the given year
     @param year Year to find raster meridians for
@@ -245,11 +245,13 @@ def find_raster_meridians(year):
     global MERIDIANS
     if MERIDIANS:
         return MERIDIANS
-    raster_root = RASTER_DIR
-    default_root = os.path.join(raster_root, "default")
-    raster_root = os.path.join(raster_root, str(year))
-    if not os.path.isdir(raster_root):
-        raster_root = default_root
+    raster_root = None
+    for folder in ["default", str(year)]:
+        dir_check = os.path.join(RASTER_DIR, folder)
+        if os.path.isdir(dir_check):
+            raster_root = dir_check
+    if not raster_root:
+        raise RuntimeError("Could not find raster directories in {RASTER_DIR}")
     rasters = [
         os.path.join(raster_root, x)
         for x in os.listdir(raster_root)
@@ -270,7 +272,7 @@ def find_raster_meridians(year):
     return result
 
 
-def find_best_raster(lon, year, only_int_zones=False):
+def find_best_raster(lon, year=None, only_int_zones=False):
     """!
     Find the raster with the closest meridian
     @param lon Longitude to look for closest raster for
@@ -331,8 +333,6 @@ def save_geojson(df, path):
     try:
         # HACK: geojson must be WGS84
         df.to_crs("WGS84").to_file(file)
-    except KeyboardInterrupt as ex:
-        raise ex
     except Exception as ex:
         logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
         raise ex
@@ -353,8 +353,6 @@ def save_shp(df, path):
             if "date" in str(v).lower():
                 df[k] = df[k].astype(str)
         df.set_index(keys).to_file(file)
-    except KeyboardInterrupt as ex:
-        raise ex
     except Exception as ex:
         logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
         raise ex

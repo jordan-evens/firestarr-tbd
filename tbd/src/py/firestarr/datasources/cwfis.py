@@ -1,36 +1,51 @@
 import datetime
 import os
-import threading
 from collections import Counter
 from functools import cache
+from urllib.error import HTTPError
 
 import geopandas as gpd
 import model_data
 import numpy as np
 import pandas as pd
+import tqdm_util
 from common import (
-    DEFAULT_M3_LAST_ACTIVE_IN_DAYS,
     DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
     DIR_SRC_PY_FIRSTARR,
+    FMT_DATE_YMD,
     USE_CWFIS_SERVICE,
-    YEAR,
     listdir_sorted,
     logging,
     pick_max,
     pick_max_by_column,
-    save_http,
     to_utc,
-    try_save,
 )
-from datasources.datatypes import SourceFeature, SourceFire, SourceFwi, make_point
-from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha, area_ha_to_radius_m
-from model_data import DEFAULT_STATUS_IGNORE, query_geoserver
+from datasources.datatypes import (
+    SourceFeature,
+    SourceFire,
+    SourceFwi,
+    get_columns,
+    make_point,
+)
+from gis import (
+    CRS_COMPARISON,
+    CRS_WGS84,
+    KM_TO_M,
+    area_ha,
+    area_ha_to_radius_m,
+    make_empty_gdf,
+    to_gdf,
+)
+from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, try_query_geoserver
+from net import try_save_http
 
-ONE_DAY = datetime.timedelta(days=1)
+WFS_CIFFC = "https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0"
+STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
+DEFAULT_LAST_ACTIVE_SINCE_OFFSET = 0
 
 
 class SourceFeatureM3Service(SourceFeature):
-    def __init__(self, dir_out, last_active_since=datetime.date.today()) -> None:
+    def __init__(self, dir_out, last_active_since) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
         self._last_active_since = last_active_since
@@ -42,19 +57,25 @@ class SourceFeatureM3Service(SourceFeature):
         table_name = "public:m3_polygons"
         filter = None
         if self._last_active_since:
+            # FIX: implement upper bound
             filter = (
                 f"lastdate >= {self._last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
             )
-        f_json = query_geoserver(table_name, f_out, features=features, filter=filter)
-        logging.debug(f"Reading {f_json}")
-        df = gpd.read_file(f_json)
-        df["datetime"] = to_utc(df["lastdate"])
-        since = pd.to_datetime(self._last_active_since, utc=True)
-        return df.loc[df["datetime"] >= since]
+
+        def do_parse(_):
+            logging.debug(f"Reading {_}")
+            df = gpd.read_file(_)
+            df["datetime"] = to_utc(df["lastdate"])
+            since = pd.to_datetime(self._last_active_since, utc=True)
+            return df.loc[df["datetime"] >= since]
+
+        return try_query_geoserver(
+            table_name, f_out, features=features, filter=filter, fct_post_save=do_parse
+        )
 
 
 class SourceFeatureM3Download(SourceFeature):
-    def __init__(self, dir_out, last_active_since=datetime.date.today()) -> None:
+    def __init__(self, dir_out, last_active_since) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
         self._last_active_since = last_active_since
@@ -63,11 +84,15 @@ class SourceFeatureM3Download(SourceFeature):
     def _get_features(self):
         def get_shp(filename):
             for ext in ["dbf", "prj", "shx", "shp"]:
-                url = (
-                    f"https://cwfis.cfs.nrcan.gc.ca/downloads/hotspots/{filename}.{ext}"
+                url = f"{URL_CWFIS_DOWNLOADS}/hotspots/{filename}.{ext}"
+                # HACK: relies on .shp being last in list
+                f = try_save_http(
+                    url,
+                    os.path.join(self._dir_out, os.path.basename(url)),
+                    keep_existing=False,
+                    fct_pre_save=None,
+                    fct_post_save=None,
                 )
-                f_out = os.path.join(self._dir_out, os.path.basename(url))
-                f = try_save(lambda _: save_http(_, f_out), url)
             gdf = gpd.read_file(f)
             return gdf
 
@@ -78,18 +103,14 @@ class SourceFeatureM3Download(SourceFeature):
 
 
 class SourceFeatureM3(SourceFeature):
-    def __init__(self, dir_out) -> None:
+    def __init__(
+        self, dir_out, origin, last_active_since=DEFAULT_LAST_ACTIVE_SINCE_OFFSET
+    ) -> None:
         super().__init__(bounds=None)
-        if DEFAULT_M3_LAST_ACTIVE_IN_DAYS:
-            last_active_since = datetime.date.today() - datetime.timedelta(
-                days=DEFAULT_M3_LAST_ACTIVE_IN_DAYS
-            )
-        else:
-            last_active_since = None
-        if USE_CWFIS_SERVICE:
-            self._source = SourceFeatureM3Service(dir_out, last_active_since)
-        else:
-            self._source = SourceFeatureM3Download(dir_out, last_active_since)
+        self._origin = origin
+        self._source = (
+            SourceFeatureM3Service if USE_CWFIS_SERVICE else SourceFeatureM3Download
+        )(dir_out, origin.offset(last_active_since))
 
     def _get_features(self):
         return self._source.get_features()
@@ -99,79 +120,131 @@ def make_name_ciffc(df):
     def make_name(date, agency, fire):
         return f"{date.year}_{agency.upper()}_{fire}"
 
-    return df.apply(
+    return tqdm_util.apply(
+        df,
         lambda x: make_name(
             x["datetime"], x["field_agency_code"], x["field_agency_fire_id"]
         ),
-        axis=1,
+        desc="Generating names",
     )
 
 
 class SourceFireDipService(SourceFire):
-    def __init__(self, dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=YEAR) -> None:
+    TABLE_NAME = "public:activefires"
+
+    def __init__(self, dir_out, year, status_ignore=DEFAULT_STATUS_IGNORE) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        self._status_ignore = status_ignore
+        self._status_ignore = [] if status_ignore is None else status_ignore
         self._year = year
 
     @cache
     def _get_fires(self):
-        df, j = model_data.get_fires_dip(self._dir_out, self._status_ignore, self._year)
-        df = df.rename(
-            columns={
-                "stage_of_control": "status",
-                "firename": "field_agency_fire_id",
-                "hectares": "area",
-                "last_rep_date": "datetime",
-                "agency": "field_agency_code",
-            }
+        save_as = f"{self._dir_out}/dip_current.json"
+
+        filter = " and ".join(
+            [f"\"stage_of_control\"<>'{status}'" for status in self._status_ignore]
+            + [
+                "agency<>'ak'",
+                "agency<>'conus'",
+                f"startdate during {self._year}-01-01T00:00:00Z/P1Y",
+            ]
         )
-        df["fire_name"] = make_name_ciffc(df)
-        df = df.to_crs(CRS_WGS84)
-        return df
+
+        def do_parse(_):
+            gdf = gpd.read_file(_)
+            # only get latest status for each fire
+            gdf = gdf.iloc[gdf.groupby(["firename"])["last_rep_date"].idxmax()]
+            gdf = gdf.rename(
+                columns={
+                    "stage_of_control": "status",
+                    "firename": "field_agency_fire_id",
+                    "hectares": "area",
+                    "last_rep_date": "datetime",
+                    "agency": "field_agency_code",
+                }
+            )
+            gdf["fire_name"] = make_name_ciffc(gdf)
+            gdf = gdf.to_crs(CRS_WGS84)
+            return gdf
+
+        return try_query_geoserver(
+            self.TABLE_NAME, save_as, filter=filter, fct_post_save=do_parse
+        )
 
 
 class SourceFireCiffcService(SourceFire):
-    def __init__(self, dir_out, status_ignore=DEFAULT_STATUS_IGNORE) -> None:
+    TABLE_NAME = "ciffc:ytd_fires"
+
+    def __init__(self, dir_out, year, status_ignore=DEFAULT_STATUS_IGNORE) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        self._status_ignore = status_ignore
+        self._status_ignore = [] if status_ignore is None else status_ignore
+        self._year = year
 
     @cache
     def _get_fires(self):
-        df, j = model_data.get_fires_ciffc(self._dir_out, self._status_ignore)
-        df = df.rename(
-            columns={
-                "field_status_date": "datetime",
-                "field_stage_of_control_status": "status",
-                "field_fire_size": "area",
-            }
+        save_as = f"{self._dir_out}/ciffc_current.json"
+        filter = (
+            " and ".join(
+                [
+                    f"\"field_stage_of_control_status\"<>'{status}'"
+                    for status in self._status_ignore
+                ]
+            )
+            or None
         )
-        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce")
-        df["fire_name"] = make_name_ciffc(df)
-        df = df.loc[df["datetime"].apply(lambda x: x.year) == YEAR]
-        df = df.set_index(["fire_name"])
-        dupes = [k for k, v in Counter(df.reset_index()["fire_name"]).items() if v > 1]
-        df_dupes = df.loc[dupes].reset_index()
-        df = df.drop(dupes)
-        df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)[
-            ["fire_name", "datetime", "area", "status"]
-        ]
-        df_pick = (
-            df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)
-            .groupby(["fire_name"])
-            .first()
+
+        def do_parse(_):
+            gdf = gpd.read_file(_)
+            gdf = gdf.rename(
+                columns={
+                    "field_status_date": "datetime",
+                    "field_stage_of_control_status": "status",
+                    "field_fire_size": "area",
+                }
+            )
+            gdf["datetime"] = pd.to_datetime(gdf["datetime"], errors="coerce")
+            gdf["fire_name"] = make_name_ciffc(gdf)
+            gdf = gdf.loc[
+                tqdm_util.apply(
+                    gdf["datetime"],
+                    lambda x: x.year == self._year,
+                    desc=f"Filtering by year {self._year}",
+                )
+            ]
+            gdf = gdf.set_index(["fire_name"])
+            dupes = [
+                k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1
+            ]
+            df_dupes = gdf.loc[dupes].reset_index()
+            gdf = gdf.drop(dupes)
+            df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)[
+                ["fire_name", "datetime", "area", "status"]
+            ]
+            df_pick = (
+                df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)
+                .groupby(["fire_name"])
+                .first()
+            )
+            df_pick.crs = df_dupes.crs
+            gdf = pd.concat([gdf, df_pick])
+            return gdf
+
+        return try_query_geoserver(
+            self.TABLE_NAME,
+            save_as,
+            filter=filter,
+            wfs_root=WFS_CIFFC,
+            fct_post_save=do_parse,
         )
-        df_pick.crs = df_dupes.crs
-        df = pd.concat([df, df_pick])
-        return df
 
 
 class SourceFireCiffc(SourceFire):
-    def __init__(self, dir_out, status_ignore=DEFAULT_STATUS_IGNORE, year=YEAR) -> None:
+    def __init__(self, dir_out, year, status_ignore=DEFAULT_STATUS_IGNORE) -> None:
         super().__init__(bounds=None)
-        self._source_ciffc = SourceFireCiffcService(dir_out, status_ignore)
-        self._source_dip = SourceFireDipService(dir_out, status_ignore, year)
+        self._source_ciffc = SourceFireCiffcService(dir_out, year, status_ignore)
+        self._source_dip = SourceFireDipService(dir_out, year, status_ignore)
 
     def _get_fires(self):
         try:
@@ -182,91 +255,109 @@ class SourceFireCiffc(SourceFire):
             return self._source_dip.get_fires()
 
 
-def get_fwi(lat, lon, df_wx, columns):
-    for index in columns:
-        df_wx = df_wx.loc[~df_wx[index].isna()]
-    cols_float = [x for x in df_wx.columns if x not in ["datetime", "geometry"]]
-    df_wx[cols_float] = df_wx[cols_float].astype(float)
-    df_wx = df_wx.to_crs(CRS_COMPARISON)
-    pt = make_point(lat, lon, CRS_COMPARISON)
-    dists = df_wx.distance(pt)
-    df_wx = df_wx.loc[dists == min(dists)]
+def select_fwi(lat, lon, df_wx, columns):
+    if df_wx is None:
+        return make_empty_gdf(get_columns("fwi")[1])
+    elif 0 < len(df_wx):
+        for index in columns:
+            df_wx = df_wx.loc[~df_wx[index].isna()]
+        cols_float = [x for x in df_wx.columns if x not in ["datetime", "geometry"]]
+        df_wx[cols_float] = df_wx[cols_float].astype(float)
+        df_wx = df_wx.to_crs(CRS_COMPARISON)
+        pt = make_point(lat, lon, CRS_COMPARISON)
+        dists = df_wx.distance(pt)
+        df_wx = df_wx.loc[dists == min(dists)]
     return df_wx
 
 
 class SourceFwiCwfisDownload(SourceFwi):
-    # lock_download = threading.Lock()
+    URL_STNS = f"{URL_CWFIS_DOWNLOADS}/fwi_obs/cwfis_allstn2022.csv"
 
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        # HACK: load on init so values are cached
-        today = datetime.date.today()
-        yesterday = today - ONE_DAY
-        for date in [yesterday, today]:
-            model_data.get_wx_cwfis_download(self._dir_out, date)
+        self._have_dates = {}
 
-    def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        if datetime_start is None:
-            datetime_start = datetime.date.today() - ONE_DAY
-        if datetime_end is None:
-            datetime_end = datetime.date.today()
-        dates = list(pd.date_range(start=datetime_start, end=datetime_end, freq="D"))
-        # do individually so @cache can hash arguments
-        dfs_wx = [
-            model_data.get_wx_cwfis_download(
-                self._dir_out, date, ",".join(self.columns)
+    @classmethod
+    @cache
+    def _get_stns(cls, dir_out):
+        return try_save_http(
+            cls.URL_STNS,
+            os.path.join(dir_out, os.path.basename(cls.URL_STNS)),
+            keep_existing=False,
+            fct_pre_save=None,
+            fct_post_save=lambda _: gpd.read_file(_)[["aes", "wmo", "lat", "lon"]],
+        )
+
+    @classmethod
+    @cache
+    def _get_wx_base(
+        cls,
+        dir_out,
+        date,
+    ):
+        def do_parse(_):
+            logging.debug("Reading {}".format(_))
+            df = pd.read_csv(_, skipinitialspace=True)
+            df = df.loc[df["NAME"] != "NAME"]
+            df.columns = [x.lower() for x in df.columns]
+            df = df.loc[~df["ffmc"].isna()]
+            df["wmo"] = df["wmo"].astype(str)
+            df = pd.merge(df, stns, on=["aes", "wmo"])
+            df = df[["lat", "lon"] + cls.columns]
+            df["datetime"] = date + datetime.timedelta(hours=12)
+            df = df.sort_values(["datetime", "lat", "lon"])
+            return to_gdf(df)
+
+        ymd = date.strftime(FMT_DATE_YMD)
+        url = f"{URL_CWFIS_DOWNLOADS}/fwi_obs/current/cwfis_fwi_{ymd}.csv"
+        try:
+            stns = cls._get_stns(dir_out)
+            return try_save_http(
+                url,
+                os.path.join(dir_out, os.path.basename(url)),
+                keep_existing=False,
+                fct_pre_save=None,
+                fct_post_save=do_parse,
+                check_code=True,
             )
-            for date in dates
-        ]
-        df_wx = pd.concat(dfs_wx)
-        df_wx["datetime"] = df_wx["datetime"] + datetime.timedelta(hours=12)
-        return get_fwi(lat, lon, df_wx, self.columns)
+        except Exception as ex:
+            if isinstance(ex, HTTPError) and ex.code in [403, 404]:
+                # if it doesn't exist then return nothing but don't raise ex
+                # FIX: how does this interact with @cache?
+                return None
+            logging.error(ex)
+            raise ex
+
+    def _get_fwi(self, lat, lon, date):
+        return select_fwi(
+            lat, lon, self._get_wx_base(self._dir_out, date), self.columns
+        )
 
 
 class SourceFwiCwfisService(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        # HACK: load on init so values are cached
-        today = datetime.date.today()
-        yesterday = today - ONE_DAY
-        for date in [yesterday, today]:
-            model_data.get_wx_cwfis(self._dir_out, date)
 
-    def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        if datetime_start is None:
-            datetime_start = datetime.date.today() - ONE_DAY
-        if datetime_end is None:
-            datetime_end = datetime.date.today()
-        dates = list(pd.date_range(start=datetime_start, end=datetime_end, freq="D"))
-        df_wx = None
-        # do individually so @cache can hash arguments
-        for date in dates:
-            df_wx = pd.concat(
-                [
-                    df_wx,
-                    model_data.get_wx_cwfis(
-                        self._dir_out, date, indices=",".join(self.columns)
-                    ),
-                ]
-            )
-        return get_fwi(lat, lon, df_wx, self.columns)
+    def _get_fwi(self, lat, lon, date):
+        df_wx = model_data.get_wx_cwfis(
+            self._dir_out, date, indices=",".join(self.columns)
+        )
+        return select_fwi(lat, lon, df_wx, self.columns)
 
 
 class SourceFwiCwfis(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
-        if USE_CWFIS_SERVICE:
-            self._source = SourceFwiCwfisService(dir_out)
-        else:
-            self._source = SourceFwiCwfisDownload(dir_out)
+        self._source = (
+            SourceFwiCwfisService(dir_out)
+            if USE_CWFIS_SERVICE
+            else SourceFwiCwfisDownload(dir_out)
+        )
 
-    def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        return self._source.get_fwi(lat, lon, datetime_start, datetime_end)
-
-
-STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
+    def _get_fwi(self, lat, lon, date):
+        return self._source.get_fwi(lat, lon, date)
 
 
 def find_rank(x):
@@ -275,6 +366,7 @@ def find_rank(x):
 
 
 def assign_fires(
+    origin,
     df_features,
     df_fires,
     days_to_keep_unmatched=DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
@@ -283,14 +375,14 @@ def assign_fires(
     df_features = df_features.reset_index().to_crs(CRS_COMPARISON)
     df_fires = df_fires.reset_index().to_crs(CRS_COMPARISON)
     df_join = df_features.sjoin_nearest(df_fires, how="left", max_distance=1 * KM_TO_M)
-    df_join["status_rank"] = df_join["status"].apply(find_rank)
+    df_join["status_rank"] = tqdm_util.apply(
+        df_join["status"], find_rank, desc="Ranking by status"
+    )
     df_unmatched = df_join[df_join["fire_name"].isna()][
         ["datetime_left", "geometry"]
     ].rename(columns={"datetime_left": "datetime"})
     # HACK: if unmatched then ignore more readily based on age
-    min_active = to_utc(
-        datetime.date.today() - datetime.timedelta(days=days_to_keep_unmatched)
-    )
+    min_active = to_utc(origin.today - datetime.timedelta(days=days_to_keep_unmatched))
     df_unmatched = df_unmatched[df_unmatched["datetime"] >= min_active].reset_index(
         drop=True
     )
@@ -318,19 +410,20 @@ def assign_fires(
 
 
 def override_fires(df_fires, df_override):
-    # override df_fires when they match
-    matched = list(set(df_override.index).intersection(set(df_fires.index)))
-    unmatched = list(set(df_override.index).difference(set(matched)))
-    if unmatched:
-        logging.warning(f"Ignoring unmatched fires:\n{df_override.loc[unmatched]}")
-    df_fires = df_fires.loc[:]
-    df_override = df_override.loc[:]
-    cols_missing = [x for x in df_override.columns if np.all(df_override[x].isna())]
-    df_override.loc[matched, cols_missing] = df_fires.loc[matched, cols_missing]
-    df_fires.loc[matched] = df_override.loc[matched]
-    df_fires.loc[matched, "datetime"] = pick_max_by_column(
-        df_fires, df_override, "datetime", matched
-    )
+    if 0 < len(df_override):
+        # override df_fires when they match
+        matched = list(set(df_override.index).intersection(set(df_fires.index)))
+        unmatched = list(set(df_override.index).difference(set(matched)))
+        if unmatched:
+            logging.warning(f"Ignoring unmatched fires:\n{df_override.loc[unmatched]}")
+        df_fires = df_fires.loc[:]
+        df_override = df_override.loc[:]
+        cols_missing = [x for x in df_override.columns if np.all(df_override[x].isna())]
+        df_override.loc[matched, cols_missing] = df_fires.loc[matched, cols_missing]
+        df_fires.loc[matched] = df_override.loc[matched]
+        df_fires.loc[matched, "datetime"] = pick_max_by_column(
+            df_fires, df_override, "datetime", matched
+        )
     return df_fires
 
 
@@ -362,16 +455,23 @@ def find_sources(class_type, dir_search="private"):
 
 class SourceFireActive(SourceFire):
     def __init__(
-        self, dir_out, status_include=None, status_omit=["OUT"], year=YEAR
+        self,
+        dir_out,
+        origin,
+        status_include=None,
+        status_omit=["OUT"],
     ) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
+        self._origin = origin
         self._status_include = status_include
         self._status_omit = status_omit
-        self._source_ciffc = SourceFireCiffc(dir_out, status_ignore=None, year=year)
+        self._source_ciffc = SourceFireCiffc(
+            dir_out, status_ignore=None, year=self._origin.today.year
+        )
         # sources for features that we don't have a fire attached to
         self._source_features = [
-            SourceFeatureM3(self._dir_out),
+            SourceFeatureM3(self._dir_out, self._origin),
         ] + [s(self._dir_out) for s in find_sources(SourceFeature)]
         # sources for features that area associated with specific fires
         self._source_fires = [s(self._dir_out) for s in find_sources(SourceFire)]
@@ -384,7 +484,9 @@ class SourceFireActive(SourceFire):
         # override with each source in the order they appear
         for src in self._source_features:
             df_src = src.get_features()
-            df_src_fires, df_unmatched_cur = assign_fires(df_src, df_fires)
+            df_src_fires, df_unmatched_cur = assign_fires(
+                self._origin, df_src, df_fires
+            )
             df_unmatched = pd.concat([df_unmatched, df_unmatched_cur])
             df_fires = override_fires(df_fires, df_src_fires)
         for src in self._source_fires:
@@ -414,11 +516,12 @@ class SourceFireActive(SourceFire):
         )
         logging.info("Found %d fires that aren't matched with polygons", len(df_points))
         # HACK: put in circles of proper area if no perimeter
-        df_points["geometry"] = df_points.apply(
+        df_points["geometry"] = tqdm_util.apply(
+            df_points,
             lambda x: x.geometry.buffer(
                 max(0.1, area_ha_to_radius_m(max(0, x["area"])))
             ),
-            axis=1,
+            desc="Converting points with area to circles",
         )
         df_fires.loc[df_points.index, "geometry"] = df_points.to_crs(CRS_WGS84)[
             "geometry"

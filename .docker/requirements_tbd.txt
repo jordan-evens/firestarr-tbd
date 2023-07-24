@@ -12,4 +12,5 @@ timezonefinder
 tqdm
 multiprocess
 azure-storage-blob
-ratelimit
+pyrate-limiter
+py-filelock

@@ -30,12 +30,8 @@ class SourceSelector(object):
     def get_wx_model(self, lat, lon):
         return self._sources["model"][0].get_wx_forecast(lat, lon)
 
-    def get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        return check_columns(
-            self._get_fwi(lat, lon, datetime_start, datetime_end), "fwi"
-        )
+    def get_fwi(self, lat, lon, date):
+        return check_columns(self._get_fwi(lat, lon, date), "fwi")
 
-    def get_wx_hourly(self, lat, lon, datetime_start=None, datetime_end=None):
-        return check_columns(
-            self._get_wx_hourly(lat, lon, datetime_start, datetime_end), "weather"
-        )
+    def get_wx_hourly(self, lat, lon, date):
+        return check_columns(self._get_wx_hourly(lat, lon, date), "weather")

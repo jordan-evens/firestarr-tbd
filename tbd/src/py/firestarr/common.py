@@ -1,5 +1,4 @@
 """Shared code"""
-
 import configparser
 import datetime
 import itertools
@@ -7,30 +6,23 @@ import json
 import os
 import re
 import shutil
-import ssl
 import subprocess
 import sys
 import time
-import traceback
-import urllib.error
-import urllib.request as urllib2
 import zipfile
+from functools import cache
 from logging import getLogger
-from urllib.parse import urlparse
 
-import dateutil
-import dateutil.parser
 import numpy as np
 import pandas as pd
-import requests
-import tqdm_pool
+import tqdm_util
 from log import logging
 from osgeo import gdal
-from tqdm import tqdm
-from urllib3.exceptions import InsecureRequestWarning
+
+FLAG_DEBUG = False
 
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
-FMT_DATE = "%Y%m%d"
+FMT_DATE_YMD = "%Y%m%d"
 FMT_TIME = "%H%M"
 
 # makes groups that are too big because it joins mutiple groups into a chain
@@ -41,8 +33,8 @@ DEFAULT_GROUP_DISTANCE_KM = 20
 # MAX_NUM_DAYS = 3
 # MAX_NUM_DAYS = 7
 MAX_NUM_DAYS = 14
-# DEFAULT_M3_LAST_ACTIVE_IN_DAYS = None
-DEFAULT_M3_LAST_ACTIVE_IN_DAYS = 30
+# DEFAULT_M3_LAST_ACTIVE = None
+DEFAULT_M3_LAST_ACTIVE = datetime.timedelta(days=30)
 DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS = 1
 
 PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
@@ -51,11 +43,13 @@ PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
 FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS_SERVICE = False
+TIMEDELTA_DAY = datetime.timedelta(days=1)
+TIMEDELTA_HOUR = datetime.timedelta(hours=1)
 
 # use default for pmap() if None
 # CONCURRENT_SIMS = None
 # # HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = max(1, tqdm_pool.MAX_PROCESSES // 2)
+CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 2)
 
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
@@ -65,10 +59,6 @@ CREATION_OPTIONS = [
     "NUM_THREADS=ALL_CPUS",
 ]
 WANT_DATES = [1, 2, 3, 7, 14]
-
-# HACK: FIX: assume everything is this year
-YEAR = datetime.date.today().year
-
 
 # was still getting messages that look like they're from gdal when debug is on, but
 # maybe they're from a package that's using it?
@@ -80,28 +70,6 @@ gdal.PushErrorHandler("CPLQuietErrorHandler")
 
 getLogger("gdal").setLevel(logging.WARNING)
 getLogger("fiona").setLevel(logging.WARNING)
-
-# So HTTPS transfers work properly
-ssl._create_default_https_context = ssl._create_unverified_context
-
-
-# Suppress only the single warning from urllib3 needed.
-requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
-# pretend to be something else so servers don't block requests
-VERIFY = False
-# VERIFY = True
-HEADERS = {
-    "User-Agent": " ".join(
-        [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "AppleWebKit/537.36 (KHTML, like Gecko)",
-            "Chrome/106.0.0.0 Safari/537.36 Edg/106.0.1370.34",
-        ]
-    ),
-}
-# HEADERS = {'User-Agent': 'WeatherSHIELD/0.93'}
-RETRY_MAX_ATTEMPTS = 10
-RETRY_DELAY = 2
 
 # bounds to use for clipping data
 BOUNDS = None
@@ -230,6 +198,9 @@ def read_config(force=False):
             },
             "bounds": CONFIG["BOUNDS_FILE"],
         }
+        for k in ["latitude", "longitude"]:
+            high, low = BOUNDS[k]["max"], BOUNDS[k]["min"]
+            BOUNDS[k]["mid"] = (high - low) / 2 + low
 
 
 # HACK: need to do this every time file is loaded or else threads might get to it first
@@ -249,163 +220,6 @@ def fix_timezone_offset(d):
     localdelta = datetime.timedelta(seconds=-local_offset)
     # convert to local time so other ftp programs would produce same result
     return (d + localdelta).replace(tzinfo=None)
-
-
-def get_http(url, save_as=None, mode="wb", ignore_existing=False, check_modified=True):
-    """!
-    Save file at given URL into given directory using an HTTP connection
-    @param to_dir Directory to save into
-    @param url URL to download from
-    @param save_as File to save as, or None to use URL file name
-    @param mode Mode to write to file with
-    @param ignore_existing Whether or not to download if file already exists
-    @return Path that file was saved to
-    """
-    if save_as is None:
-        logging.debug(f"Opening {url}")
-        response = requests.get(url, verify=VERIFY, headers=HEADERS)
-        return response.content
-    # logging.debug("Saving {}".format(url))
-    if ignore_existing and os.path.exists(save_as):
-        # logging.debug('Ignoring existing file')
-        return save_as
-    to_dir = os.path.dirname(save_as)
-    ensure_dir(to_dir)
-    # we want to keep modified times matching on both ends
-    do_save = True
-    # req = urllib2.Request(url, headers=HEADERS)
-    # response = urllib2.urlopen(req,
-    #                            stream=True,
-    #                            verify=VERIFY)
-    modlocal = None
-    try:
-        logging.debug(f"Opening {url}")
-        response = requests.get(url, stream=True, verify=VERIFY, headers=HEADERS)
-        if check_modified and "last-modified" in response.headers.keys():
-            mod = response.headers["last-modified"]
-            modtime = dateutil.parser.parse(mod)
-            modlocal = fix_timezone_offset(modtime)
-            # if file exists then compare mod times
-            if os.path.isfile(save_as):
-                filetime = os.path.getmtime(save_as)
-                filedatetime = datetime.datetime.fromtimestamp(filetime)
-                do_save = modlocal != filedatetime
-        # NOTE: need to check file size too? Or should it not matter because we
-        #       only change the timestamp after it's fully written
-        if do_save:
-            with tqdm.wrapattr(
-                open(save_as, mode),
-                "write",
-                miniters=1,
-                desc=url.split("?")[0] if "?" in url else url,
-                total=int(response.headers.get("content-length", 0)),
-            ) as fout:
-                for chunk in response.iter_content(chunk_size=4096):
-                    fout.write(chunk)
-            # logging.debug(f'Downloaded {save_as}')
-            if modlocal is not None:
-                tt = modlocal.timetuple()
-                usetime = time.mktime(tt)
-                os.utime(save_as, (usetime, usetime))
-    except Exception as e:
-        logging.error(f"Failed getting {url}")
-        if os.path.exists(save_as):
-            try_remove(save_as)
-        raise e
-    return save_as
-
-
-def save_http(url, save_as=None, mode="wb", ignore_existing=False, check_modified=True):
-    """!
-    Save file at given URL into given directory using an HTTP connection
-    @param to_dir Directory to save into
-    @param url URL to download from
-    @param save_as File to save as, or None to use URL file name
-    @param mode Mode to write to file with
-    @param ignore_existing Whether or not to download if file already exists
-    @return Path that file was saved to
-    """
-    # logging.debug("Saving {}".format(url))
-    if save_as is None:
-        save_as = os.path.join(DIR_DOWNLOAD, os.path.basename(url))
-    return get_http(url, save_as, mode, ignore_existing, check_modified)
-
-
-def save_ftp(to_dir, url, user="anonymous", password="", ignore_existing=False):
-    """!
-    Save file at given URL into given directory using an FTP connection
-    @param to_dir Directory to save into
-    @param url URL to download from
-    @param user User to use for authentication
-    @param password Password to use for authentication
-    @param ignore_existing Whether or not to download if file already exists
-    @return Path that file was saved to
-    """
-    urlp = urlparse(url)
-    folder = os.path.dirname(urlp.path)
-    site = urlp.netloc
-    filename = os.path.basename(urlp.path)
-    # logging.debug("Saving {}".format(filename))
-    save_as = os.path.join(to_dir, filename)
-    # print(save_as)
-    if os.path.isfile(save_as):
-        if ignore_existing:
-            logging.debug("Ignoring existing file")
-            return save_as
-    import ftplib
-
-    # logging.debug([to_dir, url, site, user, password])
-    ftp = ftplib.FTP(site)
-    ftp.login(user, password)
-    ftp.cwd(folder)
-    do_save = True
-    ftptime = ftp.sendcmd("MDTM {}".format(filename))
-    ftpdatetime = datetime.datetime.strptime(ftptime[4:], "%Y%m%d%H%M%S")
-    ftplocal = fix_timezone_offset(ftpdatetime)
-    # if file exists then compare mod times
-    if os.path.isfile(save_as):
-        filetime = os.path.getmtime(save_as)
-        filedatetime = datetime.datetime.fromtimestamp(filetime)
-        do_save = ftplocal != filedatetime
-    # NOTE: need to check file size too? Or should it not matter because we
-    #       only change the timestamp after it's fully written
-    if do_save:
-        logging.debug("Downloading {}".format(filename))
-        with open(save_as, "wb") as f:
-            ftp.retrbinary("RETR {}".format(filename), f.write)
-        tt = ftplocal.timetuple()
-        usetime = time.mktime(tt)
-        os.utime(save_as, (usetime, usetime))
-    return save_as
-
-
-def try_save(fct, url, max_save_retries=RETRY_MAX_ATTEMPTS, check_code=False):
-    """!
-    Use callback fct to try saving up to a fixed number of retries
-    @param fct Function to apply to url
-    @param url URL to apply function to
-    @param max_save_retries Maximum number of times to try saving
-    @return Result of calling fct on url
-    """
-    save_tries = 0
-    while True:
-        try:
-            return fct(url)
-        except ConnectionError as ex:
-            logging.warning(ex)
-            if check_code:
-                # no point in retrying if URL doesn't exist
-                if 403 == ex.errno:
-                    logging.error(ex.reason)
-                    raise ex
-                if 404 == ex.errno:
-                    raise ex
-            if save_tries >= max_save_retries:
-                logging.error(f"Tried {save_tries} times, but failed to save {url}")
-                raise ex
-            logging.warning("Retrying save for {}".format(url))
-            time.sleep(RETRY_DELAY)
-            save_tries += 1
 
 
 def copy_file(filename, toname):
@@ -428,43 +242,24 @@ def filterXY(data):
     return data
 
 
-def try_remove(file):
+def try_remove(path):
     """!
-    Delete file but ignore errors if can't while raising old error
-    @param file Path to file to delete
+    Delete path but ignore errors if can't while raising old error
+    @param path Path to delete
     @return None
     """
-    try:
-        logging.debug("Trying to delete file {}".format(file))
-        os.remove(file)
-    except KeyboardInterrupt as ex:
-        raise ex
-    except Exception:
-        pass
-
-
-def download(url, suppress_exceptions=True):
-    """!
-    Download URL
-    @param url URL to download
-    @param suppress_exceptions Whether or not return exception instead of raising it
-    @return Contents of URL, or exception
-    """
-    try:
-        # HACK: check this to make sure url completion has worked properly
-        if "{}" in url:
-            raise RuntimeError(f"Url still has format string in it: {url}")
-        response = urllib2.urlopen(url)
-        # logging.debug("Saving {}".format(url))
-        return response.read()
-    except urllib.error.URLError as ex:
-        # provide option so that we can call this from multiprocessing and
-        # still handle errors
-        if suppress_exceptions:
-            # HACK: return type and url for exception
-            return {"type": type(ex), "url": url}
-        ex.url = url
-        raise ex
+    if not FLAG_DEBUG and path:
+        try:
+            if os.path.isfile(path):
+                logging.debug("Trying to delete file {}".format(path))
+                os.remove(path)
+            elif os.path.isdir(path):
+                logging.debug("Trying to remove directory {}".format(path))
+                shutil.rmtree(path, ignore_errors=True)
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            pass
 
 
 def split_line(line):
@@ -531,7 +326,7 @@ def zip_folder(zip_name, path):
             for f in files:
                 all_files.append(os.path.join(root, f))
         logging.info("Zipping")
-        for f in tqdm(all_files, desc=os.path.basename(zip_name)):
+        for f in tqdm_util.apply(all_files, desc=os.path.basename(zip_name)):
             f_relative = f.replace(path, "").lstrip("/")
             zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name
@@ -551,20 +346,10 @@ def dump_json(data, path):
             # HACK: not getting full string when using f.write(s)
             json.dump(data, f)
             # f.write(s)
-    except KeyboardInterrupt as ex:
-        raise ex
     except Exception as ex:
         logging.error(f"Error writing to {file}:\n{str(ex)}\n{data}")
         raise ex
     return file
-
-
-# so we can throw an exception and include the content that didn't parse plus
-# the exception that happened
-class ParseError(Exception):
-    def __init__(self, *args):
-        super().__init__(args)
-        self.trace = traceback.format_exception(*sys.exc_info())
 
 
 def pick_max(a, b):
@@ -576,3 +361,41 @@ def pick_max_by_column(a, b, column, index=None):
     if index is None:
         index = a.index
     return pick_max(a.loc[index, column], b.loc[index, column])
+
+
+# standard function we can use as a default wrapper if nothing special happens
+def do_nothing(x):
+    return x
+
+
+@cache
+def calc_offset(d, i):
+    return d + datetime.timedelta(days=i)
+
+
+class Origin(object):
+    def __init__(self, d=None):
+        if d is None:
+            d = datetime.date.today()
+        # HACK: don't check for class because hopefully this works with anything
+        if hasattr(d, "date"):
+            if callable(d.date):
+                d = d.date()
+            else:
+                d = d.date
+        self._today = d
+
+    def offset(self, i):
+        return calc_offset(self._today, i)
+
+    @property
+    def today(self):
+        return self._today
+
+    @property
+    def yesterday(self):
+        return self.offset(-1)
+
+    @property
+    def tomorrow(self):
+        return self.offset(1)

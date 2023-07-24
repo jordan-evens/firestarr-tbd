@@ -11,14 +11,11 @@ from gis import (
 import numpy as np
 import pandas as pd
 import pyproj
+import tqdm_util
 from common import (
     DEFAULT_GROUP_DISTANCE_KM,
-    YEAR,
     logging,
 )
-from tqdm import tqdm
-
-STR_YEAR = str(YEAR)
 
 
 def separate_points(f):
@@ -45,7 +42,7 @@ def group_fires_by_buffer(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_KM)
     df_dissolve = df_buffer.dissolve()
     df_explode = df_dissolve.explode(index_parts=False)
     df_groups = None
-    for i in tqdm(range(len(df_explode)), desc="Grouping fires"):
+    for i in tqdm_util.apply(range(len(df_explode)), desc="Grouping fires"):
         a = df_explode.iloc[i].geometry
         g = df_polys.loc[df_polys.intersects(a)]
         df_polys = df_polys.loc[~df_polys.intersects(a)]
@@ -72,14 +69,17 @@ def group_fires_by_distance(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_K
     p_check = p_check.iloc[1:]
     # just check polygon proximity to start
     # logging.info("Grouping polygons")
-    with tqdm(desc="Grouping fires", total=len(p_check)) as tq:
+    with tqdm_util.apply(desc="Grouping fires", total=len(p_check)) as tq:
         p_done = []
         while 0 < len(p_check):
             n_prev = len(p_check)
             compare_to = to_gdf(p_check.geometry)
             # distances should be in meters
-            compare_to["dist"] = compare_to.apply(
-                lambda x: min(x["geometry"].distance(y) for y in p.geometry), axis=1
+            compare_to["dist"] = tqdm_util.apply(
+                compare_to,
+                lambda x: min(x["geometry"].distance(y) for y in p.geometry),
+                axis=1,
+                desc="Calculating distances",
             )
             p_nearby = compare_to[compare_to.dist <= group_distance]
             if 0 < len(p_nearby):
@@ -101,9 +101,7 @@ def group_fires_by_distance(df_fires, group_distance_km=DEFAULT_GROUP_DISTANCE_K
 
 
 def name_groups(df):
-    # NOTE: year should not be relevant, because we just care about the
-    # projection, not the data
-    zone_rasters = find_raster_meridians(YEAR)
+    zone_rasters = find_raster_meridians()
     zone_rasters = {k: v for k, v in zone_rasters.items() if not v.endswith("_5.tif")}
 
     def find_best_zone_raster(lon):
@@ -120,13 +118,19 @@ def name_groups(df):
     df_groups["lon"] = centroids.x
     df_groups["lat"] = centroids.y
     # HACK: name based on UTM coordinates
-    df_groups["raster"] = centroids.x.apply(find_best_zone_raster)
-    df_rasters = pd.DataFrame({"raster": np.unique(df_groups[["raster"]])})
-    df_rasters["wkt"] = df_rasters["raster"].apply(
-        lambda r: GetSpatialReference(r).ExportToWkt()
+    df_groups["raster"] = tqdm_util.apply(
+        df_groups["lon"], find_best_zone_raster, desc="Finding zone rasters"
     )
-    df_rasters["zone"] = df_rasters["raster"].apply(
-        lambda r: int(os.path.basename(r).split("_")[1])
+    df_rasters = pd.DataFrame({"raster": np.unique(df_groups[["raster"]])})
+    df_rasters["wkt"] = tqdm_util.apply(
+        df_rasters["raster"],
+        lambda r: GetSpatialReference(r).ExportToWkt(),
+        desc="Finding zone wkt",
+    )
+    df_rasters["zone"] = tqdm_util.apply(
+        df_rasters["raster"],
+        lambda r: int(os.path.basename(r).split("_")[1]),
+        desc="Finding zone numbers",
     )
     df_groups = pd.merge(df_groups, df_rasters)
     df_centroids = df_groups.loc[:]
@@ -140,11 +144,15 @@ def name_groups(df):
         n_or_s = "N" if lat >= 0 else "S"
         return f"{zone:02d}{n_or_s}_{basemap:05d}"
 
-    for i, g in df_centroids.groupby(["zone"]):
+    for i, g in tqdm_util.apply(
+        df_centroids.groupby(["zone"]), desc="Naming groups by zone"
+    ):
         wkt = g["wkt"].iloc[0]
         g_zone = g.to_crs(wkt)
-        df_groups.loc[g_zone.index, "fire_name"] = g_zone.apply(
-            lambda x: find_zone_basemap(x["zone"], x["lat"], x["geometry"]), axis=1
+        df_groups.loc[g_zone.index, "fire_name"] = tqdm_util.apply(
+            g_zone,
+            lambda x: find_zone_basemap(x["zone"], x["lat"], x["geometry"]),
+            desc="Naming groups",
         )
     # it should be impossible for 2 groups to be in the same basemap
     # because they are grouped within > 10km

@@ -1,10 +1,11 @@
 import datetime
 import os
 import urllib.parse
+import numpy as np
 
 import pandas as pd
 from azure.storage.blob import BlobServiceClient, ExponentialRetry
-from common import CONFIG, DIR_OUTPUT, DIR_ZIP, FMT_DATE, listdir_sorted, logging
+from common import CONFIG, DIR_OUTPUT, DIR_ZIP, FMT_DATE_YMD, listdir_sorted, logging
 
 AZURE_URL = None
 AZURE_TOKEN = None
@@ -36,7 +37,7 @@ def read_config():
     except ValueError as ex:
         logging.error(ex)
         logging.warning("Unable to read azure config")
-    return AZURE_URL and AZURE_TOKEN and AZURE_CONTAINER
+    return np.all(bool(x) for x in [AZURE_URL, AZURE_TOKEN, AZURE_CONTAINER])
 
 
 def get_blob_service_client():
@@ -75,7 +76,7 @@ def upload_dir(dir_run=None):
     run_name = os.path.basename(dir_run)
     run_id = run_name[run_name.index("_") + 1 :]
     source = run_name[: run_name.index("_")]
-    date = pd.to_datetime(run_id).date().strftime(FMT_DATE)
+    date = pd.to_datetime(run_id).date().strftime(FMT_DATE_YMD)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
     files = listdir_sorted(dir_combined)
@@ -97,7 +98,7 @@ def upload_dir(dir_run=None):
         "source": source,
         "origin_date": date,
     }
-    origin = datetime.datetime.strptime(date, FMT_DATE).date()
+    origin = datetime.datetime.strptime(date, FMT_DATE_YMD).date()
     if container is None:
         # wait until we know we need it
         container = get_container()
@@ -114,7 +115,7 @@ def upload_dir(dir_run=None):
             for_date = origin
         else:
             for_date = origin + datetime.timedelta(days=(days[f] - 1))
-        metadata["for_date"] = for_date.strftime(FMT_DATE)
+        metadata["for_date"] = for_date.strftime(FMT_DATE_YMD)
         path = os.path.join(dir_combined, f)
         # HACK: just upload into archive too so we don't have to move later
         with open(path, "rb") as data:

@@ -8,14 +8,16 @@ import numpy as np
 COLUMNS_MODEL = ["model", "id"]
 COLUMNS_STATION = ["lat", "lon"]
 COLUMN_TIME = "datetime"
+COLUMNS_WEATHER = {
+    "key": COLUMNS_MODEL + COLUMNS_STATION,
+    "columns": ["temp", "rh", "wd", "ws", "precip"],
+}
 COLUMNS = {
     "feature": {"key": [], "columns": []},
     "fire": {"key": ["fire_name"], "columns": ["area", "status"]},
     "fwi": {"key": COLUMNS_STATION, "columns": ["ffmc", "dmc", "dc"]},
-    "weather": {
-        "key": COLUMNS_MODEL + COLUMNS_STATION,
-        "columns": ["temp", "rh", "wd", "ws", "precip"],
-    },
+    "model": COLUMNS_WEATHER,
+    "hourly": COLUMNS_WEATHER,
 }
 
 
@@ -73,13 +75,6 @@ def find_closest(df, lat, lon, crs=CRS_COMPARISON):
     return df.loc[df["dist"] == np.min(df["dist"])]
 
 
-def make_error(signature, template):
-    key, columns = get_columns(template)
-    raise NotImplementedError(
-        f"Must implement {signature} returning columns:\n\t{columns}"
-    )
-
-
 def pick_date_refresh(as_of, refresh):
     # if from a previous date then use that, but if from same day as refresh
     # use refresh time
@@ -87,27 +82,34 @@ def pick_date_refresh(as_of, refresh):
 
 
 class Source(ABC):
-    def __init__(self, provides, bounds) -> None:
-        self._provides = provides
+    def __init__(self, bounds) -> None:
         # this applies to anything in the bounds
         self._bounds = bounds if bounds is None else bounds.dissolve()
 
+    @classmethod
     @property
-    def provides(self):
-        return self._provides
+    @abstractmethod
+    def _provides(cls):
+        pass
 
     @property
     def bounds(self) -> gpd.GeoDataFrame:
         # copy so it can't be modified
         return None if self._bounds is None else self._bounds.loc[:]
 
+    @classmethod
     @property
-    def columns(self):
-        return COLUMNS[self._provides]["columns"]
+    def columns(cls):
+        return COLUMNS[cls._provides]["columns"]
 
+    @classmethod
     @property
-    def key(self):
-        return COLUMNS[self._provides]["key"]
+    def key(cls):
+        return COLUMNS[cls._provides]["key"]
+
+    @classmethod
+    def check_columns(cls, df):
+        return check_columns(df, cls._provides)
 
     def applies_to(self, lat, lon) -> bool:
         return self._bounds is None or self._bounds.contains(
@@ -117,65 +119,86 @@ class Source(ABC):
 
 class SourceFeature(Source):
     def __init__(self, bounds) -> None:
-        super().__init__("feature", bounds)
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "feature"
 
     @abstractmethod
     def _get_features(self):
-        raise make_error("_get_features()", "feature")
+        pass
 
     def get_features(self):
-        return check_columns(self._get_features(), "feature")
+        return self.check_columns(self._get_features())
 
 
 class SourceFire(Source):
     def __init__(self, bounds) -> None:
-        super().__init__("fire", bounds)
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "fire"
 
     @abstractmethod
     def _get_fires(self):
-        raise make_error("_get_fires()", "fire")
+        pass
 
     def get_fires(self):
-        return check_columns(self._get_fires(), "fire")
+        return self.check_columns(self._get_fires())
 
 
 class SourceModel(Source):
     def __init__(self, bounds) -> None:
-        super().__init__("model", bounds)
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "model"
 
     @abstractmethod
     def _get_wx_model(self, lat, lon):
-        raise make_error("_get_wx_model(lat, lon)", "weather")
+        pass
 
     def get_wx_model(self, lat, lon):
-        return check_columns(self._get_wx_model(lat, lon), "weather")
+        return self.check_columns(self._get_wx_model(lat, lon))
 
 
 class SourceHourly(Source):
     def __init__(self, bounds) -> None:
-        super().__init__("hourly", bounds)
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "hourly"
 
     @abstractmethod
     def _get_wx_hourly(self, lat, lon, datetime_start=None, datetime_end=None):
-        signature = "_get_wx_hourly(lat, lon, datetime_start, datetime_end)"
-        raise make_error(signature, "weather")
+        pass
 
     def get_wx_hourly(self, lat, lon, datetime_start=None, datetime_end=None):
-        return check_columns(
-            self._get_wx_hourly(lat, lon, datetime_start, datetime_end), "weather"
+        return self.check_columns(
+            self._get_wx_hourly(lat, lon, datetime_start, datetime_end)
         )
 
 
 class SourceFwi(Source):
     def __init__(self, bounds) -> None:
-        super().__init__("fwi", bounds)
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "fwi"
 
     @abstractmethod
-    def _get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        signature = "_get_fwi(lat, lon, datetime_start, datetime_end)"
-        raise make_error(signature, "fwi")
+    def _get_fwi(self, lat, lon, date):
+        pass
 
-    def get_fwi(self, lat, lon, datetime_start=None, datetime_end=None):
-        return check_columns(
-            self._get_fwi(lat, lon, datetime_start, datetime_end), "fwi"
-        )
+    def get_fwi(self, lat, lon, date):
+        return self.check_columns(self._get_fwi(lat, lon, date))

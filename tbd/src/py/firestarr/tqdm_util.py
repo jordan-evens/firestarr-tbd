@@ -1,12 +1,62 @@
+import collections
+import contextlib
 import itertools
 
 import multiprocess as mp
 import numpy as np
-from tqdm import tqdm
+import pandas as pd
+from tqdm.auto import tqdm
 
 MAX_PROCESSES = mp.cpu_count()
-# # HACK: trying to keep things from freezing all the time lately
-# DEFAULT_PROCESSES = max(1, int(mp.cpu_count() / 4))
+TQDM_DEPTH = mp.Value("i", 0)
+DEFAULT_KEEP_ALL = True
+KEEP_LEVELS = 2
+TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
+
+
+@contextlib.contextmanager
+def tqdm_depth(keep_all=DEFAULT_KEEP_ALL):
+    global TQDM_DEPTH
+    position = TQDM_DEPTH.value
+    obj = TqdmArgs(position, keep_all or KEEP_LEVELS > position)
+    try:
+        TQDM_DEPTH.value += 1
+        yield obj
+    finally:
+        TQDM_DEPTH.value -= 1
+
+
+def apply(onto, fct=None, *args, **kwargs):
+    with tqdm_depth() as tq:
+        kwargs["position"] = tq.position
+        kwargs["leave"] = tq.leave
+        if isinstance(onto, pd.DataFrame) or isinstance(onto, pd.Series):
+            if fct is None:
+                raise RuntimeError("Must specify function if using Series or DataFrame")
+            #  prep so progress_apply() works
+            tqdm.pandas(*args, **kwargs)
+            # apply to axis if not Series
+            return (
+                onto.progress_apply(fct)
+                if isinstance(onto, pd.Series)
+                else onto.progress_apply(fct, axis=1)
+            )
+        return (
+            [fct(x) for x in tqdm(onto, *args, **kwargs)]
+            if fct is not None
+            else tqdm(onto, *args, **kwargs)
+        )
+
+
+def wrap_write(chunks, save_as, mode, *args, **kwargs):
+    with tqdm_depth() as tq:
+        kwargs["position"] = tq.position
+        kwargs["leave"] = tq.leave
+        kwargs["miniters"] = 1
+        with tqdm.wrapattr(open(save_as, mode), "write", *args, **kwargs) as fout:
+            for chunk in chunks:
+                fout.write(chunk)
+        return save_as
 
 
 def initializer():
@@ -30,18 +80,16 @@ def init_pool(processes=None, no_limit=False):
 def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
     if 1 == max_processes or (not no_limit and 1 == MAX_PROCESSES):
         # don't bother with pool if only one process
-        return [fct(x) for x in tqdm(values, *args, **kwargs)]
+        return [fct(x) for x in apply(values, *args, **kwargs)]
     pool = init_pool(max_processes, no_limit)
     try:
         kwargs["total"] = len(values)
-        results = list(
-            tqdm(
-                pool.imap_unordered(
-                    lambda p: (p[0], fct(p[1])), [(i, v) for i, v in enumerate(values)]
-                ),
-                *args,
-                **kwargs,
-            )
+        results = apply(
+            pool.imap_unordered(
+                lambda p: (p[0], fct(p[1])), [(i, v) for i, v in enumerate(values)]
+            ),
+            *args,
+            **kwargs,
         )
         result = [v[1] for v in sorted(results, key=lambda v: v[0])]
         return result
@@ -67,7 +115,6 @@ def pmap_by_group(
     pool = init_pool(max_processes, no_limit)
     _desc = f"{kwargs['desc']}: " if "desc" in kwargs else ""
     # HACK: let dictionary show progress by groups
-    fct = fct
     values = values
     all_values = list(itertools.chain.from_iterable(values.values()))
     lengths = {k: len(v) for k, v in values.items()}
@@ -90,7 +137,7 @@ def pmap_by_group(
         result = {}
         results = [None] * len(all_values)
         for i, v in (
-            pbar := tqdm(
+            pbar := apply(
                 pool.imap_unordered(
                     lambda p: (p[0], fct(p[1])),
                     [(i, v) for i, v in enumerate(all_values)],

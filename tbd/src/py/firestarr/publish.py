@@ -5,12 +5,12 @@ import shutil
 import time
 
 import gis
-import tqdm_pool
+import tqdm_util
 from common import (
     CREATION_OPTIONS,
     DIR_OUTPUT,
     DIR_ZIP,
-    FMT_DATE,
+    FMT_DATE_YMD,
     FORMAT_OUTPUT,
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
     ensure_dir,
@@ -20,7 +20,6 @@ from common import (
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
-from tqdm import tqdm
 
 
 def publish_all(dir_current=None, force=False):
@@ -54,11 +53,11 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
         ]
     dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
     for_dates = [
-        datetime.datetime.strptime(_, FMT_DATE) for _ in dirs_what if "perim" != _
+        datetime.datetime.strptime(_, FMT_DATE_YMD) for _ in dirs_what if "perim" != _
     ]
     date_origin = min(for_dates)
     # for_what, files = list(files_by_for_what.items())[-2]
-    for for_what, files in tqdm(
+    for for_what, files in tqdm_util.apply(
         files_by_for_what.items(), desc=f"Merging {dir_parent}"
     ):
         dir_in_for_what = os.path.basename(for_what)
@@ -67,7 +66,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
             dir_for_what = "perim"
             date_cur = for_dates[0]
         else:
-            date_cur = datetime.datetime.strptime(dir_in_for_what, FMT_DATE)
+            date_cur = datetime.datetime.strptime(dir_in_for_what, FMT_DATE_YMD)
             offset = (date_cur - date_origin).days + 1
             dir_for_what = f"day_{offset:02d}"
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
@@ -86,7 +85,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                 changed = True
             return f_crs
 
-        files_crs = tqdm_pool.pmap(
+        files_crs = tqdm_util.pmap(
             reproject, files, desc=f"Reprojecting for {dir_in_for_what}"
         )
         file_root = os.path.join(
@@ -100,6 +99,12 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
         #     + files_crs)
         # no point in doing this if nothing was added
         if force or changed or not os.path.isfile(file_base):
+            # HACK: seems like currently making empty combined raster so delete first
+            #       in case it's merging into existing and causing problems
+            if os.path.isfile(file_tmp):
+                os.remove(file_tmp)
+            if os.path.isfile(file_base):
+                os.remove(file_base)
             gdal_merge_max(
                 (
                     [
