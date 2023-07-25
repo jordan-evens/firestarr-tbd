@@ -1,8 +1,8 @@
 import datetime
 import os
 import urllib.parse
-import numpy as np
 
+import numpy as np
 import pandas as pd
 from azure.storage.blob import BlobServiceClient, ExponentialRetry
 from common import CONFIG, DIR_OUTPUT, DIR_ZIP, FMT_DATE_YMD, listdir_sorted, logging

@@ -1,15 +1,14 @@
 import datetime
-from functools import cache
-from io import StringIO
 import os
 import ssl
 import time
 import urllib.parse
+from functools import cache
+from io import StringIO
 from urllib.error import HTTPError
 
 import dateutil
 import dateutil.parser
-from filelock import FileLock
 import requests
 import tqdm_util
 from common import (
@@ -18,8 +17,10 @@ from common import (
     ensure_dir,
     fix_timezone_offset,
     logging,
+    remove_on_exception,
     try_remove,
 )
+from filelock import FileLock
 from urllib3.exceptions import InsecureRequestWarning
 
 # So HTTPS transfers work properly
@@ -112,18 +113,16 @@ def save_http(
         # if any existing file and keep_existing then assume current
         if save_as_ not in CACHE_DOWNLOADED:
             with FileLock(file_lock, -1):
-                if not (os.path.isfile(save_as_) and keep_existing):
-                    try:
+                with remove_on_exception(
+                    [save_as_, file_lock], f"Failed getting {url}"
+                ):
+                    if not (os.path.isfile(save_as_) and keep_existing):
                         save_as_ = _save_http_cached(
                             (fct_pre_save or do_nothing)(url), save_as_
                         )
-                    except Exception as ex:
-                        logging.error(f"Failed getting {url}")
-                        try_remove(save_as_)
-                        raise ex
-                with FileLock(CACHE_LOCK_FILE, -1):
-                    CACHE_DOWNLOADED[save_as_] = save_as_
-                # HACK: something else that was waiting could have deleted the lock
+                    with FileLock(CACHE_LOCK_FILE, -1):
+                        CACHE_DOWNLOADED[save_as_] = save_as_
+                    # HACK: something else that was waiting could have deleted the lock
                 try_remove(file_lock)
                 if save_as_ not in CACHE_DOWNLOADED:
                     raise RuntimeError(
@@ -159,10 +158,11 @@ def try_save_http(
     save_tries = 0
     while True:
         try:
-            return save_http(url, save_as, keep_existing, fct_pre_save, fct_post_save)
+            with remove_on_exception(save_as):
+                return save_http(
+                    url, save_as, keep_existing, fct_pre_save, fct_post_save
+                )
         except Exception as ex:
-            # get rid of any file that's there if this failed
-            try_remove(save_as)
             if isinstance(ex, KeyboardInterrupt):
                 raise ex
             m = mask_url(url)

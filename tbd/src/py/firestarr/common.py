@@ -1,6 +1,7 @@
 """Shared code"""
 import configparser
 import datetime
+import inspect
 import itertools
 import json
 import os
@@ -10,7 +11,8 @@ import subprocess
 import sys
 import time
 import zipfile
-from functools import cache
+from contextlib import contextmanager
+from functools import cache, wraps
 from logging import getLogger
 
 import numpy as np
@@ -399,3 +401,82 @@ class Origin(object):
     @property
     def tomorrow(self):
         return self.offset(1)
+
+
+@contextmanager
+def remove_on_exception(paths, msg=None, logger=logging):
+    try:
+        yield
+    except Exception as ex:
+        logger.error(f"Removing {paths} after {ex}")
+        if msg:
+            logger.error(msg)
+        # HACK: strings are iterable, so can't just check if that works
+        if isinstance(paths, str):
+            paths = [paths]
+        for path in paths:
+            try_remove(path)
+        logger.error(f"Raising {ex}")
+        raise ex
+
+
+@contextmanager
+def log_on_entry_exit(msg, logger=logging):
+    logger.info(f"START - {msg}")
+    yield
+    # 3 spaces after END so we line up like:
+    #   START -
+    #   END   -
+    logger.debug(f"END   - {msg}")
+
+
+def make_show_args(fct, show_args, ignore_args=["self"]):
+    if callable(show_args):
+        # if it's already a function then use it
+        return show_args
+
+    def show_args_none(*args, **kwargs):
+        return ""
+
+    params = inspect.signature(fct).parameters
+    had_self = "self" in params.keys()
+    check_args = [x for x in params.keys() if x not in ignore_args]
+
+    if show_args and show_args is not True:
+        # filter args to match this list
+        check_args = [x for x in check_args if x in show_args]
+
+    # if filtered all args out or was False already
+    if not (show_args and check_args):
+        # if no arguments then don't try to show them
+        return show_args_none
+
+    # always going to be filtered since we make a list excluding some things
+    def do_show_args(*args, **kwargs):
+        if had_self:
+            if "self" not in kwargs.keys():
+                # if not named then assume it's first argument
+                args = args[1:]
+        return ", ".join(
+            [f"{x}" for x in args]
+            + [f"{k}={v}" for k, v in kwargs.items() if k in check_args]
+        )
+
+    return do_show_args
+
+
+def log_entry_exit(logger=logging, show_args=True):
+    def decorator(fct):
+        # use function variable so logic doesn't happen on every call
+        call_show = make_show_args(fct, show_args)
+
+        @wraps(fct)
+        def wrapper(*args, **kwargs):
+            with log_on_entry_exit(
+                f"{fct.__name__}({call_show(*args, **kwargs)})", logger
+            ):
+                return fct(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

@@ -1,11 +1,11 @@
 import os
 
 import geopandas as gpd
-from gis import CRS_WGS84
 import numpy as np
 import pandas as pd
 import shapely.geometry
 from common import ensure_dir
+from gis import CRS_WGS84
 
 DIR = ensure_dir("../data/tmp/bounds")
 KM_TO_M = 1000

@@ -1,5 +1,5 @@
-from datasources.datatypes import check_columns
 import datasources.spotwx
+from datasources.datatypes import check_columns
 from gis import make_empty_gdf
 
 

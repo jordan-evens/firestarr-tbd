@@ -13,4 +13,4 @@ tqdm
 multiprocess
 azure-storage-blob
 pyrate-limiter
-py-filelock
+filelock

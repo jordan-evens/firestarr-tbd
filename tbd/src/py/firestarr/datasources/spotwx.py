@@ -6,7 +6,15 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import BOUNDS, CONFIG, DIR_DOWNLOAD, do_nothing, ensure_dir, logging
+from common import (
+    BOUNDS,
+    CONFIG,
+    DIR_DOWNLOAD,
+    do_nothing,
+    ensure_dir,
+    logging,
+    remove_on_exception,
+)
 from datasources.datatypes import SourceModel
 from gis import to_gdf
 from net import try_save_http
@@ -214,11 +222,27 @@ class SourceGEPS(SourceModel):
     def model(cls):
         return "geps"
 
-    def _get_wx_model(self, lat, lon):
+    def __do_get_wx_model(self, lat, lon, retry=True):
         file_out = os.path.join(
             self._dir_out, make_filename(self.model, lat, lon, "geojson")
         )
-        if not os.path.isfile(file_out):
-            gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
-            gdf.to_file(file_out)
-        return gpd.read_file(file_out)
+        is_download = not os.path.isfile(file_out)
+        try:
+            with remove_on_exception(file_out):
+                if is_download:
+                    gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
+                    gdf.to_file(file_out)
+                return gpd.read_file(file_out)
+        except Exception as ex:
+            if is_download or not retry:
+                # something happened when we tried to download it so fail
+                raise ex
+            # we tried using the existing file, so now that it's gone try downloading
+            logging.warning(
+                "Loading existing file {file_out} failed - retrying from download"
+            )
+            return self.__do_get_wx_model(lat, lon, retry=False)
+
+    def _get_wx_model(self, lat, lon):
+        # HACK: call private function so we can keep same parameters but add retry
+        return self.__do_get_wx_model(lat, lon)

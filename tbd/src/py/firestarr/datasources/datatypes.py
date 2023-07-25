@@ -1,9 +1,8 @@
 from abc import ABC, abstractmethod
 
 import geopandas as gpd
-from gis import CRS_COMPARISON, CRS_WGS84
 import numpy as np
-
+from gis import CRS_COMPARISON, CRS_WGS84
 
 COLUMNS_MODEL = ["model", "id"]
 COLUMNS_STATION = ["lat", "lon"]

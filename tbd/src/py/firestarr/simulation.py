@@ -3,7 +3,7 @@ import json
 import os
 import shutil
 import timeit
-from filelock import FileLock
+
 import datasources.spotwx
 import geopandas as gpd
 import model_data
@@ -22,15 +22,19 @@ from common import (
     FMT_TIME,
     MAX_NUM_DAYS,
     WANT_DATES,
+    Origin,
     dump_json,
     ensure_dir,
     list_dirs,
+    log_entry_exit,
+    log_on_entry_exit,
     logging,
+    remove_on_exception,
     try_remove,
-    Origin,
 )
 from datasources.cwfis import SourceFireActive, SourceFwiCwfis
 from datasources.datatypes import SourceFire
+from filelock import FileLock
 from fires import get_fires_folder, group_fires
 from gis import (
     CRS_COMPARISON,
@@ -41,173 +45,193 @@ from gis import (
     save_shp,
     to_gdf,
 )
-from log import add_log_file
+from log import LOGGER_NAME, add_log_file
 from publish import publish_all
 
 import tbd
-from tbd import FILE_SIM
+from tbd import FILE_SIM, FILE_WEATHER
+
+LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
 
 
+def log_order(*args, **kwargs):
+    return log_entry_exit(logger=LOGGER_FIRE_ORDER, *args, **kwargs)
+
+
+def log_order_msg(msg):
+    return log_on_entry_exit(msg, LOGGER_FIRE_ORDER)
+
+
+def log_order_firename():
+    return log_order(show_args=lambda row_fire: row_fire.fire_name)
+
+
+@log_order(show_args=lambda df_fire, fct_get_fwi: df_fire.iloc[0].fire_name)
 def prep_row(df_fire, fct_get_fwi):
     dir_fire = None
     if len(df_fire) > 1:
         raise RuntimeError("Expected exactly one row")
     if "fire_name" not in df_fire.columns:
         raise RuntimeError("Expected fire_name to be in columns")
-    row_fire = df_fire.iloc[0]
-    lat = row_fire["lat"]
-    lon = row_fire["lon"]
-    df_wx_actual = None
-    # HACK: so we can adjust date at start of loop
-    run_start = row_fire["start_time"]
-    origin = Origin(run_start)
-    date_try = origin.tomorrow
-    while df_wx_actual is None or 0 == len(df_wx_actual):
-        date_try = date_try - datetime.timedelta(days=1)
-        df_wx_actual = fct_get_fwi(lat, lon, date_try)
-    ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values(
-        ["datetime"], ascending=False
-    ).iloc[0][["ffmc", "dmc", "dc", "datetime"]]
-    dir_out = row_fire["dir_sims"]
-    max_days = row_fire["DURATION"]
-    fire_name = row_fire["fire_name"]
-    dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
-    logging.debug("Saving %s to %s", fire_name, dir_fire)
-    # FIX: just use geojson for everything
-    file_fire = save_geojson(df_fire, os.path.join(dir_fire, fire_name))
-    data = {
-        # UTC time
-        "job_date": run_start.strftime(FMT_DATE_YMD),
-        "job_time": run_start.strftime(FMT_TIME),
-        "date_startup": date_startup.isoformat(),
-        "ffmc_old": ffmc_old,
-        "dmc_old": dmc_old,
-        "dc_old": dc_old,
-        # HACK: FIX: need to actually figure this out
-        "apcp_prev": 0,
-        "lat": lat,
-        "lon": lon,
-        "perim": os.path.basename(file_fire),
-        "dir_out": os.path.join(dir_fire, "firestarr"),
-        "fire_name": fire_name,
-        "max_days": max_days,
-    }
-    dump_json(data, os.path.join(dir_fire, FILE_SIM))
-    return dir_fire
-
-
-def do_prep_fire(dir_fire, fct_get_wx_model):
-    file_wx = os.path.join(dir_fire, "wx.csv")
-    if os.path.isfile(file_wx):
+    with remove_on_exception(dir_fire):
+        row_fire = df_fire.iloc[0]
+        lat = row_fire["lat"]
+        lon = row_fire["lon"]
+        df_wx_actual = None
+        # HACK: so we can adjust date at start of loop
+        run_start = row_fire["start_time"]
+        origin = Origin(run_start)
+        date_try = origin.tomorrow
+        while df_wx_actual is None or 0 == len(df_wx_actual):
+            date_try = date_try - datetime.timedelta(days=1)
+            df_wx_actual = fct_get_fwi(lat, lon, date_try)
+        ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values(
+            ["datetime"], ascending=False
+        ).iloc[0][["ffmc", "dmc", "dc", "datetime"]]
+        dir_out = row_fire["dir_sims"]
+        max_days = row_fire["DURATION"]
+        fire_name = row_fire["fire_name"]
+        dir_fire = ensure_dir(os.path.join(dir_out, fire_name))
+        logging.debug("Saving %s to %s", fire_name, dir_fire)
+        # FIX: just use geojson for everything
+        file_fire = save_geojson(df_fire, os.path.join(dir_fire, fire_name))
+        data = {
+            # UTC time
+            "job_date": run_start.strftime(FMT_DATE_YMD),
+            "job_time": run_start.strftime(FMT_TIME),
+            "date_startup": date_startup.isoformat(),
+            "ffmc_old": ffmc_old,
+            "dmc_old": dmc_old,
+            "dc_old": dc_old,
+            # HACK: FIX: need to actually figure this out
+            "apcp_prev": 0,
+            "lat": lat,
+            "lon": lon,
+            "perim": os.path.basename(file_fire),
+            "dir_out": os.path.join(dir_fire, "firestarr"),
+            "fire_name": fire_name,
+            "max_days": max_days,
+        }
+        dump_json(data, os.path.join(dir_fire, FILE_SIM))
         return dir_fire
-    # load and update the configuration with more data
-    with open(os.path.join(dir_fire, FILE_SIM)) as f:
-        data = json.load(f)
-    if "wx" in data.keys():
-        raise RuntimeError(
-            f"Weather file {file_wx} doesn't exist, but data has 'wx' key already"
-        )
-    import timezonefinder
 
-    lat = data["lat"]
-    lon = data["lon"]
-    tf = timezonefinder.TimezoneFinder()
-    tzone = tf.timezone_at(lng=lon, lat=lat)
-    timezone = pytz.timezone(tzone)
-    # UTC time
-    # HACK: America/Inuvik is giving an offset of 0 when applied directly,
-    # but says -6 otherwise
-    run_start = datetime.datetime.strptime(
-        f"{data['job_date']}{data['job_time']}", "%Y%m%d%H%M"
-    )
-    utcoffset = timezone.utcoffset(run_start)
-    utcoffset_hours = utcoffset.total_seconds() / 60 / 60
-    data["utcoffset_hours"] = utcoffset_hours
-    # shouldn't be any way this already has a timezone if other key not present
-    date_startup = (
-        pd.to_datetime(data["date_startup"]).tz_localize(timezone).tz_convert("UTC")
-    )
-    data["date_startup"] = date_startup.isoformat()
-    ffmc_old = data["ffmc_old"]
-    dmc_old = data["dmc_old"]
-    dc_old = data["dc_old"]
-    df_wx_spotwx = fct_get_wx_model(lat, lon)
-    df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
-    df_wx_fire = df_wx_filled.rename(
-        columns={
-            "lon": "long",
-            "datetime": "TIMESTAMP",
-            "precip": "PREC",
-        }
-    )
-    # HACK: just do the math for local time for now, but don't apply a timezone
-    df_wx_fire["TIMESTAMP"] = df_wx_fire["TIMESTAMP"] + utcoffset
-    df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
-    df_wx_fire[["YR", "MON", "DAY", "HR"]] = list(
-        tqdm_util.apply(
-            df_wx_fire["TIMESTAMP"],
-            lambda x: (x.year, x.month, x.day, x.hour),
-            desc="Splitting date into columns",
+
+@log_order(show_args=["dir_fire"])
+def prep_fire(dir_fire, fct_get_wx_model):
+    with remove_on_exception(dir_fire):
+        file_wx = os.path.join(dir_fire, FILE_WEATHER)
+        if os.path.isfile(file_wx):
+            return dir_fire
+        # load and update the configuration with more data
+        with open(os.path.join(dir_fire, FILE_SIM)) as f:
+            data = json.load(f)
+        if "wx" in data.keys():
+            raise RuntimeError(
+                f"Weather file {file_wx} doesn't exist, but data has 'wx' key already"
+            )
+        import timezonefinder
+
+        lat = data["lat"]
+        lon = data["lon"]
+        tf = timezonefinder.TimezoneFinder()
+        tzone = tf.timezone_at(lng=lon, lat=lat)
+        timezone = pytz.timezone(tzone)
+        # UTC time
+        # HACK: America/Inuvik is giving an offset of 0 when applied directly,
+        # but says -6 otherwise
+        run_start = datetime.datetime.strptime(
+            f"{data['job_date']}{data['job_time']}", "%Y%m%d%H%M"
         )
-    )
-    # HACK: just get something for now
-    have_noon = [x.date() for x in df_wx_fire[df_wx_fire["HR"] == 12]["TIMESTAMP"]]
-    df_wx_fire = df_wx_fire[[x.date() in have_noon for x in df_wx_fire["TIMESTAMP"]]]
-    # NOTE: expects weather in localtime, but uses utcoffset to figure out local
-    # sunrise/sunset
-    df_fwi = NG_FWI.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old)
-    # HACK: get rid of missing values at end of period
-    df_fwi = df_fwi[~np.isnan(df_fwi["FWI"])].reset_index(drop=True)
-    # COLUMN_SYNONYMS = {'WIND': 'WS', 'RAIN': 'PREC', 'YEAR': 'YR', 'HOUR': 'HR'}
-    df_wx = df_fwi.rename(
-        columns={
-            "TIMESTAMP": "Date",
-            "ID": "Scenario",
-            "RAIN": "PREC",
-            "WIND": "WS",
-        }
-    )
-    df_wx = df_wx[
-        [
-            "Scenario",
-            "Date",
-            "PREC",
-            "TEMP",
-            "RH",
-            "WS",
-            "WD",
-            "FFMC",
-            "DMC",
-            "DC",
-            "ISI",
-            "BUI",
-            "FWI",
+        utcoffset = timezone.utcoffset(run_start)
+        utcoffset_hours = utcoffset.total_seconds() / 60 / 60
+        data["utcoffset_hours"] = utcoffset_hours
+        # shouldn't be any way this already has a timezone if other key not present
+        date_startup = (
+            pd.to_datetime(data["date_startup"]).tz_localize(timezone).tz_convert("UTC")
+        )
+        data["date_startup"] = date_startup.isoformat()
+        ffmc_old = data["ffmc_old"]
+        dmc_old = data["dmc_old"]
+        dc_old = data["dc_old"]
+        df_wx_spotwx = fct_get_wx_model(lat, lon)
+        df_wx_filled = model_data.wx_interpolate(df_wx_spotwx)
+        df_wx_fire = df_wx_filled.rename(
+            columns={
+                "lon": "long",
+                "datetime": "TIMESTAMP",
+                "precip": "PREC",
+            }
+        )
+        # HACK: just do the math for local time for now, but don't apply a timezone
+        df_wx_fire["TIMESTAMP"] = df_wx_fire["TIMESTAMP"] + utcoffset
+        df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
+        df_wx_fire[["YR", "MON", "DAY", "HR"]] = list(
+            tqdm_util.apply(
+                df_wx_fire["TIMESTAMP"],
+                lambda x: (x.year, x.month, x.day, x.hour),
+                desc="Splitting date into columns",
+            )
+        )
+        # HACK: just get something for now
+        have_noon = [x.date() for x in df_wx_fire[df_wx_fire["HR"] == 12]["TIMESTAMP"]]
+        df_wx_fire = df_wx_fire[
+            [x.date() in have_noon for x in df_wx_fire["TIMESTAMP"]]
         ]
-    ]
-    # HACK: make sure we're using the UTC date as the start day
-    start_time = min(
-        df_wx[
-            tqdm_util.apply(df_wx["Date"], lambda x: x.date(), desc="Finding date")
-            >= run_start.date()
-        ]["Date"]
-    ).tz_localize(timezone)
-    # HACK: don't start right at start because the hour before is missing
-    start_time += datetime.timedelta(hours=1)
-    # if (6 > start_time.hour):
-    #     start_time = start_time.replace(hour=6, minute=0, second=0)
-    days_available = (df_wx["Date"].max() - df_wx["Date"].min()).days
-    max_days = data["max_days"]
-    want_dates = WANT_DATES
-    if max_days is not None:
-        want_dates = [x for x in want_dates if x <= max_days]
-    offsets = [x for x in want_dates if x <= days_available]
-    data["start_time"] = start_time.isoformat()
-    data["offsets"] = offsets
-    data["wx"] = os.path.basename(file_wx)
-    # do this last so it's a flag that shows if the fire is ready to run
-    df_wx.round(2).to_csv(file_wx, index=False, quoting=False)
-    dump_json(data, os.path.join(dir_fire, FILE_SIM))
-    return dir_fire
+        # NOTE: expects weather in localtime, but uses utcoffset to figure out local
+        # sunrise/sunset
+        df_fwi = NG_FWI.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old)
+        # HACK: get rid of missing values at end of period
+        df_fwi = df_fwi[~np.isnan(df_fwi["FWI"])].reset_index(drop=True)
+        # COLUMN_SYNONYMS = {'WIND': 'WS', 'RAIN': 'PREC', 'YEAR': 'YR', 'HOUR': 'HR'}
+        df_wx = df_fwi.rename(
+            columns={
+                "TIMESTAMP": "Date",
+                "ID": "Scenario",
+                "RAIN": "PREC",
+                "WIND": "WS",
+            }
+        )
+        df_wx = df_wx[
+            [
+                "Scenario",
+                "Date",
+                "PREC",
+                "TEMP",
+                "RH",
+                "WS",
+                "WD",
+                "FFMC",
+                "DMC",
+                "DC",
+                "ISI",
+                "BUI",
+                "FWI",
+            ]
+        ]
+        # HACK: make sure we're using the UTC date as the start day
+        start_time = min(
+            df_wx[
+                tqdm_util.apply(df_wx["Date"], lambda x: x.date(), desc="Finding date")
+                >= run_start.date()
+            ]["Date"]
+        ).tz_localize(timezone)
+        # HACK: don't start right at start because the hour before is missing
+        start_time += datetime.timedelta(hours=1)
+        # if (6 > start_time.hour):
+        #     start_time = start_time.replace(hour=6, minute=0, second=0)
+        days_available = (df_wx["Date"].max() - df_wx["Date"].min()).days
+        max_days = data["max_days"]
+        want_dates = WANT_DATES
+        if max_days is not None:
+            want_dates = [x for x in want_dates if x <= max_days]
+        offsets = [x for x in want_dates if x <= days_available]
+        data["start_time"] = start_time.isoformat()
+        data["offsets"] = offsets
+        data["wx"] = os.path.basename(file_wx)
+        # do this last so it's a flag that shows if the fire is ready to run
+        df_wx.round(2).to_csv(file_wx, index=False, quoting=False)
+        dump_json(data, os.path.join(dir_fire, FILE_SIM))
+        return dir_fire
 
 
 class SourceFireGroup(SourceFire):
@@ -270,7 +294,6 @@ class Run(object):
             if self._dir_fires is None
             else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
         )
-        self._log = None
         FMT_RUNID = "%Y%m%d%H%M"
         if dir is None:
             self._start_time = datetime.datetime.now()
@@ -287,32 +310,29 @@ class Run(object):
             self._id = self._name.replace(f"{self._prefix}_", "")
             self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
         self._start_time = self._start_time.astimezone(datetime.timezone.utc)
-        self._dir_data = ensure_dir(os.path.join(self._dir, "data"))
+        self._log = add_log_file(
+            os.path.join(self._dir, f"log_{self._name}.log"),
+            level=DEFAULT_FILE_LOG_LEVEL,
+        )
+        self._log_order = add_log_file(
+            os.path.join(self._dir, f"log_order_{self._name}.log"),
+            level=DEFAULT_FILE_LOG_LEVEL,
+            logger=LOGGER_FIRE_ORDER,
+        )
+        self._dir_out = ensure_dir(os.path.join(self._dir, "data"))
         self._dir_model = ensure_dir(os.path.join(self._dir, "model"))
         self._dir_sims = ensure_dir(os.path.join(self._dir, "sims"))
         self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
         self._crs = crs
-        self._file_fires = os.path.join(self._dir_data, "df_fires_prioritized.shp")
+        self._file_fires = os.path.join(self._dir_out, "df_fires_prioritized.shp")
         # UTC time
         self._origin = Origin(self._start_time)
         # only care about startup indices
-        self._src_fwi = SourceFwiCwfis(self._dir_data)
-        self._src_spotwx = datasources.spotwx.SourceGEPS(self._dir_data)
+        self._src_fwi = SourceFwiCwfis(self._dir_out)
+        self._src_spotwx = datasources.spotwx.SourceGEPS(self._dir_out)
 
-    def log_start(self):
-        if self._log is None:
-            self._log = add_log_file(
-                os.path.join(self._dir, f"log_{self._name}.log"),
-                level=DEFAULT_FILE_LOG_LEVEL,
-            )
-
-    def log_end(self):
-        if self._log:
-            logging.removeHandler(self._log)
-            self._log = None
-
+    @log_order()
     def process(self):
-        self.log_start()
         logging.info("Starting run for %s", self._name)
         self.prep_fires()
         self.prep_folders()
@@ -321,9 +341,9 @@ class Run(object):
         logging.info(
             f"Done running {len(results)} fires with a total time of {total_time}"
         )
-        self.log_end()
         return results, dates_out, total_time
 
+    @log_order()
     def prep_fires(self, force=False):
         if os.path.isfile(self._file_fires):
             if force:
@@ -338,9 +358,9 @@ class Run(object):
         )
         # also keep binary instead of trying to track source
         shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
-        src_groups = SourceFireGroup(self._dir_data, self._dir_fires, self._origin)
+        src_groups = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
         df_fires = src_groups.get_fires().to_crs(self._crs)
-        save_shp(df_fires, os.path.join(self._dir_data, "df_fires_groups.shp"))
+        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups.shp"))
         df_fires["area"] = area_ha(df_fires)
         # HACK: make into list to get rid of index so multi-column assignment works
         df_fires[["lat", "lon"]] = list(
@@ -358,37 +378,37 @@ class Run(object):
             raise RuntimeError(f"Expected fires to be in file {self._file_fires}")
         return gpd.read_file(self._file_fires).set_index(["fire_name"])
 
+    @log_order()
     def prep_folders(self):
         df_fires = self.load_fires()
-        if not self.find_unprepared(df_fires):
+        if not self.find_unprepared(df_fires, remove_invalid=True):
             return
         df_fires["dir_sims"] = self._dir_sims
         df_fires["start_time"] = self._start_time
 
-        def make_row_gdf(row_fire):
-            return to_gdf(row_fire.to_frame().transpose(), self._crs)
+        # @log_order_firename()
+        def make_row(row_fire):
+            with log_order_msg(f"make_row({row_fire.fire_name})"):
+                return to_gdf(row_fire.to_frame().transpose(), self._crs)
 
-        # HACK: convert to (idx, row) and then zip and get just rows
-        df_fires_by_row = tqdm_util.apply(
-            list(zip(*list(df_fires.reset_index().iterrows())))[1],
-            make_row_gdf,
-            desc="Separating groups",
-        )
-
-        def do_fire(df_fire):
-            dir_fire = None
-            try:
+        # @log_order_firename()
+        def do_fire(row_fire):
+            # HACK: can't pickle with @log_order
+            with log_order_msg(f"do_fire({row_fire.fire_name})"):
+                dir_fire = None
+                df_fire = make_row(row_fire)
                 dir_fire = prep_row(df_fire, self._src_fwi.get_fwi)
-                do_prep_fire(dir_fire, self._src_spotwx.get_wx_model)
-            except Exception as ex:
-                logging.fatal(f"Unable to prepare {df_fire['fire_name']}")
-                try_remove(dir_fire)
-                raise ex
+                prep_fire(dir_fire, self._src_spotwx.get_wx_model)
 
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
         # tqdm_util.apply(df_fires_by_row, do_fire, desc="Preparing groups")
-        tqdm_util.pmap(do_fire, df_fires_by_row, desc="Preparing groups")
+        tqdm_util.pmap(
+            do_fire,
+            list(zip(*list(df_fires.reset_index().iterrows())))[1],
+            desc="Preparing groups",
+        )
 
+    @log_order(show_args=False)
     def prioritize(self, df_fires, df_bounds=None):
         df = df_fires.loc[:]
         if df_bounds is None:
@@ -418,6 +438,7 @@ class Run(object):
         df = df.sort_values(["PRIORITY", "ID", "DURATION", "area"])
         return df
 
+    @log_order(show_args=["dir_fire"])
     def do_run_fire(self, dir_fire):
         try:
             with open(os.path.join(dir_fire, FILE_SIM)) as f:
@@ -444,7 +465,7 @@ class Run(object):
             logging.warning(ex)
             raise ex
 
-    def find_unprepared(self, df_fires):
+    def find_unprepared(self, df_fires, remove_invalid=False):
         dirs_fire = list_dirs(self._dir_sims)
         fire_names = set(df_fires.index)
         dir_names = set(dirs_fire)
@@ -459,7 +480,7 @@ class Run(object):
                 [
                     x
                     for x in dirs_fire
-                    if os.path.isfile(os.path.join(self._dir_sims, "wx.csv"))
+                    if not os.path.isfile(os.path.join(self._dir_sims, x, FILE_WEATHER))
                 ]
             )
         )
@@ -467,6 +488,12 @@ class Run(object):
             logging.info(
                 f"Need to make directories for {len(diff_missing)} simulations"
             )
+            if remove_invalid:
+                tqdm_util.apply(
+                    [os.path.join(self._dir_sims, x) for x in diff_missing],
+                    try_remove,
+                    desc="Removing invalid fire directories",
+                )
         return diff_missing
 
     def run_fires_in_dir(self, check_missing=True):
@@ -488,6 +515,7 @@ class Run(object):
         sim_times = []
         NUM_TRIES = 5
 
+        @log_order()
         def check_publish(g, sim_results):
             nonlocal changed
             nonlocal sim_time
@@ -545,7 +573,6 @@ class Run(object):
             desc="Running simulations",
             callback_group=check_publish,
         )
-        self.log_end()
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()
         total_time = t1 - t0
@@ -560,7 +587,7 @@ class Run(object):
         return results, list(dates_out), total_time
 
 
-def make_resume(dir_resume=None):
+def make_resume(dir_resume=None, *args, **kwargs):
     # resume last run
     if dir_resume is None:
         dirs = [
@@ -573,4 +600,5 @@ def make_resume(dir_resume=None):
         dir_resume = dirs[-1]
     dir_resume = os.path.join(DIR_SIMS, dir_resume)
     logging.info(f"Resuming previous run in {dir_resume}")
-    return Run(dir=dir_resume)
+    kwargs["dir"] = dir_resume
+    return Run(*args, **kwargs)

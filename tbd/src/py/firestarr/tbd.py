@@ -19,6 +19,7 @@ from common import (
 )
 
 FILE_SIM = "firestarr.json"
+FILE_WEATHER = "wx.csv"
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
@@ -82,7 +83,7 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info("Timezone offset is {}".format(tz))
             start_date = start_time.date()
             cmd = "./tbd"
-            wx_file = os.path.join(dir_out, "wx.csv")
+            wx_file = os.path.join(dir_out, FILE_WEATHER)
             shutil.copy(os.path.join(dir_fire, data["wx"]), wx_file)
             date_offsets = data["offsets"]
             fmt_offsets = "{" + ", ".join([str(x) for x in date_offsets]) + "}"

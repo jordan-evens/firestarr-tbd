@@ -9,39 +9,21 @@ import model_data
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (
-    DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
-    DIR_SRC_PY_FIRSTARR,
-    FMT_DATE_YMD,
-    USE_CWFIS_SERVICE,
-    listdir_sorted,
-    logging,
-    pick_max,
-    pick_max_by_column,
-    to_utc,
-)
-from datasources.datatypes import (
-    SourceFeature,
-    SourceFire,
-    SourceFwi,
-    get_columns,
-    make_point,
-)
-from gis import (
-    CRS_COMPARISON,
-    CRS_WGS84,
-    KM_TO_M,
-    area_ha,
-    area_ha_to_radius_m,
-    make_empty_gdf,
-    to_gdf,
-)
-from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, try_query_geoserver
+from common import (DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
+                    DIR_SRC_PY_FIRSTARR, FMT_DATE_YMD, USE_CWFIS_SERVICE,
+                    listdir_sorted, logging, pick_max, pick_max_by_column,
+                    to_utc)
+from datasources.datatypes import (SourceFeature, SourceFire, SourceFwi,
+                                   get_columns, make_point)
+from gis import (CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha,
+                 area_ha_to_radius_m, make_empty_gdf, save_shp, to_gdf)
+from model_data import (DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS,
+                        try_query_geoserver)
 from net import try_save_http
 
 WFS_CIFFC = "https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0"
 STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
-DEFAULT_LAST_ACTIVE_SINCE_OFFSET = 0
+DEFAULT_LAST_ACTIVE_SINCE_OFFSET = None
 
 
 class SourceFeatureM3Service(SourceFeature):
@@ -104,13 +86,20 @@ class SourceFeatureM3Download(SourceFeature):
 
 class SourceFeatureM3(SourceFeature):
     def __init__(
-        self, dir_out, origin, last_active_since=DEFAULT_LAST_ACTIVE_SINCE_OFFSET
+        self, dir_out, origin, last_active_since_offset=DEFAULT_LAST_ACTIVE_SINCE_OFFSET
     ) -> None:
         super().__init__(bounds=None)
         self._origin = origin
+        self._dir_out = dir_out
+        # either use number of days or get everything for this year
+        self._last_active_since = (
+            self._origin.offset(-last_active_since_offset)
+            if last_active_since_offset is not None
+            else datetime.date(self._origin.today.year, 1, 1)
+        )
         self._source = (
             SourceFeatureM3Service if USE_CWFIS_SERVICE else SourceFeatureM3Download
-        )(dir_out, origin.offset(last_active_since))
+        )(self._dir_out, self._last_active_since)
 
     def _get_features(self):
         return self._source.get_features()
@@ -206,13 +195,7 @@ class SourceFireCiffcService(SourceFire):
             )
             gdf["datetime"] = pd.to_datetime(gdf["datetime"], errors="coerce")
             gdf["fire_name"] = make_name_ciffc(gdf)
-            gdf = gdf.loc[
-                tqdm_util.apply(
-                    gdf["datetime"],
-                    lambda x: x.year == self._year,
-                    desc=f"Filtering by year {self._year}",
-                )
-            ]
+            gdf = gdf.loc[gdf["datetime"].apply(lambda x: x.year) == self._year]
             gdf = gdf.set_index(["fire_name"])
             dupes = [
                 k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1
@@ -394,11 +377,21 @@ def assign_fires(
     df_first = df_join.groupby("index").first()
     # doesn't have crs after groupby
     df_first.crs = df_join.crs
+    # want to keep all the fires that geometries intersect circles for
+    # so that we can replace all of their named entries
+    df_status = df_join.loc[:]
+    # assign highest status for any of overlapping fires to all fires that overlap
+    df_status[["status", "status_rank"]] = df_first[["status", "status_rank"]].loc[
+        df_status["index"]
+    ]
     # dissolve by fire_name but use max so highest lastdate stays
-    df_dissolve = df_first.dissolve(by="fire_name", aggfunc="max").reset_index()
+    df_dissolve = df_status.dissolve(by="fire_name", aggfunc="max").reset_index()
     df_dissolve["datetime"] = pick_max(
         df_dissolve["datetime_left"], df_dissolve["datetime_right"]
     )
+    # at this point we might have the same geometry for multiple fires, but that
+    # just means they'll all get replaced with it and then the group dissolve
+    # will take care of duplicates
     df_matched = df_dissolve[["fire_name", "datetime", "status", "geometry"]]
     df_features = df_matched.reset_index(drop=True)
     df_features["area"] = area_ha(df_features)
@@ -410,7 +403,9 @@ def assign_fires(
 
 
 def override_fires(df_fires, df_override):
-    if 0 < len(df_override):
+    if df_override is not None and 0 < len(df_override):
+        if df_fires.crs != df_override.crs:
+            raise RuntimeError("Expected matching CRS for override_fires()")
         # override df_fires when they match
         matched = list(set(df_override.index).intersection(set(df_fires.index)))
         unmatched = list(set(df_override.index).difference(set(matched)))
@@ -419,7 +414,8 @@ def override_fires(df_fires, df_override):
         df_fires = df_fires.loc[:]
         df_override = df_override.loc[:]
         cols_missing = [x for x in df_override.columns if np.all(df_override[x].isna())]
-        df_override.loc[matched, cols_missing] = df_fires.loc[matched, cols_missing]
+        if cols_missing:
+            df_override.loc[matched, cols_missing] = df_fires.loc[matched, cols_missing]
         df_fires.loc[matched] = df_override.loc[matched]
         df_fires.loc[matched, "datetime"] = pick_max_by_column(
             df_fires, df_override, "datetime", matched
@@ -478,20 +474,56 @@ class SourceFireActive(SourceFire):
 
     @cache
     def _get_fires(self):
+        def save_fires(df, file_root):
+            df_points = df[df.geometry.type == "Point"]
+            df_polygons = df[df.geometry.type != "Point"]
+            if 0 < len(df_points):
+                save_shp(
+                    df_points,
+                    os.path.join(self._dir_out, f"{file_root}_points"),
+                )
+            if 0 < len(df_polygons):
+                save_shp(
+                    df_polygons,
+                    os.path.join(self._dir_out, f"{file_root}_polygons"),
+                )
+
         df_ciffc = self._source_ciffc.get_fires()
         df_fires = df_ciffc.loc[:]
+        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_ciffc"))
+        df_circles = df_fires.loc[df_fires.geometry.type == "Point"].to_crs(
+            CRS_COMPARISON
+        )
+        # HACK: put in circles of proper area so spatial join should hopefully
+        # overlap actual polygons
+        df_circles["geometry"] = tqdm_util.apply(
+            df_circles,
+            lambda x: x.geometry.buffer(
+                max(0.1, area_ha_to_radius_m(max(0, x["area"])))
+            ),
+            desc="Converting points with area to circles",
+        ).simplify(100)
+        df_circles = df_circles.to_crs(CRS_WGS84)
+        save_shp(df_circles, os.path.join(self._dir_out, "df_fires_circles"))
+        df_fires = df_circles.iloc[:]
         df_unmatched = None
         # override with each source in the order they appear
-        for src in self._source_features:
+        for i, src in enumerate(self._source_features):
             df_src = src.get_features()
+            save_fires(df_src, f"df_fires_from_feature_source_{i:02d}")
             df_src_fires, df_unmatched_cur = assign_fires(
                 self._origin, df_src, df_fires
             )
+            save_fires(df_src_fires, f"df_fires_assigned_feature_source_{i:02d}")
+            save_fires(df_unmatched_cur, f"df_fires_umatched_feature_source_{i:02d}")
             df_unmatched = pd.concat([df_unmatched, df_unmatched_cur])
             df_fires = override_fires(df_fires, df_src_fires)
-        for src in self._source_fires:
+            save_fires(df_fires, f"df_fires_after_feature_source_{i:02d}")
+        for i, src in enumerate(self._source_fires):
             df_src_fires = src.get_fires()
+            save_fires(df_src, f"df_fires_from_fire_source_{i:02d}")
             df_fires = override_fires(df_fires, df_src_fires)
+            save_fires(df_fires, f"df_fires_after_fire_source_{i:02d}")
         df_fires = df_fires.reset_index()
         logging.info(
             "Have %d polygons that are not tied to a fire",
@@ -504,6 +536,7 @@ class SourceFireActive(SourceFire):
                 len(df_fires),
                 self._status_include,
             )
+        save_fires(df_fires, "df_fires_after_status_include")
         if self._status_omit:
             df_fires = df_fires.loc[~df_fires.status.isin(self._status_omit)]
             logging.info(
@@ -511,25 +544,12 @@ class SourceFireActive(SourceFire):
                 len(df_fires),
                 self._status_omit,
             )
-        df_points = df_fires.loc[df_fires.geometry.type == "Point"].to_crs(
-            CRS_COMPARISON
-        )
-        logging.info("Found %d fires that aren't matched with polygons", len(df_points))
-        # HACK: put in circles of proper area if no perimeter
-        df_points["geometry"] = tqdm_util.apply(
-            df_points,
-            lambda x: x.geometry.buffer(
-                max(0.1, area_ha_to_radius_m(max(0, x["area"])))
-            ),
-            desc="Converting points with area to circles",
-        )
-        df_fires.loc[df_points.index, "geometry"] = df_points.to_crs(CRS_WGS84)[
-            "geometry"
-        ]
+        save_fires(df_fires, "df_fires_after_status_omit")
         # pretty sure U is unknown status
         df_unmatched["status"] = "U"
         df_unmatched["fire_name"] = [f"UNMATCHED_{x}" for x in df_unmatched.index]
         df_all = pd.concat([df_fires, df_unmatched])
+        save_fires(df_fires, "df_fires_after_concat")
         return df_all
 
 
