@@ -3,14 +3,14 @@ ARG GCC_VERSION
 
 # So we can start from an updated image at various steps
 FROM ghcr.io/jordan-evens/gcc-cmake:$GCC_VERSION AS gcc-cmake-updated
-RUN apt-get update
+RUN apt-get update --fix-missing
 
 
 FROM gcc-cmake-updated AS gcc-cmake-with_libs
 RUN apt-get install -y \
-    cron curl nano procps psmisc tar util-linux unzip wget zip \
-    libgdal-dev gdal-bin \
-    libtiff-dev libgeotiff-dev \
+  cron curl nano procps psmisc tar util-linux unzip wget zip \
+  libgdal-dev gdal-bin \
+  libtiff-dev libgeotiff-dev \
   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
   && export C_INCLUDE_PATH=/usr/include/gdal
 
@@ -79,7 +79,7 @@ RUN cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
 FROM bitnami/minideb:bookworm AS minideb-with_user
 ARG USERNAME
 ARG USER_ID
-RUN apt-get update \
+RUN apt-get update --fix-missing \
   && apt-get install -y sudo
 RUN groupadd --gid ${USER_ID} ${USERNAME} \
   && useradd --uid ${USER_ID} --gid ${USER_ID} -m ${USERNAME} \
@@ -93,8 +93,8 @@ ARG USERNAME
 RUN apt-get install -y libgeotiff5 \
   && apt-get clean \
   && rm -rf \
-    /var/lib/apt/lists/* \
-    /usr/share/man/*
+  /var/lib/apt/lists/* \
+  /usr/share/man/*
 WORKDIR /appl/tbd
 RUN echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
@@ -105,13 +105,13 @@ USER ${USERNAME}
 
 FROM minideb-with_user AS py_gdal
 RUN apt-get install -y --no-install-recommends \
-    cron curl nano procps psmisc tar util-linux unzip wget zip \
-    python3-pip libgdal-dev libgeotiff5 python3-numpy python3-gdal \
+  cron curl nano procps psmisc tar util-linux unzip wget zip \
+  python3-pip libgdal-dev libgeotiff5 python3-numpy python3-gdal \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
   && apt-get clean \
   && rm -rf \
-    /var/lib/apt/lists/* \
-    /usr/share/man/*
+  /var/lib/apt/lists/* \
+  /usr/share/man/*
 
 
 FROM py_gdal AS tbd_prod

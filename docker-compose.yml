@@ -9,18 +9,15 @@ services:
       target: gis
       dockerfile: .docker/Dockerfile_gis
       tags:
-      - tbd_gis:${VERSION}
+        - tbd_gis:${VERSION}
     volumes:
       - type: bind
         source: ./config
         target: /appl/config
-      - type: bind
-        source: ../data
-        target: /appl/data
+      - data:/appl/data
       - type: bind
         source: ./gis
         target: /appl/gis
-
 
   tbd_dev_svc:
     image: tbd_dev_svc
@@ -34,26 +31,20 @@ services:
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
       tags:
-      - tbd_dev_svc:${VERSION}
+        - tbd_dev_svc:${VERSION}
     security_opt:
       - seccomp:unconfined
     volumes:
       - type: bind
         source: ./config
         target: /appl/config
-      - type: bind
-        source: ../data
-        target: /appl/data
-      - type: bind
-        source: ../data/generated/grid
-        target: /appl/100m/default
+      - data:/appl/data
       - type: bind
         source: ./tbd
         target: /appl/tbd
     restart: on-failure
     cap_add:
-        - SYS_PTRACE
-
+      - SYS_PTRACE
 
   tbd_prod_svc:
     image: tbd_prod_svc
@@ -66,15 +57,9 @@ services:
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
       tags:
-      - tbd_prod_svc:${VERSION}
+        - tbd_prod_svc:${VERSION}
     volumes:
-      - type: bind
-        source: ../data
-        target: /appl/data
-      - type: bind
-        source: ../data/generated/grid
-        target: /appl/100m/default
-
+      - data:/appl/data
 
   firestarr:
     image: firestarr
@@ -87,15 +72,18 @@ services:
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
       tags:
-      - firestarr:${VERSION}
+        - firestarr:${VERSION}
     volumes:
       - type: bind
         source: ./tbd/settings.ini
         target: /appl/tbd/settings.ini
-      - type: bind
-        source: ../data
-        target: /appl/data
-      - type: bind
-        source: ../data/generated/grid
-        target: /appl/100m/default
+      - data:/appl/data
 
+volumes:
+  data:
+    # symlink to your actual directory if you don't want it in the project folder
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data

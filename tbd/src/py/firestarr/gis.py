@@ -13,7 +13,7 @@ from common import DIR_DOWNLOAD, DIR_EXTRACTED, do_nothing, ensure_dir, logging,
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 
-RASTER_DIR = "/appl/100m"
+RASTER_DIR = "/appl/data/generated/grid/100m"
 
 KM_TO_M = 1000
 HA_TO_MSQ = 10000

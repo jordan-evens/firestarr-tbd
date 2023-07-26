@@ -217,7 +217,7 @@ def do_draw():
                 zone = 15.0 + (central_meridian + 93.0) / 6.0
             elif kv.startswith('+zone='):
                 zone = float(kv[kv.find('=') + 1:])
-        file_dem = '../data/generated/grid/dem_{}.tif'.format("{}".format(zone).replace('.', '_'))
+        file_dem = '../data/generated/grid/100m/default/grid/dem_{}.tif'.format("{}".format(zone).replace('.', '_'))
         with rasterio.open(file_dem) as src_dem:
             # crop the second raster using the
             # previously computed shapes

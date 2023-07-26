@@ -80,7 +80,9 @@ EXTRACTED_DIR = os.path.join(DATA_DIR, "extracted")
 DOWNLOAD_DIR = os.path.join(DATA_DIR, "download")
 GENERATED_DIR = os.path.join(DATA_DIR, "generated")
 INTERMEDIATE_DIR = os.path.join(DATA_DIR, "intermediate")
-DIR = os.path.join(GENERATED_DIR, "grid")
+# put in the folder structure so that firestarr can reference grid/100m and
+# have this be the default
+DIR = os.path.join(GENERATED_DIR, "grid", f"{CELL_SIZE}m", "default")
 TMP = os.path.realpath("/appl/data/tmp")
 CREATION_OPTIONS = [
     "TILED=YES",

@@ -10,7 +10,7 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  image-build-test-publish:
+  build-test-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,6 +34,8 @@ jobs:
 
       - name: Docker Compose
         run: |
+          # make a data directory so volume works
+          mkdir -p data/generated/grid/100m/default
           # HACK: docker compose doesn't seem to be using the .env file
           source ./.env
           echo VERSION=${VERSION}
@@ -64,4 +66,4 @@ jobs:
             docker tag ${BRANCH_LATEST} ${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}latest
             docker rmi ${IMAGE_ROOT}:latest
           fi
-          docker images | grep -i "^${REPO_OUT}/${IMAGE_ROOT}" | awk '{print $1":"$2}' | grep -i "^${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}" | xargs -t -I {} docker push {}
+          docker images | grep -v "<none>" | grep -i "^${REPO_OUT}/${IMAGE_ROOT}" | awk '{print $1":"$2}' | grep -i "^${REPO_OUT}/${IMAGE_ROOT}:${VERSION_PREFIX}" | xargs -t -I {} docker push {}
