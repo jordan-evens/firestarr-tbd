@@ -107,6 +107,7 @@ DIR_SCRIPTS = "/appl/tbd/scripts"
 
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
 DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))
+DIR_EXTRACTED = ensure_dir(os.path.join(DIR_DATA, "extracted"))
 DIR_LOG = ensure_dir(os.path.join(DIR_DATA, "logs"))
 DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
 DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, "output"))

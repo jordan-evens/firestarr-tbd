@@ -2,12 +2,15 @@
 import collections
 import math
 import os
+import re
 import sys
 
+import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import ensure_dir, logging
+from common import DIR_DOWNLOAD, DIR_EXTRACTED, do_nothing, ensure_dir, logging, unzip
+from net import try_save_http
 from osgeo import gdal, ogr, osr
 
 RASTER_DIR = "/appl/100m"
@@ -21,6 +24,55 @@ CRS_LAMBERT_ATLAS = 3978
 CRS_COMPARISON = CRS_LAMBERT_ATLAS
 CRS_NAD83 = 4269
 CRS_SIMINPUT = CRS_NAD83
+VALID_GEOMETRY_EXTENSIONS = [
+    f".{x}" for x in sorted(fiona.drvsupport.vector_driver_extensions().keys())
+]
+
+
+def ensure_geometry_file(path):
+    """
+    Derive a single geometry file from given path, downloading and/or
+    extracting as necessary
+    """
+    path_orig = path
+    # support specifying a remote path
+    if re.match("^https?://", path):
+        path = try_save_http(
+            path,
+            os.path.join(DIR_DOWNLOAD, os.path.basename(path)),
+            True,
+            do_nothing,
+            do_nothing,
+        )
+    files = []
+    # support .zip files
+    if os.path.isfile(path):
+        basename, ext = os.path.splitext(os.path.basename(path))
+        if ".zip" == ext:
+            dir_extract = os.path.join(DIR_EXTRACTED, basename)
+            unzip(path, dir_extract)
+            path = dir_extract
+        else:
+            # support specifying one specific file
+            files = [path]
+    # support directories (including results of unzip)
+    if os.path.isdir(path):
+        files = sorted([os.path.join(path, x) for x in os.listdir(path)])
+    files_features = [
+        x for x in files if os.path.splitext(x)[1].lower() in VALID_GEOMETRY_EXTENSIONS
+    ]
+    if 1 < len(files_features):
+        # TODO: verify if any other formats have duplicate extensions associated
+        # generate list of .shp before removing from it so should be fine
+        for x in [x for x in files_features if x.endswith(".shp")]:
+            # if shapefile then .dbf of same name would go with it
+            files_features.remove(x.replace(".shp", ".dbf"))
+    if 1 != len(files_features):
+        raise RuntimeError(f"Unable to derive valid feature file for {path_orig}")
+    file = files_features[0]
+    if not os.path.isfile(file):
+        raise RuntimeError(f"Missing expected file: {file}")
+    return file
 
 
 def GetFeatureCount(shp):
