@@ -1,7 +1,5 @@
 # About FireSTARR
 
-<img alt="FireSTARR logo" src="img/FireSTARR.png" width=100 height=100/>
-
 ## Overview
 
 FireSTARR is designed to support wildland fire response decision-making, and is the fire growth algorithm originally in the FireGUARD suite of programs.
