@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import shapely.geometry
 from common import ensure_dir
-
 from gis import CRS_WGS84, ensure_geometry_file
 
 KM_TO_M = 1000
@@ -95,8 +94,10 @@ def update_bounds(
     dir_out = ensure_dir(dir_out)
     file_canada = ensure_geometry_file(file_canada)
 
-    df_canada = gpd.read_file(file_canada).sort_values(["PRENAME"])
-    centroids_canada = centroids(df_canada.set_index(["PRENAME"]))
+    df_canada = (
+        gpd.read_file(file_canada).sort_values(["PRENAME"]).set_index(["PRENAME"])
+    )
+    centroids_canada = centroids(df_canada)
 
     def to_file(df, name):
         return to_file_dir(df, name, dir_out, centroids_canada)
@@ -106,18 +107,11 @@ def update_bounds(
         gpd.read_file(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
         "bounds",
     )
-    df_bounds_exact = gpd.GeoDataFrame(
-        pd.merge(
-            df_bounds[[x for x in df_bounds.columns if x != "geometry"]],
-            df_canada[["PRENAME", "geometry"]],
-            left_on=["EN"],
-            right_on=["PRENAME"],
-        ),
-        crs=crs_orig,
-    )
-    centroids_exact = centroids(df_bounds_exact.set_index(["EN"]))
+    df = df_bounds.set_index(["EN"])
+    df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
+    centroids_exact = centroids(df)
     assert centroids_exact == centroids_canada
-    df = to_file(df_bounds_exact, "bounds_exact")
+    df = to_file(df.reset_index(), "bounds_exact")
     df = to_file(explode(df), "explode")
     df = to_file(simplify(df, 1), "simplify")
     df = to_file(buffer(df, 100), "buffer")
@@ -126,10 +120,13 @@ def update_bounds(
     df = to_file(simplify(df, 10), "simplify_10km")
     df = to_file(simplify(df, 100), "simplify_100km")
     assert list(df["EN"]) == list(df_bounds["EN"])
-    bounds = to_file(df, "bounds")
-    bounds.reset_index()[
-        ["ID", "EN", "FR", "PRIORITY", "DURATION", "geometry"]
-    ].set_index(["ID"]).to_crs(CRS_WGS84).to_file(file_bounds)
+    bounds = (
+        df.reset_index()[["ID", "EN", "FR", "PRIORITY", "DURATION", "geometry"]]
+        .set_index(["ID"])
+        .to_crs(CRS_WGS84)
+    )
+    bounds.to_file(file_bounds)
+    bounds.to_file(os.path.join(dir_out, "bounds.shp"))
 
 
 if "__main__" == __name__:
