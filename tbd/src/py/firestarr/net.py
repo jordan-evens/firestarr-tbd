@@ -116,14 +116,15 @@ def save_http(
                 with remove_on_exception(
                     [save_as_, file_lock], f"Failed getting {url}"
                 ):
-                    if not (os.path.isfile(save_as_) and keep_existing):
-                        save_as_ = _save_http_cached(
-                            (fct_pre_save or do_nothing)(url), save_as_
-                        )
-                    with FileLock(CACHE_LOCK_FILE, -1):
-                        CACHE_DOWNLOADED[save_as_] = save_as_
+                    if save_as_ not in CACHE_DOWNLOADED:
+                        if not (os.path.isfile(save_as_) and keep_existing):
+                            save_as_ = _save_http_cached(
+                                (fct_pre_save or do_nothing)(url), save_as_
+                            )
+                        with FileLock(CACHE_LOCK_FILE, -1):
+                            CACHE_DOWNLOADED[save_as_] = save_as_
                     # HACK: something else that was waiting could have deleted the lock
-                try_remove(file_lock)
+                    try_remove(file_lock, False)
                 if save_as_ not in CACHE_DOWNLOADED:
                     raise RuntimeError(
                         "Expected to have result for {save_as_} in cache"
@@ -163,16 +164,16 @@ def try_save_http(
                     url, save_as, keep_existing, fct_pre_save, fct_post_save
                 )
         except Exception as ex:
+            logging.info(f"Caught {ex} in {__name__}")
             if isinstance(ex, KeyboardInterrupt):
                 raise ex
             m = mask_url(url)
             # no point in retrying if URL doesn't exist or is forbidden
             if check_code and isinstance(ex, HTTPError) and ex.code in [403, 404]:
-                # if we're checking for code then expect to handle elsewhere
-                # logging.error(
-                #     f"Downloading {m} to {save_as} - Failed:\n\t{ex}\n\t\t{ex.reason}"
-                # )
-                raise ex
+                # if we're checking for code then return None since file can't exist
+                with FileLock(CACHE_LOCK_FILE, -1):
+                    CACHE_DOWNLOADED[save_as] = None
+                return None
             if FLAG_DEBUG or save_tries >= max_save_retries:
                 logging.error(
                     f"Downloading {m} to {save_as} - Failed after {save_tries} attempts"

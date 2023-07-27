@@ -2,23 +2,41 @@ import datetime
 import os
 from collections import Counter
 from functools import cache
-from urllib.error import HTTPError
 
 import geopandas as gpd
 import model_data
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
-                    DIR_SRC_PY_FIRSTARR, FMT_DATE_YMD, USE_CWFIS_SERVICE,
-                    listdir_sorted, logging, pick_max, pick_max_by_column,
-                    to_utc)
-from datasources.datatypes import (SourceFeature, SourceFire, SourceFwi,
-                                   get_columns, make_point)
-from gis import (CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha,
-                 area_ha_to_radius_m, make_empty_gdf, save_shp, to_gdf)
-from model_data import (DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS,
-                        try_query_geoserver)
+from common import (
+    DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
+    DIR_SRC_PY_FIRSTARR,
+    FMT_DATE_YMD,
+    USE_CWFIS_SERVICE,
+    listdir_sorted,
+    logging,
+    pick_max,
+    pick_max_by_column,
+    to_utc,
+)
+from datasources.datatypes import (
+    SourceFeature,
+    SourceFire,
+    SourceFwi,
+    get_columns,
+    make_point,
+)
+from gis import (
+    CRS_COMPARISON,
+    CRS_WGS84,
+    KM_TO_M,
+    area_ha,
+    area_ha_to_radius_m,
+    make_empty_gdf,
+    save_shp,
+    to_gdf,
+)
+from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, try_query_geoserver
 from net import try_save_http
 
 WFS_CIFFC = "https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0"
@@ -241,7 +259,7 @@ class SourceFireCiffc(SourceFire):
 def select_fwi(lat, lon, df_wx, columns):
     if df_wx is None:
         return make_empty_gdf(get_columns("fwi")[1])
-    elif 0 < len(df_wx):
+    if 0 < len(df_wx):
         for index in columns:
             df_wx = df_wx.loc[~df_wx[index].isna()]
         cols_float = [x for x in df_wx.columns if x not in ["datetime", "geometry"]]
@@ -280,6 +298,8 @@ class SourceFwiCwfisDownload(SourceFwi):
         date,
     ):
         def do_parse(_):
+            if _ is None:
+                return None
             logging.debug("Reading {}".format(_))
             df = pd.read_csv(_, skipinitialspace=True)
             df = df.loc[df["NAME"] != "NAME"]
@@ -294,23 +314,16 @@ class SourceFwiCwfisDownload(SourceFwi):
 
         ymd = date.strftime(FMT_DATE_YMD)
         url = f"{URL_CWFIS_DOWNLOADS}/fwi_obs/current/cwfis_fwi_{ymd}.csv"
-        try:
-            stns = cls._get_stns(dir_out)
-            return try_save_http(
-                url,
-                os.path.join(dir_out, os.path.basename(url)),
-                keep_existing=False,
-                fct_pre_save=None,
-                fct_post_save=do_parse,
-                check_code=True,
-            )
-        except Exception as ex:
-            if isinstance(ex, HTTPError) and ex.code in [403, 404]:
-                # if it doesn't exist then return nothing but don't raise ex
-                # FIX: how does this interact with @cache?
-                return None
-            logging.error(ex)
-            raise ex
+        stns = cls._get_stns(dir_out)
+
+        return try_save_http(
+            url,
+            os.path.join(dir_out, os.path.basename(url)),
+            keep_existing=False,
+            fct_pre_save=None,
+            fct_post_save=do_parse,
+            check_code=True,
+        )
 
     def _get_fwi(self, lat, lon, date):
         return select_fwi(

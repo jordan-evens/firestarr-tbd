@@ -245,7 +245,7 @@ def filterXY(data):
     return data
 
 
-def try_remove(path):
+def try_remove(path, verbose=True):
     """!
     Delete path but ignore errors if can't while raising old error
     @param path Path to delete
@@ -254,10 +254,12 @@ def try_remove(path):
     if not FLAG_DEBUG and path:
         try:
             if os.path.isfile(path):
-                logging.debug("Trying to delete file {}".format(path))
+                if verbose:
+                    logging.debug("Trying to delete file {}".format(path))
                 os.remove(path)
             elif os.path.isdir(path):
-                logging.debug("Trying to remove directory {}".format(path))
+                if verbose:
+                    logging.debug("Trying to remove directory {}".format(path))
                 shutil.rmtree(path, ignore_errors=True)
         except KeyboardInterrupt as ex:
             raise ex

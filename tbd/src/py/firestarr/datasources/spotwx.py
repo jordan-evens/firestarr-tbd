@@ -239,7 +239,7 @@ class SourceGEPS(SourceModel):
                 raise ex
             # we tried using the existing file, so now that it's gone try downloading
             logging.warning(
-                "Loading existing file {file_out} failed - retrying from download"
+                f"Loading existing file {file_out} failed - retrying from download"
             )
             return self.__do_get_wx_model(lat, lon, retry=False)
 
