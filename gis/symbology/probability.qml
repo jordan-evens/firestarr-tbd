@@ -134,7 +134,7 @@
         <stdDevFactor>2</stdDevFactor>
       </minMaxOrigin>
       <rastershader>
-        <colorrampshader colorRampType="DISCRETE" maximumValue="1" minimumValue="0" clip="0" classificationMode="2" labelPrecision="6">
+        <colorrampshader colorRampType="DISCRETE" maximumValue="1" minimumValue="0" clip="0" classificationMode="2" labelPrecision="1">
           <colorramp type="gradient" name="[source]">
             <Option type="Map">
               <Option value="255,255,255,0" type="QString" name="color1"/>
@@ -143,23 +143,23 @@
               <Option value="0" type="QString" name="discrete"/>
               <Option value="gradient" type="QString" name="rampType"/>
               <Option value="rgb" type="QString" name="spec"/>
-              <Option value="1e-07;255,255,255,0;rgb;ccw:0.1;0,178,242,255;rgb;ccw:0.2;37,188,227,255;rgb;ccw:0.3;251,241,125,255;rgb;ccw:0.4;252,212,73,255;rgb;ccw:0.5;248,178,64,255;rgb;ccw:0.6;244,148,58,255;rgb;ccw:0.7;241,117,52,255;rgb;ccw:0.8;238,84,44,255;rgb;ccw:0.9;236,54,38,255;rgb;ccw:1;230,21,31,255;rgb;ccw:2;173,89,90,255;rgb;ccw" type="QString" name="stops"/>
+              <Option value="1e-09;255,255,255,0;rgb;ccw:0.1;0,177,242,255;rgb;ccw:0.2;250,246,142,255;rgb;ccw:0.3;252,223,75,255;rgb;ccw:0.4;250,192,68,255;rgb;ccw:0.5;245,162,61,255;rgb;ccw:0.6;242,137,56,255;rgb;ccw:0.7;240,108,51,255;rgb;ccw:0.8;238,79,44,255;rgb;ccw:0.9;235,51,38,255;rgb;ccw:1;230,21,31,255;rgb;ccw:2;173,89,90,255;rgb;ccw" type="QString" name="stops"/>
             </Option>
           </colorramp>
           <item value="0" color="#ffffff" label="Not simulated" alpha="0"/>
-          <item value="0.000000001" color="#ffffff" label="&lt;= 0.0" alpha="0"/>
-          <item value="0.1" color="#00b2f2" label="0.0 - 0.1" alpha="255"/>
-          <item value="0.2" color="#25bce3" label="0.1 - 0.2" alpha="255"/>
-          <item value="0.3" color="#fbf17d" label="0.2 - 0.3" alpha="255"/>
-          <item value="0.4" color="#fcd449" label="0.3 - 0.4" alpha="255"/>
-          <item value="0.5" color="#f8b240" label="0.4 - 0.5" alpha="255"/>
-          <item value="0.6" color="#f4943a" label="0.5 - 0.6" alpha="255"/>
-          <item value="0.7" color="#f17534" label="0.6 - 0.7" alpha="255"/>
-          <item value="0.8" color="#ee542c" label="0.7 - 0.8" alpha="255"/>
-          <item value="0.9" color="#ec3626" label="0.8 - 0.9" alpha="255"/>
+          <item value="0..000000001" color="#ffffff" label="&lt;= 0.0" alpha="0"/>
+          <item value="0.1" color="#00b1f2" label="0.0 - 0.1" alpha="255"/>
+          <item value="0.2" color="#faf68e" label="0.1 - 0.2" alpha="255"/>
+          <item value="0.3" color="#fcdf4b" label="0.2 - 0.3" alpha="255"/>
+          <item value="0.4" color="#fac044" label="0.3 - 0.4" alpha="255"/>
+          <item value="0.5" color="#f5a23d" label="0.4 - 0.5" alpha="255"/>
+          <item value="0.6" color="#f28938" label="0.5 - 0.6" alpha="255"/>
+          <item value="0.7" color="#f06c33" label="0.6 - 0.7" alpha="255"/>
+          <item value="0.8" color="#ee4f2c" label="0.7 - 0.8" alpha="255"/>
+          <item value="0.9" color="#eb3326" label="0.8 - 0.9" alpha="255"/>
           <item value="1.000000001" color="#e6151f" label="> 0.9" alpha="255"/>
-          <item value="2.000000001" color="#ad595a" label="Ignition" alpha="255"/>
-          <item value="inf" color="#b7b7b7" label="Unprocessed" alpha="255"/>
+          <item value="2.000000001" color="#ad595a" label="Existing" alpha="255"/>
+          <item value="999" color="#b7b7b7" label="Unprocessed" alpha="255"/>
           <rampLegendSettings suffix="" useContinuousLegend="1" minimumLabel="" direction="0" orientation="2" maximumLabel="" prefix="">
             <numericFormat id="basic">
               <Option type="Map">
