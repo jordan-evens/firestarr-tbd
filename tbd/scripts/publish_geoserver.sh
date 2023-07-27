@@ -28,4 +28,8 @@ else
     curl -v -v -sS -u "${GEOSERVER_CREDENTIALS}" -XGET "${GEOSERVER_STORE}/coverages/${GEOSERVER_COVERAGE}" | sed "s/<abstract>[^<]*<\/abstract>/<abstract>${ABSTRACT}<\/abstract>/g" > /tmp/${GEOSERVER_COVERAGE}.xml
     # upload with updated abstract
     curl -v -u "${GEOSERVER_CREDENTIALS}" -XPUT -H "Content-type: text/xml" -d @/tmp/${GEOSERVER_COVERAGE}.xml "${GEOSERVER_STORE}/coverages/${GEOSERVER_COVERAGE}"?calculate=nativebbox,latlonbbox,dimensions
+    # not sure why this isn't picking up .tif band description
+    sed -i "s/GRAY_INDEX/probability/g" /tmp/${GEOSERVER_COVERAGE}.xml
+    # HACK: calculate sets band name to GRAY_INDEX so set again without calculate
+    curl -v -u "${GEOSERVER_CREDENTIALS}" -XPUT -H "Content-type: text/xml" -d @/tmp/${GEOSERVER_COVERAGE}.xml "${GEOSERVER_STORE}/coverages/${GEOSERVER_COVERAGE}"
 fi

@@ -248,6 +248,7 @@ def gdal_merge_max(argv=None):
         names = []
         driver_name = None
         out_file = "out.tif"
+        description = None
 
         ulx = None
         psize_x = None
@@ -276,6 +277,10 @@ def gdal_merge_max(argv=None):
             if arg == "-o":
                 i = i + 1
                 out_file = argv[i]
+
+            elif arg == "-d":
+                i = i + 1
+                description = argv[i]
 
             elif arg == "-v":
                 verbose = 1
@@ -461,6 +466,7 @@ def gdal_merge_max(argv=None):
             elif len(pre_init) == 1:
                 for i in range(t_fh.RasterCount):
                     t_fh.GetRasterBand(i + 1).Fill(pre_init[0])
+
         # seems fine without this
         # # HACK: reopen as update so we can read overlapping areas
         # t_fh.FlushCache()
@@ -509,6 +515,11 @@ def gdal_merge_max(argv=None):
 
             fi_processed = fi_processed + 1
         # gdal.PopErrorHandler()
+
+        if description:
+            t_fh.SetDescription(description)
+            for i in range(t_fh.RasterCount):
+                t_fh.GetRasterBand(i + 1).SetDescription(description)
 
         # Force file to be closed.
         t_fh = None

@@ -65,10 +65,12 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
         if "perim" == dir_in_for_what:
             dir_for_what = "perim"
             date_cur = for_dates[0]
+            description = "perimeter"
         else:
             date_cur = datetime.datetime.strptime(dir_in_for_what, FMT_DATE_YMD)
             offset = (date_cur - date_origin).days + 1
             dir_for_what = f"day_{offset:02d}"
+            description = "probability"
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
         changed = False
 
@@ -112,6 +114,8 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                         # "-n", "0",
                         "-a_nodata",
                         "-1",
+                        "-d",
+                        description,
                     ]
                     + co
                     + ["-o", file_tmp]
