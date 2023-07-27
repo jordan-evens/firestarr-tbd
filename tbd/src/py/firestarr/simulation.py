@@ -514,6 +514,7 @@ class Run(object):
         sim_time = 0
         sim_times = []
         NUM_TRIES = 5
+        file_lock_publish = os.path.join(self._dir_output, "publish.lock")
 
         @log_order()
         def check_publish(g, sim_results):
@@ -522,7 +523,7 @@ class Run(object):
             nonlocal sim_times
             nonlocal dates_out
             nonlocal results
-            with FileLock(os.path.join(self._dir_output, "publish.lock"), -1):
+            with FileLock(file_lock_publish, -1):
                 for i in range(len(sim_results)):
                     result = sim_results[i]
                     # should be in the same order as input
@@ -573,6 +574,7 @@ class Run(object):
             desc="Running simulations",
             callback_group=check_publish,
         )
+        try_remove(file_lock_publish)
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()
         total_time = t1 - t0
