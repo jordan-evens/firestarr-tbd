@@ -16,13 +16,31 @@ sys.path.append("/usr/local/bin")
 
 if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
-    if "--resume" in sys.argv:
-        dir_resume = sys.argv[2] if 3 <= len(sys.argv) else None
-        run = make_resume(dir_resume)
+    args = sys.argv[1:]
+
+    def check_arg(a, args):
+        flag = False
+        if a in args:
+            args.remove(a)
+            flag = True
+        logging.info(f"Flag for {a} is set to {flag}")
+        return flag, args
+
+    # HACK: just get some kind of parsing for right now
+    do_resume, args = check_arg("--resume", args)
+    no_publish, args = check_arg("--no-publish", args)
+    do_publish = not no_publish
+    if do_resume:
+        if 1 < len(args):
+            logging.fatal(f"Too many arguments:\n\t {sys.argv}")
+        dir_resume = args[0] if args else None
+        run = make_resume(dir_resume, do_publish=do_publish)
     else:
-        max_days = int(sys.argv[2]) if len(sys.argv) > 2 else None
-        dir_arg = sys.argv[1] if len(sys.argv) > 1 else None
-        do_publish = True
+        max_days = int(args[1]) if len(args) > 1 else None
+        dir_arg = args[0] if len(args) > 0 else None
+        if dir_arg and not os.path.isdir(dir_arg):
+            logging.fatal(f"Expected directory but got {dir_arg}")
+            sys.exit(-1)
         if dir_arg and DIR_OUTPUT in os.path.abspath(dir_arg):
             if max_days:
                 logging.fatal("Cannot specify number of days if resuming")
