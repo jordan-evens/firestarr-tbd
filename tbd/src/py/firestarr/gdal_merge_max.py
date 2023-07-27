@@ -32,15 +32,14 @@
 # # anssi.pekkarinen@fao.org
 
 import math
-import sys
 import time
+
+import numpy as np
+from osgeo import gdal
+from osgeo_utils.auxiliary.util import GetOutputDriverFor
 
 # import logging
 from tqdm import tqdm
-
-from osgeo import gdal
-from osgeo_utils.auxiliary.util import GetOutputDriverFor
-import numpy as np
 
 __version__ = "$id$"[5:-1]
 
@@ -267,7 +266,7 @@ def gdal_merge_max(argv=None):
             argv = argv
         argv = gdal.GeneralCmdLineProcessor(argv)
         if argv is None:
-            return 0
+            raise RuntimeError("Called with no arguments")
 
         # Parse command line arguments.
         i = 1
@@ -300,8 +299,7 @@ def gdal_merge_max(argv=None):
                 i = i + 1
                 band_type = gdal.GetDataTypeByName(argv[i])
                 if band_type == gdal.GDT_Unknown:
-                    print("Unknown GDAL data type: %s" % argv[i])
-                    return 1
+                    raise RuntimeError("Unknown GDAL data type: %s" % argv[i])
 
             elif arg == "-init":
                 i = i + 1
@@ -341,8 +339,8 @@ def gdal_merge_max(argv=None):
                 i = i + 4
 
             elif arg[:1] == "-":
-                print("Unrecognized command option: %s" % arg)
-                return Usage()
+                Usage()
+                raise RuntimeError("Unrecognized command option: %s" % arg)
 
             else:
                 names.append(arg)
@@ -350,24 +348,24 @@ def gdal_merge_max(argv=None):
             i = i + 1
 
         if not names:
-            print("No input files selected.")
-            return Usage()
+            Usage()
+            raise RuntimeError("No input files selected.")
 
         if driver_name is None:
             driver_name = GetOutputDriverFor(out_file)
 
         driver = gdal.GetDriverByName(driver_name)
         if driver is None:
-            print("Format driver %s not found, pick a supported driver." % driver_name)
-            return 1
+            raise RuntimeError(
+                "Format driver %s not found, pick a supported driver." % driver_name
+            )
 
         DriverMD = driver.GetMetadata()
         if "DCAP_CREATE" not in DriverMD:
-            print(
+            raise RuntimeError(
                 "Format driver %s does not support creation and piecewise writing.\nPlease select a format that does, such as GTiff (the default) or HFA (Erdas Imagine)."
                 % driver_name
             )
-            return 1
 
         # Collect information on all the source files.
         file_infos = names_to_fileinfos(names)
@@ -423,8 +421,7 @@ def gdal_merge_max(argv=None):
                 out_file, xsize, ysize, bands, band_type, create_options
             )
             if t_fh is None:
-                print("Creation failed, terminating gdal_merge.")
-                return 1
+                raise RuntimeError("Creation failed, terminating gdal_merge.")
 
             t_fh.SetGeoTransform(geotransform)
             t_fh.SetProjection(file_infos[0].projection)
@@ -445,10 +442,9 @@ def gdal_merge_max(argv=None):
                 for fi in file_infos:
                     bands = bands + fi.bands
                 if t_fh.RasterCount < bands:
-                    print(
+                    raise RuntimeError(
                         "Existing output file has less bands than the input files. You should delete it before. Terminating gdal_merge."
                     )
-                    return 1
             else:
                 bands = min(file_infos[0].bands, t_fh.RasterCount)
 
