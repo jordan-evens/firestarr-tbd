@@ -35,8 +35,10 @@ else
     ) \
     && ( \
         ( \
-            diff ${FILE_CURRENT} ${FILE_LATEST} \
-            && echo ${CURDATE}: Already up to date >> ${FILE_LOG}
+            [ -z "${FORCE_RUN}" ] \
+            && echo Checking for update \
+            && diff ${FILE_CURRENT} ${FILE_LATEST} \
+            && echo ${CURDATE}: Already up to date >> ${FILE_LOG} \
         ) \
         || \
         ( \
