@@ -16,9 +16,9 @@ from common import (
     do_nothing,
     ensure_dir,
     fix_timezone_offset,
+    lock_for,
     logging,
     remove_on_exception,
-    try_remove,
 )
 from filelock import FileLock
 from urllib3.exceptions import InsecureRequestWarning
@@ -107,15 +107,12 @@ def save_http(
 ):
     if not save_as:
         raise RuntimeError("Expected save_as to be specified")
-    file_lock = save_as + ".lock"
 
     def do_save(save_as_):
         # if any existing file and keep_existing then assume current
         if save_as_ not in CACHE_DOWNLOADED:
-            with FileLock(file_lock, -1):
-                with remove_on_exception(
-                    [save_as_, file_lock], f"Failed getting {url}"
-                ):
+            with lock_for(save_as_, remove_after=True, remove_on_exception=True):
+                with remove_on_exception(save_as_, f"Failed getting {url}"):
                     if save_as_ not in CACHE_DOWNLOADED:
                         if not (os.path.isfile(save_as_) and keep_existing):
                             save_as_ = _save_http_cached(
@@ -123,8 +120,6 @@ def save_http(
                             )
                         with FileLock(CACHE_LOCK_FILE, -1):
                             CACHE_DOWNLOADED[save_as_] = save_as_
-                    # HACK: something else that was waiting could have deleted the lock
-                    try_remove(file_lock, False)
                 if save_as_ not in CACHE_DOWNLOADED:
                     raise RuntimeError(
                         "Expected to have result for {save_as_} in cache"

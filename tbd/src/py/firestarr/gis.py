@@ -9,11 +9,17 @@ import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import DIR_DOWNLOAD, DIR_EXTRACTED, do_nothing, ensure_dir, logging, unzip
+from common import (
+    DIR_DOWNLOAD,
+    DIR_EXTRACTED,
+    DIR_RASTER,
+    do_nothing,
+    ensure_dir,
+    logging,
+    unzip,
+)
 from net import try_save_http
 from osgeo import gdal, ogr, osr
-
-RASTER_DIR = "/appl/data/generated/grid/100m"
 
 KM_TO_M = 1000
 HA_TO_MSQ = 10000
@@ -195,7 +201,6 @@ def Rasterize(file_lyr, raster, reference):
     @return None
     """
     # Get projection info from reference image
-    # reference = '/appl/100m/default/fuel_17_0.tif'
     ref_raster = gdal.Open(reference, gdal.GA_ReadOnly)
     gt = ref_raster.GetGeoTransform()
     pixelSizeX = gt[1]
@@ -299,11 +304,11 @@ def find_raster_meridians(year=None):
         return MERIDIANS
     raster_root = None
     for folder in ["default", str(year)]:
-        dir_check = os.path.join(RASTER_DIR, folder)
+        dir_check = os.path.join(DIR_RASTER, folder)
         if os.path.isdir(dir_check):
             raster_root = dir_check
     if not raster_root:
-        raise RuntimeError("Could not find raster directories in {RASTER_DIR}")
+        raise RuntimeError(f"Could not find raster directories in {DIR_RASTER}")
     rasters = [
         os.path.join(raster_root, x)
         for x in os.listdir(raster_root)
@@ -424,7 +429,7 @@ def make_point(lat, lon, crs=CRS_WGS84):
     # always take lat lon as WGS84 but project to requested crs
     pt = gpd.points_from_xy([lon], [lat], crs=CRS_WGS84)
     if crs != CRS_WGS84:
-        pt = gpd.GeoDataFrame(geometry=pt, crs=crs).to_crs(crs).iloc[0].geometry
+        pt = gpd.GeoDataFrame(geometry=pt, crs=CRS_WGS84).to_crs(crs).iloc[0].geometry
     return pt
 
 
@@ -443,3 +448,8 @@ def area_ha_to_radius_m(a):
 
 def make_empty_gdf(columns):
     return gpd.GeoDataFrame({k: [] for k in columns + ["geometry"]}, crs=CRS_WGS84)
+
+
+def make_gdf_from_series(row, crs):
+    """Convert Series into GeoDataFrame"""
+    return to_gdf(row.to_frame().transpose(), crs)

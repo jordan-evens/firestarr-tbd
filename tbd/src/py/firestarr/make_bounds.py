@@ -2,16 +2,22 @@ import os
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 import shapely.geometry
-from common import ensure_dir
+from common import DIR_GENERATED, ensure_dir, lock_for
+
 from gis import CRS_WGS84, ensure_geometry_file
 
 KM_TO_M = 1000
 BY_NAME = {}
 BUFFER_RESOLUTION = 32
-URL_CANADA = "https://www12.statcan.gc.ca/census-recensement/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip"
+SERVER_CENSUS = "https://www12.statcan.gc.ca/census-recensement"
+URL_CANADA = (
+    f"{SERVER_CENSUS}/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip"
+)
 centroids_canada = None
+DIR_BOUNDS = os.path.join(DIR_GENERATED, "bounds")
+FILE_BOUNDS = "bounds.geojson"
+COLUMN_ENGLISH_NAME = "PRENAME"
 
 
 def to_file_dir(df, name, dir_out, centroids_compare=None):
@@ -86,34 +92,59 @@ def dist(c1, c2):
     return np.sum([v.distance(c2[k]) for k, v in c1.items()])
 
 
-def update_bounds(
-    file_bounds="bounds.geojson",
+def get_features_canada(
     file_canada=URL_CANADA,
-    dir_out="../data/tmp/bounds",
+    dir_out=DIR_BOUNDS,
+    file_bounds=FILE_BOUNDS,
+    col_name=COLUMN_ENGLISH_NAME,
 ):
-    dir_out = ensure_dir(dir_out)
-    file_canada = ensure_geometry_file(file_canada)
+    file_out = os.path.join(dir_out, "canada.shp")
+    if not os.path.exists(file_out):
+        dir_out = ensure_dir(dir_out)
+        with lock_for(file_out, remove_after=True):
+            if not os.path.exists(file_out):
+                file_canada = ensure_geometry_file(file_canada)
+                # col_name needs to be english name of area so it can join
+                # on bounds column EN
+                df_canada = (
+                    gpd.read_file(file_canada)
+                    .sort_values([col_name])
+                    .set_index([col_name])
+                )
+                df = (
+                    gpd.read_file(file_bounds)
+                    .sort_values(["EN"])
+                    .to_crs(df_canada.crs)
+                    .set_index(["EN"])
+                )
+                df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
+                # don't need precise bounds so simplify
+                df = simplify(df, 1)
+                df.reset_index().to_file(file_out)
+    return gpd.read_file(file_out)
 
-    df_canada = (
-        gpd.read_file(file_canada).sort_values(["PRENAME"]).set_index(["PRENAME"])
-    )
+
+def update_bounds(
+    file_bounds=FILE_BOUNDS,
+    dir_out=DIR_BOUNDS,
+):
+    df_canada = get_features_canada(
+        file_bounds=file_bounds, dir_out=DIR_BOUNDS
+    ).set_index(["EN"])
+    crs_orig = df_canada.crs
     centroids_canada = centroids(df_canada)
 
     def to_file(df, name):
         return to_file_dir(df, name, dir_out, centroids_canada)
 
-    crs_orig = df_canada.crs
     df_bounds = to_file(
         gpd.read_file(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
         "bounds",
     )
     df = df_bounds.set_index(["EN"])
     df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
-    centroids_exact = centroids(df)
-    assert centroids_exact == centroids_canada
     df = to_file(df.reset_index(), "bounds_exact")
     df = to_file(explode(df), "explode")
-    df = to_file(simplify(df, 1), "simplify")
     df = to_file(buffer(df, 100), "buffer")
     df = to_file(dissolve(df), "buffer_simplify_dissolve")
     df = to_file(fill(df), "buffer_simplify_dissolve_fill")

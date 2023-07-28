@@ -1,76 +1,68 @@
-import json
 import math
 import os
+import re
 import shlex
-import shutil
-import sys
 import timeit
 
 import geopandas as gpd
 import gis
 import pandas as pd
 from common import (
-    dump_json,
+    WANT_DATES,
     ensure_dir,
     finish_process,
     listdir_sorted,
+    lock_for,
     logging,
     start_process,
 )
 
-FILE_SIM = "firestarr.json"
-FILE_WEATHER = "wx.csv"
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
 
 
-def run_fire_from_folder(dir_fire, dir_current, verbose=False):
+def get_simulation_file(dir_fire):
+    fire_name = os.path.basename(dir_fire)
+    return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
+
+
+def run_fire_from_folder(dir_fire, dir_output, verbose=False):
     def nolog(*args, **kwargs):
         pass
 
-    log_info = logging.info if verbose else nolog
-    file_json = os.path.join(dir_fire, FILE_SIM)
-    try:
-        with open(file_json) as f:
-            data = json.load(f)
-            # check if completely done
-            if data.get("postprocessed", False):
-                return data
-    except json.JSONDecodeError as ex:
-        logging.error(f"Can't read config for {dir_fire}")
-        logging.error(ex)
-        raise ex
-    dir_out = data["dir_out"]
-    fire_name = data["fire_name"]
-    done_already = data.get("ran", False)
-    log_file = os.path.join(dir_out, "log.txt")
-    data["log_file"] = log_file
-    try:
-        if not done_already:
-            lat = data["lat"]
-            lon = data["lon"]
-            start_time = data["start_time"]
-            start_time = pd.to_datetime(start_time)
-            log_info("Scenario start time is: {}".format(start_time))
-            # done_already = False
-            # if not done_already:
-            ensure_dir(dir_out)
-            perim = data["perim"]
-            if perim is not None:
-                perim = os.path.join(dir_fire, data["perim"])
-                logging.debug(f"Perimeter input is {perim}")
-                lyr = gpd.read_file(perim)
-                gis.save_geojson(lyr, os.path.join(dir_out, fire_name))
+    file_sim = get_simulation_file(dir_fire)
+    # need directory for lock
+    ensure_dir(os.path.dirname(file_sim))
+    # lock before reading so if sim is running it will update file before lock ends
+    with lock_for(file_sim, remove_after=True, remove_on_exception=True):
+        log_info = logging.info if verbose else nolog
+        df_fire = gpd.read_file(file_sim)
+        if 1 != len(df_fire):
+            raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
+        data = df_fire.iloc[0]
+        # check if completely done
+        if data.get("postprocessed", False):
+            df_fire["changed"] = False
+            return df_fire
+        changed = False
+        if not data.get("sim_time", None):
+            fire_name = data["fire_name"]
+            lat = float(data["lat"])
+            lon = float(data["lon"])
+            start_time = pd.to_datetime(data["start_time"])
+            log_info(f"Scenario start time is: {start_time}")
+            if "Point" != data.geometry.geom_type:
                 year = start_time.year
                 reference = gis.find_best_raster(lon, year)
-                raster = os.path.join(dir_out, "{}.tif".format(fire_name))
+                raster = os.path.join(dir_fire, "{}.tif".format(fire_name))
                 # FIX: if we never use points then the sims don't guarantee
                 # running from non-fuel for the points like normally
-                perim = gis.Rasterize(perim, raster, reference)
+                perim = gis.Rasterize(file_sim, raster, reference)
             else:
-                gis.save_point_shp(lat, lon, dir_out, fire_name)
-                sys.exit(-1)
+                # think this should be fine for using individual points
+                gis.save_point_shp(lat, lon, dir_fire, fire_name)
+                perim = None
             log_info("Startup coordinates are {}, {}".format(lat, lon))
             hour = start_time.hour
             minute = start_time.minute
@@ -83,56 +75,85 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             log_info("Timezone offset is {}".format(tz))
             start_date = start_time.date()
             cmd = "./tbd"
-            wx_file = os.path.join(dir_out, FILE_WEATHER)
-            shutil.copy(os.path.join(dir_fire, data["wx"]), wx_file)
-            date_offsets = data["offsets"]
+            wx_file = os.path.join(dir_fire, data["wx"])
+            want_dates = WANT_DATES
+            max_days = data["max_days"]
+            date_offsets = [x for x in want_dates if x <= max_days]
             fmt_offsets = "{" + ", ".join([str(x) for x in date_offsets]) + "}"
-            args = " ".join(
-                [
-                    f'"{dir_out}" {start_date} {lat} {lon}',
-                    f"{hour:02d}:{minute:02d}",
-                    NO_INTENSITY,
-                    f"--ffmc {data['ffmc_old']}",
-                    f"--dmc {data['dmc_old']}",
-                    f"--dc {data['dc_old']}",
-                    f"--apcp_prev {data['apcp_prev']}",
-                    f'-v --output_date_offsets "{fmt_offsets}"',
-                    f' --wx "{wx_file}"',
-                ]
-            )
-            if perim is not None:
-                args = args + ' --perim "{}"'.format(perim)
-            args = args.replace("\\", "/")
-            file_sh = os.path.join(dir_out, "sim.sh")
-            with open(file_sh, "w") as f_out:
-                f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
-            # NOTE: needs to be octal base
-            os.chmod(file_sh, 0o775)
-            log_info(f"Running: {cmd} {args}")
-            # run generated command for parsing data
-            run_what = [cmd] + shlex.split(args)
-            t0 = timeit.default_timer()
-            stdout, stderr = finish_process(start_process(run_what, "/appl/tbd"))
-            t1 = timeit.default_timer()
-            sim_time = t1 - t0
-            data["sim_time"] = sim_time
-            data["sim_finished"] = True
-            file_json = dump_json(data, file_json)
-            data["ran"] = True
-            log_info("Took {}s to run simulations".format(sim_time))
-            with open(log_file, "w") as f_log:
-                f_log.write(stdout.decode("utf-8"))
+            file_log = file_sim.replace(".geojson", ".log")
+            df_fire["log_file"] = file_log
+            sim_time = None
+            if os.path.exists(file_log):
+                # if log says it ran then don't run it
+                # HACK: just use tail instead of looping or seeking ourselves
+                stdout, stderr = finish_process(
+                    start_process(["tail", "-1", file_log], "/appl/tbd")
+                )
+                if stdout:
+                    line = stdout.decode("utf-8").strip().split("\n")[-1]
+                    g = re.match(
+                        ".*Total simulation time was (.*) seconds", line
+                    ).groups()
+                    if g:
+                        sim_time = int(g[0])
+            if not sim_time:
+                stdout, stderr = None, None
+                try:
+                    args = " ".join(
+                        [
+                            f'"{dir_fire}" {start_date} {lat} {lon}',
+                            f"{hour:02d}:{minute:02d}",
+                            NO_INTENSITY,
+                            f"--ffmc {data['ffmc_old']}",
+                            f"--dmc {data['dmc_old']}",
+                            f"--dc {data['dc_old']}",
+                            f"--apcp_prev {data['apcp_prev']}",
+                            f'-v --output_date_offsets "{fmt_offsets}"',
+                            f' --wx "{wx_file}"',
+                            f' --log "{file_log}"',
+                        ]
+                    )
+                    if perim is not None:
+                        args = args + ' --perim "{}"'.format(perim)
+                    args = args.replace("\\", "/")
+                    file_sh = os.path.join(dir_fire, "sim.sh")
+                    with open(file_sh, "w") as f_out:
+                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
+                    # NOTE: needs to be octal base
+                    os.chmod(file_sh, 0o775)
+                    log_info(f"Running: {cmd} {args}")
+                    # run generated command for parsing data
+                    run_what = [cmd] + shlex.split(args)
+                    t0 = timeit.default_timer()
+                    stdout, stderr = finish_process(
+                        start_process(run_what, "/appl/tbd")
+                    )
+                    t1 = timeit.default_timer()
+                    sim_time = t1 - t0
+                    log_info("Took {}s to run simulations".format(sim_time))
+                    # if sim worked then it made a log itself so don't bother
+                except Exception as ex:
+                    # if sim failed we want to keep track of what happened
+                    if stdout:
+                        with open(file_log, "w") as f_log:
+                            f_log.write(stdout.decode("utf-8"))
+                        with open(file_log.replace(".log", ".err.log"), "w") as f_log:
+                            f_log.write(stderr.decode("utf-8"))
+                    raise ex
+                df_fire["sim_time"] = sim_time
+                gis.save_geojson(df_fire, file_sim)
+                changed = True
         else:
-            log_info("Simulation already ran")
-            data["sim_time"] = None
-        logging.debug(f"Collecting outputs from {dir_out}")
-        outputs = listdir_sorted(dir_out)
+            log_info("Simulation already ran but don't have processed outputs")
+        # simulation was done or is now, but outputs don't exist
+        logging.debug(f"Collecting outputs from {dir_fire}")
+        outputs = listdir_sorted(dir_fire)
         extent = None
         probs = [
             x for x in outputs if x.endswith("tif") and x.startswith("probability")
         ]
         dates_out = []
-        dir_region = os.path.join(dir_current, "initial")
+        dir_region = os.path.join(dir_output, "initial")
         for prob in probs:
             logging.debug(f"Adding raster to final outputs: {prob}")
             # want to put each probability raster into right date so we can combine them
@@ -143,10 +164,12 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated
             file_out = os.path.join(dir_region, d, fire_name + ".tif")
-            if data.get("ran", False) or not os.path.isfile(file_out):
+            if changed or not os.path.isfile(file_out):
                 extent = gis.project_raster(
-                    os.path.join(dir_out, prob), file_out, nodata=None
+                    os.path.join(dir_fire, prob), file_out, nodata=None
                 )
+                # if file didn't exist then it's changed now
+                changed = True
         perims = [
             x
             for x in outputs
@@ -162,26 +185,23 @@ def run_fire_from_folder(dir_fire, dir_current, verbose=False):
         ]
         if len(perims) > 0:
             file_out = os.path.join(dir_region, "perim", fire_name + ".tif")
-            if data.get("ran", False) or not os.path.isfile(file_out):
+            if changed or not os.path.isfile(file_out):
                 perim = perims[0]
                 log_info(f"Adding raster to final outputs: {perim}")
                 gis.project_raster(
-                    os.path.join(dir_out, perim),
+                    os.path.join(dir_fire, perim),
                     file_out,
                     outputBounds=extent,
                     # HACK: if nodata is none then 0's should just show up as 0?
                     nodata=None,
                 )
-        data["dates_out"] = dates_out
-        data["postprocessed"] = True
-        file_json = dump_json(data, file_json)
-    except KeyboardInterrupt as ex:
-        raise ex
-    except Exception as ex:
-        logging.warning(ex)
-        data["sim_time"] = None
-        data["sim_finished"] = False
-        data["dates_out"] = None
-        data["postprocessed"] = False
-        # FIX: should we return e here?
-    return data
+                # if file didn't exist then it's changed now
+                changed = True
+        # geojson can't save list so make string
+        df_fire["dates_out"] = f"{dates_out}"
+        df_fire["postprocessed"] = True
+        gis.save_geojson(df_fire, file_sim)
+        # HACK: for some reason geojson can read a list as a column but not write it
+        df_fire = gpd.read_file(file_sim)
+        df_fire["changed"] = changed
+        return df_fire

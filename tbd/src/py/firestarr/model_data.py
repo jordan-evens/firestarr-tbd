@@ -90,28 +90,3 @@ def get_wx_cwfis(
         output_format="csv",
         keep_existing=True,
     )
-
-
-def wx_interpolate(df):
-    date_min = df["datetime"].min()
-    date_max = df["datetime"].max()
-    times = pd.DataFrame(
-        pd.date_range(date_min, date_max, freq="H").values, columns=["datetime"]
-    )
-    crs = df.crs
-    index_names = df.index.names
-    df = df.reset_index()
-    idx_geom = ["lat", "lon", "geometry"]
-    gdf_geom = df[idx_geom].drop_duplicates().reset_index(drop=True)
-    del df["geometry"]
-    groups = []
-    for i, g in df.groupby(index_names):
-        g_fill = pd.merge(times, g, how="left")
-        # treat rain as if it all happened at start of any gaps
-        g_fill["precip"] = g_fill["precip"].fillna(0)
-        g_fill = g_fill.fillna(method="ffill")
-        g_fill[index_names] = i
-        groups.append(g_fill)
-    df_filled = to_gdf(pd.merge(pd.concat(groups), gdf_geom), crs)
-    df_filled.set_index(index_names)
-    return df_filled

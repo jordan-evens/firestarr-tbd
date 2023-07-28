@@ -18,6 +18,7 @@ from logging import getLogger
 import numpy as np
 import pandas as pd
 import tqdm_util
+from filelock import FileLock
 from log import logging
 from osgeo import gdal
 
@@ -38,6 +39,7 @@ MAX_NUM_DAYS = 14
 # DEFAULT_M3_LAST_ACTIVE = None
 DEFAULT_M3_LAST_ACTIVE = datetime.timedelta(days=30)
 DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS = 1
+DEFAULT_LAST_ACTIVE_SINCE_OFFSET = None
 
 PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
 
@@ -98,6 +100,8 @@ def ensure_dir(dir):
     return dir
 
 
+CELL_SIZE = 100
+
 DIR_SRC_PY_FIRSTARR = os.path.dirname(__file__)
 DIR_SRC_PY = os.path.dirname(DIR_SRC_PY_FIRSTARR)
 DIR_SRC_PY_CFFDRSNG = os.path.join(DIR_SRC_PY, "cffdrs-ng")
@@ -108,9 +112,13 @@ DIR_SCRIPTS = "/appl/tbd/scripts"
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
 DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))
 DIR_EXTRACTED = ensure_dir(os.path.join(DIR_DATA, "extracted"))
+DIR_GENERATED = ensure_dir(os.path.join(DIR_DATA, "generated"))
+DIR_INTERMEDIATE = os.path.join(DIR_DATA, "intermediate")
 DIR_LOG = ensure_dir(os.path.join(DIR_DATA, "logs"))
-DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
 DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, "output"))
+DIR_RASTER = ensure_dir(os.path.join(DIR_GENERATED, "grid", f"{CELL_SIZE}m"))
+DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
+DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
 DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
 
 
@@ -382,6 +390,8 @@ class Origin(object):
     def __init__(self, d=None):
         if d is None:
             d = datetime.date.today()
+        else:
+            d = pd.to_datetime(d)
         # HACK: don't check for class because hopefully this works with anything
         if hasattr(d, "date"):
             if callable(d.date):
@@ -420,6 +430,22 @@ def remove_on_exception(paths, msg=None, logger=logging):
         for path in paths:
             try_remove(path)
         logger.error(f"Raising {ex}")
+        raise ex
+
+
+@contextmanager
+def lock_for(path, remove_after=False, remove_on_exception=False):
+    # simplify locking because we're trying to access a specific file
+    file_lock = path + ".lock"
+    try:
+        with FileLock(file_lock, -1):
+            yield
+        if remove_after:
+            try_remove(file_lock, False)
+    except Exception as ex:
+        logging.error(f"Error while waiting for lock on {path}\n\t{ex}")
+        if remove_on_exception:
+            try_remove(file_lock, False)
         raise ex
 
 
@@ -483,3 +509,24 @@ def log_entry_exit(logger=logging, show_args=True):
         return wrapper
 
     return decorator
+
+
+def parse_str_list(s):
+    # could just use eval() but want to be safer about it
+    if not isinstance(s, str):
+        raise RuntimeError(f"Expected string but got {s}")
+    if not s.startswith("[") and s.endswith("]"):
+        raise RuntimeError(f"Expected list surrounded by [] but got {s}")
+
+    def parse(x):
+        if (x.startswith("'") and x.endswith("'")) or (
+            x.startswith('"') and x.endswith('"')
+        ):
+            # it's a string, so just remove the quotes
+            return x[1:-1]
+        if re.match("^[0-9]+$", x):
+            return int(x)
+        # let this fail and throw - don't parse fancy lists
+        return float(x)
+
+    return [parse(x.strip()) for x in s[1:-1].split(",")]

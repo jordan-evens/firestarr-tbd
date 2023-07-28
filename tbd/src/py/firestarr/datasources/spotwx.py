@@ -16,7 +16,7 @@ from common import (
     remove_on_exception,
 )
 from datasources.datatypes import SourceModel
-from gis import to_gdf
+from gis import save_geojson, to_gdf
 from net import try_save_http
 from pyrate_limiter import Duration, FileLockSQLiteBucket, Limiter, RequestRate
 
@@ -190,11 +190,11 @@ def get_wx_ensembles(model, lat, lon):
     df_wx.groupby(["id"])["PRECIP_ttl"]
     df = None
     for i, g in df_wx.groupby(["id"]):
-        g["PRECIP"] = (g["PRECIP_ttl"] - g["PRECIP_ttl"].shift(1)).fillna(0)
+        g["PREC"] = (g["PRECIP_ttl"] - g["PRECIP_ttl"].shift(1)).fillna(0)
         df = pd.concat([df, g])
     # HACK: for some reason rain is less in subsequent hours sometimes, so make
     # sure nothing is negative
-    df.loc[df["PRECIP"] < 0, "PRECIP"] = 0
+    df.loc[df["PREC"] < 0, "PREC"] = 0
     del df["PRECIP_ttl"]
     df = df.reset_index()
     del df["index"]
@@ -207,7 +207,7 @@ def get_wx_ensembles(model, lat, lon):
     df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
     df["issuedate"] = pd.to_datetime(df["issuedate"])
     index_final = ["model", "lat", "lon", "issuedate", "id"]
-    df = df[index_final + ["datetime", "temp", "rh", "wd", "ws", "precip"]]
+    df = df[index_final + ["datetime", "temp", "rh", "wd", "ws", "prec"]]
     df = df.set_index(index_final)
     return df
 
@@ -231,7 +231,7 @@ class SourceGEPS(SourceModel):
             with remove_on_exception(file_out):
                 if is_download:
                     gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
-                    gdf.to_file(file_out)
+                    save_geojson(gdf, file_out)
                 return gpd.read_file(file_out)
         except Exception as ex:
             if is_download or not retry:

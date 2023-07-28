@@ -4,19 +4,27 @@ import geopandas as gpd
 import numpy as np
 from gis import CRS_COMPARISON, CRS_WGS84
 
-COLUMNS_MODEL = ["model", "id"]
 COLUMNS_STATION = ["lat", "lon"]
+COLUMN_STREAM = "id"
+COLUMN_MODEL = "model"
+COLUMNS_MODEL = [COLUMN_MODEL, COLUMN_STREAM] + COLUMNS_STATION
 COLUMN_TIME = "datetime"
-COLUMNS_WEATHER = {
-    "key": COLUMNS_MODEL + COLUMNS_STATION,
-    "columns": ["temp", "rh", "wd", "ws", "precip"],
+COLUMNS_FWI = ["ffmc", "dmc", "dc"]
+COLUMNS_WEATHER = ["temp", "rh", "wd", "ws", "prec"]
+FIELDS_WEATHER = {
+    "key": COLUMNS_MODEL,
+    "columns": COLUMNS_WEATHER,
 }
 COLUMNS = {
     "feature": {"key": [], "columns": []},
     "fire": {"key": ["fire_name"], "columns": ["area", "status"]},
-    "fwi": {"key": COLUMNS_STATION, "columns": ["ffmc", "dmc", "dc"]},
-    "model": COLUMNS_WEATHER,
-    "hourly": COLUMNS_WEATHER,
+    "fwi": {"key": COLUMNS_STATION, "columns": COLUMNS_FWI},
+    "model": FIELDS_WEATHER,
+    "hourly": FIELDS_WEATHER,
+    "fire_weather": {
+        "key": COLUMNS_MODEL,
+        "columns": COLUMNS_WEATHER + COLUMNS_FWI,
+    },
 }
 
 
@@ -69,11 +77,6 @@ def make_point(lat, lon, crs=CRS_WGS84):
     return pt
 
 
-def find_closest(df, lat, lon, crs=CRS_COMPARISON):
-    df["dist"] = df.to_crs(crs).distance(make_point(lat, lon, crs))
-    return df.loc[df["dist"] == np.min(df["dist"])]
-
-
 def pick_date_refresh(as_of, refresh):
     # if from a previous date then use that, but if from same day as refresh
     # use refresh time
@@ -111,8 +114,8 @@ class Source(ABC):
         return check_columns(df, cls._provides)
 
     def applies_to(self, lat, lon) -> bool:
-        return self._bounds is None or self._bounds.contains(
-            make_point(lat, lon, self._bounds.crs)
+        return self._bounds is None or np.any(
+            self._bounds.contains(make_point(lat, lon, self._bounds.crs))
         )
 
 
@@ -201,3 +204,20 @@ class SourceFwi(Source):
 
     def get_fwi(self, lat, lon, date):
         return self.check_columns(self._get_fwi(lat, lon, date))
+
+
+class SourceFireWeather(Source):
+    def __init__(self, bounds) -> None:
+        super().__init__(bounds)
+
+    @classmethod
+    @property
+    def _provides(cls):
+        return "fire_weather"
+
+    @abstractmethod
+    def _get_fire_weather(self, lat, lon, date):
+        pass
+
+    def get_fire_weather(self, lat, lon, date):
+        return self.check_columns(self._get_fire_weather(lat, lon, date))

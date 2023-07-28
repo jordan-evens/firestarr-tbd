@@ -3,7 +3,7 @@ import sys
 
 from common import DEFAULT_FILE_LOG_LEVEL, DIR_LOG, DIR_OUTPUT, logging
 from log import add_log_rotating
-from simulation import Run, make_resume
+from run import Run, make_resume
 
 LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
@@ -50,4 +50,4 @@ if __name__ == "__main__":
             logging.info(f"Resuming simulations in {dir_arg}")
         else:
             run = Run(dir_fires=dir_arg, max_days=max_days, do_publish=do_publish)
-    results, dates_out, total_time = run.process()
+    df_final = run.process()
