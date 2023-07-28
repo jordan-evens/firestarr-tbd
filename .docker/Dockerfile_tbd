@@ -63,7 +63,7 @@ RUN . /appl/.venv/bin/activate \
 
 FROM tbd_dev AS tbd_dev_svc
 # run as root so we can redirect to where docker logs will show progress
-RUN sudo echo "*/5 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
+RUN sudo echo "*/5 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /appl/data/update.lock /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
 ENTRYPOINT sudo cron -f
 
@@ -145,6 +145,6 @@ FROM tbd_prod AS tbd_prod_svc
 USER root
 RUN sed -i "s/CRONJOB_RUN=.*/CRONJOB_RUN=1/g" /appl/config
 # for some reason this is only set up for user to output to log
-RUN echo "*/5 * * * * user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /tmp/update.lockfile /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
+RUN echo "*/5 * * * * user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /appl/data/update.lock /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
 ENTRYPOINT sudo cron -f
