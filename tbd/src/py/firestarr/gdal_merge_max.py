@@ -32,7 +32,6 @@
 # # anssi.pekkarinen@fao.org
 
 import math
-import time
 
 import numpy as np
 from osgeo import gdal
@@ -131,13 +130,7 @@ class file_info_max(object):
 
         return 1
 
-    def report(self):
-        print("Filename: " + self.filename)
-        print("File Size: %dx%dx%d" % (self.xsize, self.ysize, self.bands))
-        print("Pixel Size: %f x %f" % (self.geotransform[1], self.geotransform[5]))
-        print("UL:(%f,%f)   LR:(%f,%f)" % (self.ulx, self.uly, self.lrx, self.lry))
-
-    def copy_into(self, t_fh, s_band=1, t_band=1, nodata_arg=None, verbose=0):
+    def copy_into(self, t_fh, s_band=1, t_band=1, nodata_arg=None):
         """
         Copy this files image into target file.
 
@@ -222,29 +215,15 @@ class file_info_max(object):
             tw_ysize,
             t_band,
             nodata_arg,
-            verbose,
         )
 
 
 # =============================================================================
-def Usage():
-    print("Usage: gdal_merge.py [-o out_filename] [-of out_format] [-co NAME=VALUE]*")
-    print(
-        "                     [-ps pixelsize_x pixelsize_y] [-tap] [-separate] [-q] [-v] [-pct]"
-    )
-    print('                     [-ul_lr ulx uly lrx lry] [-init "value [value...]"]')
-    print("                     [-n nodata_value] [-a_nodata output_nodata_value]")
-    print("                     [-ot datatype] [-createonly] input_files")
-    print("                     [--help-general]")
-    print("")
-    return 2
 
 
 def gdal_merge_max(argv=None):
     # HACK: do this so we know it's always going to turn exceptions back on
     def do_merge(argv):
-        verbose = 0
-        quiet = 0
         names = []
         driver_name = None
         out_file = "out.tif"
@@ -261,7 +240,6 @@ def gdal_merge_max(argv=None):
         band_type = None
         createonly = 0
         bTargetAlignedPixels = False
-        start_time = time.time()
 
         if argv is None:
             argv = argv
@@ -281,12 +259,6 @@ def gdal_merge_max(argv=None):
             elif arg == "-d":
                 i = i + 1
                 description = argv[i]
-
-            elif arg == "-v":
-                verbose = 1
-
-            elif arg == "-q" or arg == "-quiet":
-                quiet = 1
 
             elif arg == "-createonly":
                 createonly = 1
@@ -344,7 +316,6 @@ def gdal_merge_max(argv=None):
                 i = i + 4
 
             elif arg[:1] == "-":
-                Usage()
                 raise RuntimeError("Unrecognized command option: %s" % arg)
 
             else:
@@ -353,7 +324,6 @@ def gdal_merge_max(argv=None):
             i = i + 1
 
         if not names:
-            Usage()
             raise RuntimeError("No input files selected.")
 
         if driver_name is None:
@@ -368,8 +338,9 @@ def gdal_merge_max(argv=None):
         DriverMD = driver.GetMetadata()
         if "DCAP_CREATE" not in DriverMD:
             raise RuntimeError(
-                "Format driver %s does not support creation and piecewise writing.\nPlease select a format that does, such as GTiff (the default) or HFA (Erdas Imagine)."
-                % driver_name
+                "Format driver %s does not support creation and piecewise writing.\n"
+                "Please select a format that does, such as GTiff (the default)"
+                "or HFA (Erdas Imagine)." % driver_name
             )
 
         # Collect information on all the source files.
@@ -448,7 +419,8 @@ def gdal_merge_max(argv=None):
                     bands = bands + fi.bands
                 if t_fh.RasterCount < bands:
                     raise RuntimeError(
-                        "Existing output file has less bands than the input files. You should delete it before. Terminating gdal_merge."
+                        "Existing output file has less bands than the input files."
+                        " You should delete it before. Terminating gdal_merge."
                     )
             else:
                 bands = min(file_infos[0].bands, t_fh.RasterCount)
@@ -486,29 +458,16 @@ def gdal_merge_max(argv=None):
             if createonly != 0:
                 continue
 
-            if verbose != 0:
-                print("")
-                print(
-                    "Processing file %5d of %5d, %6.3f%% completed in %d minutes."
-                    % (
-                        fi_processed + 1,
-                        len(file_infos),
-                        fi_processed * 100.0 / len(file_infos),
-                        int(round((time.time() - start_time) / 60.0)),
-                    )
-                )
-                fi.report()
-
             if separate == 0:
                 for band in range(1, bands + 1):
                     # t_fh = gdal.Open(out_file, gdal.GA_Update)
-                    fi.copy_into(t_fh, band, band, nodata, verbose)
+                    fi.copy_into(t_fh, band, band, nodata)
                     # t_fh.FlushCache()
                     # t_fh = None
             else:
                 for band in range(1, fi.bands + 1):
                     # t_fh = gdal.Open(out_file, gdal.GA_Update)
-                    fi.copy_into(t_fh, band, t_band, nodata, verbose)
+                    fi.copy_into(t_fh, band, t_band, nodata)
                     # t_fh.FlushCache()
                     # t_fh = None
                     t_band = t_band + 1
@@ -607,44 +566,6 @@ def raster_copy_max_with_mask(
     data_dst = t_band.ReadAsArray(t_xoff, t_yoff, s_xsize, s_ysize, t_xsize, t_ysize)
     mask_test = np.equal(data_mask, 0)
     to_write = np.choose(mask_test, (np.fmax(data_src, data_dst), data_dst))
-    # # print(np.max(data_dst))
-    # #######################
-    # mask_test = np.equal(data_mask, 0)
-    # mask_test = np.logical_not(mask_test)
-    # # from collections import Counter
-    # # print(Counter(mask_test.flatten()))
-    # # print(Counter(data_src.astype(bool).flatten()))
-    # # print(Counter(np.isfinite(data_src).flatten()))
-    # # print(Counter(data_dst.astype(bool).flatten()))
-    # # print(Counter(np.isfinite(data_dst).flatten()))
-    # # # HACK: write maximum value
-    # # # nodata_test = np.isfinite(data_src) + (2 * np.isfinite(data_dst))
-    # # # needs to have mask == 1 before even considered
-    # # nodata_test = (np.logical_and(mask_test, np.isfinite(data_src))
-    # #                + (2 * np.logical_and(mask_test, np.isfinite(data_dst))))
-    # # print(Counter(nodata_test.flatten()))
-    # # # 0: neither has data
-    # # # 1: data_src has data
-    # # # 2: data_dst has data
-    # # # 3: both have data
-    # # # np.maximum returns nans, so need to avoid that
-    # # # 0: either
-    # # # 1: data_src
-    # # # 2: data_dst
-    # # # 3: np.maximum(data_src, data_dst)
-    # # # so just -1 and np.maximum(0, nodata_test) and then use:
-    # # # (data_src, data_dst, np.maximum(data_src, data_dst))
-    # # nodata_test = np.maximum(0, nodata_test - 1)
-    # # print(Counter(nodata_test.flatten()))
-    # # to_write = np.choose(nodata_test, (data_src, data_dst, np.maximum(data_src, data_dst)))
-    # # Counter((to_write * 100).astype(int).flatten())
-    # # #######################
-    # # # mask_test = np.equal(data_mask, 0)
-    # # # to_write = np.choose(mask_test, (data_src, data_dst))
-    # # to_write = np.choose(mask_test, (data_dst, np.fmax(data_src, data_dst)))
-    # # to_write = np.fmax(data_src, data_dst)
-    # # to_write = np.choose(mask_test, (np.fmax(data_src, data_dst), data_dst))
-    # to_write = np.choose(mask_test, (data_dst, np.fmax(data_src, data_dst)))
     t_band.WriteArray(to_write, t_xoff, t_yoff)
 
     return 0
@@ -664,15 +585,7 @@ def raster_copy_max(
     t_ysize,
     t_band_n,
     nodata=None,
-    verbose=0,
 ):
-    # logging.info("Running raster_copy_max()")
-    if verbose != 0:
-        print(
-            "Copy %d,%d,%d,%d to %d,%d,%d,%d."
-            % (s_xoff, s_yoff, s_xsize, s_ysize, t_xoff, t_yoff, t_xsize, t_ysize)
-        )
-
     if nodata is not None:
         # logging.info("Calling raster_copy_with_nodata()")
         return raster_copy_max_with_nodata(
