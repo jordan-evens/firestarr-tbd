@@ -18,11 +18,11 @@ from datasources.datatypes import (
     SourceFeature,
     SourceFire,
     SourceFwi,
-    get_columns,
     make_point,
+    make_template_empty,
 )
-from gis import CRS_COMPARISON, CRS_WGS84, make_empty_gdf, to_gdf
-from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, try_query_geoserver
+from gis import CRS_COMPARISON, CRS_WGS84, to_gdf
+from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, make_query_geoserver
 from net import try_save_http
 
 WFS_CIFFC = "https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0"
@@ -36,7 +36,7 @@ class SourceFeatureM3Service(SourceFeature):
 
     @cache
     def _get_features(self):
-        f_out = f"{self._dir_out}/m3_polygons.json"
+        save_as = f"{self._dir_out}/m3_polygons.json"
         features = "lastdate,geometry"
         table_name = "public:m3_polygons"
         filter = None
@@ -53,8 +53,12 @@ class SourceFeatureM3Service(SourceFeature):
             since = pd.to_datetime(self._last_active_since, utc=True)
             return df.loc[df["datetime"] >= since]
 
-        return try_query_geoserver(
-            table_name, f_out, features=features, filter=filter, fct_post_save=do_parse
+        return try_save_http(
+            make_query_geoserver(table_name, features=features, filter=filter),
+            save_as,
+            False,
+            None,
+            do_parse,
         )
 
 
@@ -159,8 +163,12 @@ class SourceFireDipService(SourceFire):
             gdf = gdf.to_crs(CRS_WGS84)
             return gdf
 
-        return try_query_geoserver(
-            self.TABLE_NAME, save_as, filter=filter, fct_post_save=do_parse
+        return try_save_http(
+            make_query_geoserver(self.TABLE_NAME, filter=filter),
+            save_as,
+            False,
+            None,
+            do_parse,
         )
 
 
@@ -216,12 +224,16 @@ class SourceFireCiffcService(SourceFire):
             gdf = pd.concat([gdf, df_pick])
             return gdf
 
-        return try_query_geoserver(
-            self.TABLE_NAME,
+        return try_save_http(
+            make_query_geoserver(
+                self.TABLE_NAME,
+                filter=filter,
+                wfs_root=WFS_CIFFC,
+            ),
             save_as,
-            filter=filter,
-            wfs_root=WFS_CIFFC,
-            fct_post_save=do_parse,
+            False,
+            None,
+            do_parse,
         )
 
 
@@ -242,7 +254,7 @@ class SourceFireCiffc(SourceFire):
 
 def select_fwi(lat, lon, df_wx, columns):
     if df_wx is None:
-        return make_empty_gdf(get_columns("fwi")[1])
+        return make_template_empty("fwi")
     if 0 < len(df_wx):
         for index in columns:
             df_wx = df_wx.loc[~df_wx[index].isna()]
@@ -292,7 +304,7 @@ class SourceFwiCwfisDownload(SourceFwi):
             df["wmo"] = df["wmo"].astype(str)
             df = pd.merge(df, stns, on=["aes", "wmo"])
             df = df[["lat", "lon"] + cls.columns]
-            df["datetime"] = date + datetime.timedelta(hours=12)
+            df["datetime"] = pd.to_datetime(date) + datetime.timedelta(hours=12)
             df = df.sort_values(["datetime", "lat", "lon"])
             return to_gdf(df)
 

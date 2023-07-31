@@ -5,7 +5,15 @@ import urllib.parse
 import numpy as np
 import pandas as pd
 from azure.storage.blob import BlobServiceClient, ExponentialRetry
-from common import CONFIG, DIR_OUTPUT, DIR_ZIP, FMT_DATE_YMD, listdir_sorted, logging
+from common import (
+    CONFIG,
+    DIR_OUTPUT,
+    DIR_ZIP,
+    FMT_DATE_YMD,
+    is_empty,
+    listdir_sorted,
+    logging,
+)
 
 AZURE_URL = None
 AZURE_TOKEN = None
@@ -123,7 +131,7 @@ def upload_dir(dir_run=None):
                 name=f"current/{f}", data=data, metadata=metadata, overwrite=True
             )
         archived = f"archive/{f}"
-        if 0 == len([x for x in container.list_blobs(archived)]):
+        if is_empty([x for x in container.list_blobs(archived)]):
             # don't upload if already in archive
             with open(path, "rb") as data:
                 container.upload_blob(

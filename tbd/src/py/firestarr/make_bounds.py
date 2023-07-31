@@ -3,9 +3,8 @@ import os
 import geopandas as gpd
 import numpy as np
 import shapely.geometry
-from common import DIR_GENERATED, ensure_dir, lock_for
-
-from gis import CRS_WGS84, ensure_geometry_file
+from common import DIR_GENERATED, ensures
+from gis import CRS_WGS84, load_geometry_file
 
 KM_TO_M = 1000
 BY_NAME = {}
@@ -99,29 +98,29 @@ def get_features_canada(
     col_name=COLUMN_ENGLISH_NAME,
 ):
     file_out = os.path.join(dir_out, "canada.shp")
-    if not os.path.exists(file_out):
-        dir_out = ensure_dir(dir_out)
-        with lock_for(file_out, remove_after=True):
-            if not os.path.exists(file_out):
-                file_canada = ensure_geometry_file(file_canada)
-                # col_name needs to be english name of area so it can join
-                # on bounds column EN
-                df_canada = (
-                    gpd.read_file(file_canada)
-                    .sort_values([col_name])
-                    .set_index([col_name])
-                )
-                df = (
-                    gpd.read_file(file_bounds)
-                    .sort_values(["EN"])
-                    .to_crs(df_canada.crs)
-                    .set_index(["EN"])
-                )
-                df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
-                # don't need precise bounds so simplify
-                df = simplify(df, 1)
-                df.reset_index().to_file(file_out)
-    return gpd.read_file(file_out)
+
+    @ensures(file_out, True, fct_process=gpd.read_file, mkdirs=True)
+    def do_create(_):
+        # col_name needs to be english name of area so it can join
+        # on bounds column EN
+        df_canada = (
+            load_geometry_file(file_canada)
+            .sort_values([col_name])
+            .set_index([col_name])
+        )
+        df = (
+            load_geometry_file(file_bounds)
+            .sort_values(["EN"])
+            .to_crs(df_canada.crs)
+            .set_index(["EN"])
+        )
+        df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
+        # don't need precise bounds so simplify
+        df = simplify(df, 1)
+        df.reset_index().to_file(_)
+        return _
+
+    return do_create(file_out)
 
 
 def update_bounds(

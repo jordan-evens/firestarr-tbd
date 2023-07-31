@@ -12,8 +12,9 @@ from common import (
     DIR_DOWNLOAD,
     do_nothing,
     ensure_dir,
+    ensures,
     logging,
-    remove_on_exception,
+    remove_timezone_utc,
 )
 from datasources.datatypes import SourceModel
 from gis import save_geojson, to_gdf
@@ -21,7 +22,10 @@ from net import try_save_http
 from pyrate_limiter import Duration, FileLockSQLiteBucket, Limiter, RequestRate
 
 DIR_SPOTWX = ensure_dir(os.path.join(DIR_DOWNLOAD, "spotwx"))
-COORDINATE_PRECISION = 2
+# GEPS model is 0.5 degree resoltion, so two digits is too much
+# CHECK: seems like just rounding to 0.5 wouldn't always give the same closest
+#       value as actual distance calculation?
+COORDINATE_PRECISION = 1
 
 
 def get_spotwx_key():
@@ -66,9 +70,7 @@ def make_spotwx_query(model, lat, lon, **kwargs):
     return url
 
 
-def spotwx_parse(
-    url, save_as, keep_existing, need_column, fct_process_df, expected_value=None
-):
+def make_spotwx_parse(need_column, fct_parse=None, expected_value=None):
     def do_parse(_):
         df = pd.read_csv(_, encoding="utf-8")
         # df.columns = [x.lower for x in df.columns]
@@ -84,19 +86,13 @@ def spotwx_parse(
                         raise RuntimeError(line)
             str_suffix = f" with value {expected_value}" if expected_value else ""
             raise RuntimeError(f"Expected column {need_column}{str_suffix}")
-        return (fct_process_df or do_nothing)(df)
+        return (fct_parse or do_nothing)(df)
 
-    return try_save_http(
-        url,
-        save_as,
-        keep_existing=keep_existing,
-        fct_pre_save=limit_api,
-        fct_post_save=do_parse,
-    )
+    return do_parse
 
 
 @cache
-def get_model_time(model):
+def get_model_dir(model):
     # request middle of bounds since point shouldn't change model time
     lat = BOUNDS["latitude"]["mid"]
     lon = BOUNDS["longitude"]["mid"]
@@ -104,24 +100,19 @@ def get_model_time(model):
     save_as = os.path.join(DIR_SPOTWX, model, f"spotwx_{model}_current.csv")
 
     def do_parse(df):
-        return np.max(
+        model_time = np.max(
             df["modelrun"].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d_%HZ"))
         )
+        return ensure_dir(
+            os.path.join(DIR_SPOTWX, model, model_time.strftime("%Y%m%d_%HZ"))
+        )
 
-    return spotwx_parse(
+    return try_save_http(
         url,
         save_as,
         keep_existing=False,
-        need_column="modelrun",
-        fct_process_df=do_parse,
-    )
-
-
-@cache
-def get_model_dir(model):
-    model_time = get_model_time(model)
-    return ensure_dir(
-        os.path.join(DIR_SPOTWX, model, model_time.strftime("%Y%m%d_%HZ"))
+        fct_pre_save=limit_api,
+        fct_post_save=make_spotwx_parse("modelrun", do_parse),
     )
 
 
@@ -143,73 +134,78 @@ def make_filename(model, lat, lon, ext):
     return f"spotwx_{model}_{fmt_rounded(lat)}_{fmt_rounded(lon)}.{ext}"
 
 
-def query_wx_ensembles(model, lat, lon):
-    global COORDINATE_PRECISION
+@cache
+def query_wx_ensembles_rounded(model, lat, lon):
     dir_model = get_model_dir(model)
-    # HACK: change precision after this run so that points don't round
-    #       differently between runs as easily
-    if dir_model and os.path.basename(dir_model) == "20230724_12Z":
-        COORDINATE_PRECISION = 3
     url = make_spotwx_query(model, lat, lon, ens_val="members")
     save_as = os.path.join(dir_model, make_filename(model, lat, lon, "csv"))
-    return spotwx_parse(
-        url, save_as, keep_existing=True, need_column="UTC_OFFSET", fct_process_df=None
+
+    def do_parse(df_initial):
+        index = ["MODEL", "LAT", "LON", "ISSUEDATE", "UTC_OFFSET", "DATETIME"]
+        cols = ["TMP", "RH", "WSPD", "WDIR", "PRECIP"]
+        keep_cols = [
+            x
+            for x in df_initial.columns
+            if x in index or np.any([x.startswith(f"{_}_") for _ in cols])
+        ]
+        df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
+        df_by_var["var"] = tqdm_util.apply(
+            df_by_var["variable"],
+            lambda x: x[: x.rindex("_")],
+            desc="Separating by variable",
+        )
+        df_by_var["id"] = [
+            0 if "CONTROL" == id else int(id)
+            for id in tqdm_util.apply(
+                df_by_var["variable"],
+                lambda x: x[x.rindex("_") + 1 :],
+                desc="Finding members",
+            )
+        ]
+        del df_by_var["variable"]
+        df_wx = pd.pivot(
+            df_by_var, index=index + ["id"], columns="var", values="value"
+        ).reset_index()
+        df_wx.groupby(["id"])["PRECIP_ttl"]
+        df = None
+        for i, g in df_wx.groupby(["id"]):
+            g["PREC"] = (g["PRECIP_ttl"] - g["PRECIP_ttl"].shift(1)).fillna(0)
+            df = pd.concat([df, g])
+        # HACK: for some reason rain is less in subsequent hours sometimes, so make
+        # sure nothing is negative
+        df.loc[df["PREC"] < 0, "PREC"] = 0
+        del df["PRECIP_ttl"]
+        df = df.reset_index()
+        del df["index"]
+        df.columns.name = ""
+        # make sure we're in UTC and use that for now
+        if [0] != np.unique(df["UTC_OFFSET"]):
+            raise RuntimeError("Expected UTC times")
+        df.columns = [x.lower() for x in df.columns]
+        df["datetime"] = remove_timezone_utc(df["datetime"])
+        df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
+        df["issuedate"] = remove_timezone_utc(df["issuedate"])
+        index_final = ["model", "lat", "lon", "issuedate", "id"]
+        df = df[index_final + ["datetime", "temp", "rh", "wd", "ws", "prec"]]
+        df = df.set_index(index_final)
+        return df
+
+    return try_save_http(
+        url,
+        save_as,
+        keep_existing=True,
+        fct_pre_save=limit_api,
+        fct_post_save=make_spotwx_parse(
+            need_column="UTC_OFFSET", fct_parse=do_parse, expected_value=0
+        ),
     )
 
 
 @cache
 def get_wx_ensembles(model, lat, lon):
+    lat, lon = fix_coords(lat, lon)
     # only care about limiting queries - processing time doesn't matter
-    df_initial = query_wx_ensembles(model, lat, lon)
-    index = ["MODEL", "LAT", "LON", "ISSUEDATE", "UTC_OFFSET", "DATETIME"]
-    # all_cols = np.unique([x[: x.index("_")] for x in df_initial.columns if "_" in x])
-    cols = ["TMP", "RH", "WSPD", "WDIR", "PRECIP"]
-    keep_cols = [
-        x
-        for x in df_initial.columns
-        if x in index or np.any([x.startswith(f"{_}_") for _ in cols])
-    ]
-    df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
-    df_by_var["var"] = tqdm_util.apply(
-        df_by_var["variable"],
-        lambda x: x[: x.rindex("_")],
-        desc="Separating by variable",
-    )
-    df_by_var["id"] = [
-        0 if "CONTROL" == id else int(id)
-        for id in tqdm_util.apply(
-            df_by_var["variable"],
-            lambda x: x[x.rindex("_") + 1 :],
-            desc="Finding members",
-        )
-    ]
-    del df_by_var["variable"]
-    df_wx = pd.pivot(
-        df_by_var, index=index + ["id"], columns="var", values="value"
-    ).reset_index()
-    df_wx.groupby(["id"])["PRECIP_ttl"]
-    df = None
-    for i, g in df_wx.groupby(["id"]):
-        g["PREC"] = (g["PRECIP_ttl"] - g["PRECIP_ttl"].shift(1)).fillna(0)
-        df = pd.concat([df, g])
-    # HACK: for some reason rain is less in subsequent hours sometimes, so make
-    # sure nothing is negative
-    df.loc[df["PREC"] < 0, "PREC"] = 0
-    del df["PRECIP_ttl"]
-    df = df.reset_index()
-    del df["index"]
-    df.columns.name = ""
-    # make sure we're in UTC and use that for now
-    if [0] != np.unique(df["UTC_OFFSET"]):
-        raise RuntimeError("Expected UTC times")
-    df.columns = [x.lower() for x in df.columns]
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
-    df["issuedate"] = pd.to_datetime(df["issuedate"])
-    index_final = ["model", "lat", "lon", "issuedate", "id"]
-    df = df[index_final + ["datetime", "temp", "rh", "wd", "ws", "prec"]]
-    df = df.set_index(index_final)
-    return df
+    return query_wx_ensembles_rounded(model, lat, lon)
 
 
 class SourceGEPS(SourceModel):
@@ -222,27 +218,21 @@ class SourceGEPS(SourceModel):
     def model(cls):
         return "geps"
 
-    def __do_get_wx_model(self, lat, lon, retry=True):
+    def _get_wx_model(self, lat, lon):
         file_out = os.path.join(
             self._dir_out, make_filename(self.model, lat, lon, "geojson")
         )
-        is_download = not os.path.isfile(file_out)
-        try:
-            with remove_on_exception(file_out):
-                if is_download:
-                    gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
-                    save_geojson(gdf, file_out)
-                return gpd.read_file(file_out)
-        except Exception as ex:
-            if is_download or not retry:
-                # something happened when we tried to download it so fail
-                raise ex
-            # we tried using the existing file, so now that it's gone try downloading
-            logging.warning(
-                f"Loading existing file {file_out} failed - retrying from download"
-            )
-            return self.__do_get_wx_model(lat, lon, retry=False)
 
-    def _get_wx_model(self, lat, lon):
-        # HACK: call private function so we can keep same parameters but add retry
-        return self.__do_get_wx_model(lat, lon)
+        # retry once in case existing file doesn't parse
+        @ensures(
+            file_out,
+            True,
+            fct_process=gpd.read_file,
+            retries=1,
+        )
+        def do_create(_):
+            gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
+            save_geojson(gdf, _)
+            return _
+
+        return do_create(file_out)

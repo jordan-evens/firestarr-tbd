@@ -18,6 +18,7 @@ from logging import getLogger
 import numpy as np
 import pandas as pd
 import tqdm_util
+from dateutil.tz import tzoffset
 from filelock import FileLock
 from log import logging
 from osgeo import gdal
@@ -27,6 +28,7 @@ FLAG_DEBUG = False
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE_YMD = "%Y%m%d"
 FMT_TIME = "%H%M"
+FMT_FILE_MINUTE = "%Y%m%d_%H%M"
 
 # makes groups that are too big because it joins mutiple groups into a chain
 # DEFAULT_GROUP_DISTANCE_KM = 60
@@ -253,26 +255,28 @@ def filterXY(data):
     return data
 
 
-def try_remove(path, verbose=True):
+def try_remove(paths, verbose=True):
     """!
     Delete path but ignore errors if can't while raising old error
     @param path Path to delete
     @return None
     """
-    if not FLAG_DEBUG and path:
-        try:
-            if os.path.isfile(path):
-                if verbose:
-                    logging.debug("Trying to delete file {}".format(path))
-                os.remove(path)
-            elif os.path.isdir(path):
-                if verbose:
-                    logging.debug("Trying to remove directory {}".format(path))
-                shutil.rmtree(path, ignore_errors=True)
-        except KeyboardInterrupt as ex:
-            raise ex
-        except Exception:
-            pass
+    if not FLAG_DEBUG and paths:
+        paths = ensure_string_list(paths)
+        for path in paths:
+            try:
+                if os.path.isfile(path):
+                    if verbose:
+                        logging.debug("Trying to delete file {}".format(path))
+                    os.remove(path)
+                elif os.path.isdir(path):
+                    if verbose:
+                        logging.debug("Trying to remove directory {}".format(path))
+                    shutil.rmtree(path, ignore_errors=True)
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception:
+                pass
 
 
 def split_line(line):
@@ -314,7 +318,7 @@ def start_process(run_what, cwd):
 
 
 def finish_process(process):
-    stdout, stderr = process.communicate()
+    stdout, stderr = [x.decode("utf-8") for x in process.communicate()]
     if process.returncode != 0:
         # HACK: seems to be the exit code for ctrl + c events loop tries to run
         # it again before it exits without this
@@ -322,10 +326,14 @@ def finish_process(process):
             sys.exit(process.returncode)
         raise RuntimeError(
             "Error running {} [{}]: ".format(process.args, process.returncode)
-            + stderr.decode("utf-8")
-            + stdout.decode("utf-8")
+            + stderr
+            + stdout
         )
     return stdout, stderr
+
+
+def run_process(*args, **kwargs):
+    return finish_process(start_process(*args, **kwargs))
 
 
 def zip_folder(zip_name, path):
@@ -346,23 +354,23 @@ def zip_folder(zip_name, path):
 
 
 def dump_json(data, path):
-    try:
-        dir = os.path.dirname(path)
-        base = os.path.splitext(os.path.basename(path))[0]
-        file = os.path.join(dir, f"{base}.json")
+    dir = os.path.dirname(path)
+    base = os.path.splitext(os.path.basename(path))[0]
+    file = os.path.join(dir, f"{base}.json")
+
+    def fct_create(_):
         # NOTE: json.dumps() first and then write string so
         #      file is okay if dump fails
         # FIX: this is overkill but just want it to work for now
         s = json.dumps(data)
         json.loads(s)
-        with open(file, "w") as f:
+        with open(_, "w") as f:
             # HACK: not getting full string when using f.write(s)
             json.dump(data, f)
             # f.write(s)
-    except Exception as ex:
-        logging.error(f"Error writing to {file}:\n{str(ex)}\n{data}")
-        raise ex
-    return file
+
+    with ensure(file, fct_create, True, msg=f"Error writing to {file}:\n\t{data}"):
+        return file
 
 
 def pick_max(a, b):
@@ -416,37 +424,63 @@ class Origin(object):
         return self.offset(1)
 
 
+# @contextmanager
+# def cleanup_on_exception(remove_paths=None, msg=None, logger=None):
+#     """
+#     Want a way to ensure that files are accessed properly between threads
+#     and invalid results are removed. Also lets us use specific error messages
+#     when raising
+#     """
+#     try:
+#         if remove_paths is None and msg is None:
+#             raise RuntimeError(
+#                 "Expected at least one of remove_paths or msg to have a value"
+#             )
+#         yield
+#     except Exception as ex:
+#         # use default logger if none specified
+#         if logger is None:
+#             logger = logging
+#         msg = "" if not msg else f"\n\t{msg}"
+#         if remove_paths:
+#             msg += f"\n\tRemoving {remove_paths}"
+#         logger.error(f"Raising {ex}{msg}")
+#         if remove_paths:
+#             # HACK: strings are iterable, so can't just check if that works
+#             if isinstance(remove_paths, str):
+#                 remove_paths = [remove_paths]
+#             for path in remove_paths:
+#                 try_remove(path)
+#         raise ex
+
+
+# output a message but just raise the exception again
 @contextmanager
-def remove_on_exception(paths, msg=None, logger=logging):
+def message_on_exception(msg, logger=None):
     try:
         yield
     except Exception as ex:
-        logger.error(f"Removing {paths} after {ex}")
-        if msg:
-            logger.error(msg)
-        # HACK: strings are iterable, so can't just check if that works
-        if isinstance(paths, str):
-            paths = [paths]
-        for path in paths:
-            try_remove(path)
-        logger.error(f"Raising {ex}")
+        # use default logger if none specified
+        if logger is None:
+            logger = logging
+        logger.error(f"Raising {ex}\n\t{msg}")
         raise ex
 
 
-@contextmanager
-def lock_for(path, remove_after=False, remove_on_exception=False):
-    # simplify locking because we're trying to access a specific file
-    file_lock = path + ".lock"
-    try:
-        with FileLock(file_lock, -1):
-            yield
-        if remove_after:
-            try_remove(file_lock, False)
-    except Exception as ex:
-        logging.error(f"Error while waiting for lock on {path}\n\t{ex}")
-        if remove_on_exception:
-            try_remove(file_lock, False)
-        raise ex
+# @contextmanager
+# def lock_for(path, remove_after=False, remove_on_exception=False):
+#     # simplify locking because we're trying to access a specific file
+#     file_lock = path + ".lock"
+#     try:
+#         with FileLock(file_lock, -1):
+#             yield
+#         if remove_after:
+#             try_remove(file_lock, False)
+#     except Exception as ex:
+#         logging.error(f"Error while waiting for lock on {path}\n\t{ex}")
+#         if remove_on_exception:
+#             try_remove(file_lock, False)
+#         raise ex
 
 
 @contextmanager
@@ -457,6 +491,205 @@ def log_on_entry_exit(msg, logger=logging):
     #   START -
     #   END   -
     logger.debug(f"END   - {msg}")
+
+
+DEFAULT_MKDIRS = False
+
+
+def ensure_string_list(paths):
+    """Make sure that we have a list of strings and convert single string to list"""
+    if not paths:
+        raise RuntimeError("Expected paths but got {paths}")
+    # HACK: strings are iterable, so can't just check if that works
+    if isinstance(paths, str):
+        # make into a list no matter what so code is same
+        return [paths]
+    list_paths = []
+    for path in paths:
+        # iterate to make sure it's all strings and turn into a list
+        if not isinstance(path, str):
+            raise RuntimeError(f"Expected paths to be strings but got {paths}")
+        list_paths.append(path)
+    return list_paths
+
+
+DEFAULT_LOCK_TIMEOUT = -1
+# DEFAULT_LOCK_TIMEOUT = 5
+
+
+# make an object so that when program ends all the file locks should get cleaned up
+class LockTracker(object):
+    def __init__(self) -> None:
+        self._lock_files = set()
+
+    def get_lock(self, path):
+        file_lock = path + ".lock"
+        self._lock_files.add(file_lock)
+        return FileLock(file_lock, DEFAULT_LOCK_TIMEOUT, thread_local=False)
+
+    def __del__(self) -> None:
+        print(f"Removing locks on exit:\n\t{self._lock_files}")
+        try_remove(list(self._lock_files))
+
+
+LOCK_TRACKER = LockTracker()
+
+
+@contextmanager
+def locks_for(paths):
+    paths = ensure_string_list(paths)
+    try:
+        # FIX: deadlocks if same thread thread tries to get same file
+        locks = [LOCK_TRACKER.get_lock(path) for path in paths]
+        for lock in locks:
+            lock.acquire()
+        yield locks
+    finally:
+        for lock in locks:
+            lock.release()
+
+
+def paths_exist(paths):
+    return np.all([os.path.exists(path) for path in paths])
+
+
+# maybe these exist but easier to just make them than check for now
+def always_false(*args, **kwargs):
+    return False
+
+
+def always_true(*args, **kwargs):
+    return True
+
+
+@contextmanager
+def ensure(
+    paths,
+    fct_create,
+    remove_on_exception,
+    replace=None,
+    msg_error=None,
+    mkdirs=DEFAULT_MKDIRS,
+    logger=None,
+    retries=0,
+    can_fail=False,
+):
+    list_paths = ensure_string_list(paths)
+    # turn into a function so we can call it, but allow bools
+    if replace is None:
+        replace = always_false
+    elif isinstance(replace, bool):
+        replace = always_true if replace else always_false
+    try:
+        if mkdirs:
+            # if directory doesn't exist then lock file can't be made
+            # but don't want to always automatically make it for some reason?
+            for path in np.unique([os.path.dirname(p) for p in list_paths]):
+                ensure_dir(path)
+        # simplify locking because we're trying to access a specific file
+        with locks_for(list_paths) as locks:
+            result = paths
+            # path could be directory or file
+            if not paths_exist(list_paths) or replace(list_paths):
+                # in case we want to retry
+                result = None
+                while result is None and retries >= 0:
+                    ex_current = None
+                    try:
+                        # fct is expected to make the path
+                        result = fct_create(list_paths)
+                        logging.debug(f"fct_create({list_paths}) made {result}")
+                    except Exception as ex:
+                        logging.error(f"Caught {ex}")
+                        ex_current = ex
+                        retries -= 1
+                if ex_current is not None:
+                    logging.error(f"Raising {ex_current}")
+                    # have to remove or why would result change?
+                    try_remove(list_paths)
+                    raise ex_current
+                # HACK: check that it returns what we asked for so we know it's
+                #       updated to work properly with this and just return path
+                if not (can_fail and result is None) and result != paths:
+                    raise RuntimeError(
+                        f"Expected function returning {paths} but got {result}"
+                    )
+            if not (can_fail and result is None) and not paths_exist(list_paths):
+                raise RuntimeError(f"Expected {list_paths} to exist")
+            yield result
+            # since the file now exists, we can remove the lock since everything
+            # can just read it now
+            for p in [lock.lock_file for lock in locks]:
+                try_remove(p)
+    except Exception as ex:
+        # use default logger if none specified
+        if logger is None:
+            logger = logging
+        logger.error(
+            "\n\t".join(
+                [f"Raising {ex}", (msg_error or f"Could not ensure {list_paths}")]
+                + ([f"Removing {remove_on_exception}"] if remove_on_exception else [])
+            )
+        )
+        if remove_on_exception:
+            try_remove(list_paths)
+        raise ex
+
+
+def ensures(
+    paths,
+    remove_on_exception,
+    fct_process=None,
+    replace=None,
+    msg_error=None,
+    mkdirs=DEFAULT_MKDIRS,
+    logger=None,
+    retries=0,
+    can_fail=False,
+):
+    def decorator(fct):
+        @wraps(fct)
+        def wrapper(*args, **kwargs):
+            nonlocal retries
+
+            def fct_create(paths):
+                return fct(*args, **kwargs)
+
+            # in case we want to retry
+            while retries >= 0:
+                ex_current = None
+                # HACK: do our own retry so we know where it failed
+                try:
+                    with ensure(
+                        paths,
+                        fct_create,
+                        remove_on_exception=remove_on_exception,
+                        replace=replace,
+                        msg_error=msg_error,
+                        mkdirs=mkdirs,
+                        logger=logger,
+                        can_fail=can_fail,
+                    ):
+                        try:
+                            return (fct_process or do_nothing)(paths)
+                        except Exception as ex:
+                            # failed parsing file
+                            ex_current = ex
+                            logging.error(
+                                f"Failed parsing {paths} so removing and retrying"
+                            )
+                            try_remove(paths)
+                except Exception as ex:
+                    logging.error(f"Failed getting file: {ex}")
+                    # failed getting file
+                    ex_current = ex
+                retries -= 1
+            if ex_current is not None:
+                raise ex_current
+
+        return wrapper
+
+    return decorator
 
 
 def make_show_args(fct, show_args, ignore_args=["self"]):
@@ -530,3 +763,60 @@ def parse_str_list(s):
         return float(x)
 
     return [parse(x.strip()) for x in s[1:-1].split(",")]
+
+
+def import_cffdrs():
+    import NG_FWI as cffdrs
+
+    return cffdrs
+
+
+cffdrs = import_cffdrs()
+
+
+def find_ranges_missing(datetime_start, datetime_end, times, freq="H"):
+    # determine which times don't exist between start and end time
+    times_needed = set(
+        pd.date_range(datetime_start, datetime_end, freq=freq, inclusive="both")
+    )
+    if not times_needed:
+        return times_needed
+    ranges_missing = []
+    times_missing = set(times_needed).difference(set(times))
+    hr_begin = None
+    hr_end = None
+    for h in sorted(times_needed):
+        if hr_begin is None:
+            if h in times_missing:
+                ranges_missing.append([h, h])
+                hr_begin = h
+        else:
+            if h not in times_missing:
+                if hr_begin is not None and hr_end is not None:
+                    # # this hour isn't required, so last hour is end of range
+                    # ranges_missing.append(hr_begin, hr_end)
+                    hr_begin = None
+                    hr_end = None
+            else:
+                ranges_missing[-1][1] = h
+                hr_end = h
+    return ranges_missing
+
+
+def remove_timezone_utc(d):
+    d = pd.to_datetime(d, utc=True)
+    if isinstance(d, pd.Timestamp):
+        return d.tz_localize(None)
+    return [x.tz_localize(None) for x in d]
+
+
+def tz_from_offset(offset):
+    # FIX: must be a better way but just do this for now
+    utcoffset_hours = offset.total_seconds() / 60 / 60
+    h, m = abs(int(utcoffset_hours)), int((utcoffset_hours % 1) * 60)
+    sign = "+" if utcoffset_hours >= 0 else "-"
+    return tzoffset(f"Z{sign}{h:02d}{m:02d}", offset)
+
+
+def is_empty(df):
+    return df is None or 0 == len(df)

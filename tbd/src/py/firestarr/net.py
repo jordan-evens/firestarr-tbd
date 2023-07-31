@@ -15,12 +15,11 @@ from common import (
     FLAG_DEBUG,
     do_nothing,
     ensure_dir,
+    ensures,
     fix_timezone_offset,
-    lock_for,
+    locks_for,
     logging,
-    remove_on_exception,
 )
-from filelock import FileLock
 from urllib3.exceptions import InsecureRequestWarning
 
 # So HTTPS transfers work properly
@@ -48,13 +47,24 @@ RETRY_DELAY = 2
 
 # HACK: list of url parameters to not mask
 #   just to make sure we mask everything unless we know it's safe in logs
-SAFE_PARAMS = ["model", "lat", "lon", "ens_val", "where", "outFields", "f"]
+SAFE_PARAMS = [
+    "model",
+    "lat",
+    "lon",
+    "ens_val",
+    "where",
+    "outFields",
+    "f",
+    "outStatistics",
+]
 MASK_PARAM = "#######"
 WAS_MASKED = set()
 
+CACHE_DOWNLOADED = {}
+CACHE_LOCK_FILE = "/tmp/firestarr_cache"
 
-@cache
-def _save_http_cached(url, save_as):
+
+def _save_http_uncached(url, save_as):
     modlocal = None
     logging.debug(f"Opening {url}")
     response = requests.get(
@@ -94,8 +104,37 @@ def _save_http_cached(url, save_as):
     return save_as
 
 
-CACHE_DOWNLOADED = {}
-CACHE_LOCK_FILE = "/tmp/firestarr_cache.lock"
+@cache
+def _save_http_cached(url, save_as):
+    return _save_http_uncached(url, save_as)
+
+
+def check_downloaded(path):
+    # logging.debug(f"check_downloaded({path}) - waiting")
+    with locks_for(CACHE_LOCK_FILE):
+        # FIX: should return False if file no longer exists
+        # logging.debug(f"check_downloaded({path}) - checking")
+        result = CACHE_DOWNLOADED.get(path, None)
+        # logging.debug(f"check_downloaded({path}) - returning {result}")
+        return result
+
+
+def mark_downloaded(path, flag=True):
+    # logging.debug(f"mark_downloaded({path}, {flag})")
+    if not (flag and path in CACHE_DOWNLOADED):
+        # logging.debug(f"mark_downloaded({path}, {flag}) - waiting")
+        with locks_for(CACHE_LOCK_FILE):
+            # logging.debug(f"mark_downloaded({path}, {flag}) - marking")
+            if flag:
+                # logging.debug(f"mark_downloaded({path}, {flag}) - adding")
+                CACHE_DOWNLOADED[path] = path
+            elif path in CACHE_DOWNLOADED:
+                # logging.debug(f"mark_downloaded({path}, {flag}) - removing")
+                del CACHE_DOWNLOADED[path]
+    # else:
+    #     logging.debug(f"mark_downloaded({path}, {flag}) - do nothing")
+    # logging.debug(f"mark_downloaded({path}, {flag}) - returning {path}")
+    return path
 
 
 def save_http(
@@ -105,28 +144,49 @@ def save_http(
     fct_pre_save,
     fct_post_save,
 ):
-    if not save_as:
-        raise RuntimeError("Expected save_as to be specified")
+    logging.debug(f"save_http({url}, {save_as})")
 
-    def do_save(save_as_):
-        # if any existing file and keep_existing then assume current
-        if save_as_ not in CACHE_DOWNLOADED:
-            with lock_for(save_as_, remove_after=True, remove_on_exception=True):
-                with remove_on_exception(save_as_, f"Failed getting {url}"):
-                    if save_as_ not in CACHE_DOWNLOADED:
-                        if not (os.path.isfile(save_as_) and keep_existing):
-                            save_as_ = _save_http_cached(
-                                (fct_pre_save or do_nothing)(url), save_as_
-                            )
-                        with FileLock(CACHE_LOCK_FILE, -1):
-                            CACHE_DOWNLOADED[save_as_] = save_as_
-                if save_as_ not in CACHE_DOWNLOADED:
-                    raise RuntimeError(
-                        "Expected to have result for {save_as_} in cache"
-                    )
-        return CACHE_DOWNLOADED[save_as_]
+    @ensures(
+        paths=save_as,
+        remove_on_exception=True,
+        replace=not keep_existing,
+        msg_error=f"Failed getting {url}",
+    )
+    def do_save(_):
+        # if another thread downloaded then don't do it again
+        # @ensures already checked if file exists but we want to replace
+        # logging.debug(f"do_save({_})")
+        r = check_downloaded(_)
+        if r:
+            # logging.debug(f"{_} was downloaded already")
+            return r
+        r = _save_http_uncached((fct_pre_save or do_nothing)(url), _)
+        # logging.debug(f"do_save({_}) - returning {r}")
+        # mark_downloaded(_)
+        return _
 
-    return (fct_post_save or do_nothing)(do_save(save_as))
+    try:
+        # if already downloaded then use existing file
+        # if not downloaded then try to save but check cache before downloading
+        # either way, call fct_post_save on the file
+        r = check_downloaded(save_as)
+        if not r:
+            # logging.debug(f"save_http({url}, {save_as}) - calling do_save({save_as})")
+            r = do_save(save_as)
+            # might have already existed, so marking in do_save() might not happen
+            r = mark_downloaded(r)
+        # else:
+        #     logging.debug(f"save_http({url}, {save_as}) - {save_as} was downloaded")
+        r = (fct_post_save or do_nothing)(r)
+        # logging.debug(f"save_http({url}, {save_as}) - returning {r}")
+        if not check_downloaded(save_as):
+            raise RuntimeError(f"Expected {save_as} to be marked as downloaded")
+        return r
+    except Exception as ex:
+        logging.error(ex)
+        # @ensures should have taken care of delting file
+        mark_downloaded(save_as, False)
+        raise ex
 
 
 def mask_url(url):
@@ -154,10 +214,7 @@ def try_save_http(
     save_tries = 0
     while True:
         try:
-            with remove_on_exception(save_as):
-                return save_http(
-                    url, save_as, keep_existing, fct_pre_save, fct_post_save
-                )
+            return save_http(url, save_as, keep_existing, fct_pre_save, fct_post_save)
         except Exception as ex:
             logging.info(f"Caught {ex} in {__name__}")
             if isinstance(ex, KeyboardInterrupt):
@@ -166,7 +223,7 @@ def try_save_http(
             # no point in retrying if URL doesn't exist or is forbidden
             if check_code and isinstance(ex, HTTPError) and ex.code in [403, 404]:
                 # if we're checking for code then return None since file can't exist
-                with FileLock(CACHE_LOCK_FILE, -1):
+                with locks_for(CACHE_LOCK_FILE):
                     CACHE_DOWNLOADED[save_as] = None
                 return None
             if FLAG_DEBUG or save_tries >= max_save_retries:

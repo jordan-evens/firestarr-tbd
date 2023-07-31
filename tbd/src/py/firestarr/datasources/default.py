@@ -22,6 +22,7 @@ from datasources.datatypes import (
     SourceFwi,
     SourceHourly,
     SourceModel,
+    make_template_empty,
 )
 from gis import (
     CRS_COMPARISON,
@@ -97,10 +98,10 @@ def assign_fires(
     df_first.crs = df_join.crs
     # want to keep all the fires that geometries intersect circles for
     # so that we can replace all of their named entries
-    df_status = df_join.loc[:]
+    df_status = df_join.loc[:].set_index(["index"])
     # assign highest status for any of overlapping fires to all fires that overlap
-    df_status[["status", "status_rank"]] = df_first[["status", "status_rank"]].loc[
-        df_status["index"]
+    df_status[["status", "status_rank"]] = df_first.loc[df_status.index][
+        ["status", "status_rank"]
     ]
     # dissolve by fire_name but use max so highest lastdate stays
     df_dissolve = df_status.dissolve(by="fire_name", aggfunc="max").reset_index()
@@ -223,7 +224,7 @@ class SourceFireActive(SourceFire):
         ).simplify(100)
         df_circles = df_circles.to_crs(CRS_WGS84)
         save_shp(df_circles, os.path.join(self._dir_out, "df_fires_circles"))
-        df_fires = df_circles.iloc[:]
+        df_fires = self.check_columns(df_circles.iloc[:])
         df_unmatched = None
         # override with each source in the order they appear
         for i, src in enumerate(self._source_features):
@@ -300,7 +301,21 @@ class SourceModelAll(SourceModel):
         ]
 
     def _get_wx_model(self, lat, lon):
-        return pd.concat([src._get_wx_model(lat, lon) for src in self._sources])
+        return pd.concat(
+            [
+                src._get_wx_model(lat, lon)
+                for src in self._sources
+                if src.applies_to(lat, lon)
+            ]
+        )
+
+
+class SourceHourlyEmpty(SourceHourly):
+    def __init__(self) -> None:
+        super().__init__(bounds=None)
+
+    def _get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
+        return make_template_empty("hourly")
 
 
 class SourceHourlyBest(SourceHourly):
@@ -309,12 +324,13 @@ class SourceHourlyBest(SourceHourly):
         self._dir_out = dir_out
         self._sources = [s(self._dir_out) for s in find_sources(SourceHourly)] + [
             # need some default hourly weather source
+            SourceHourlyEmpty()
         ]
 
     @cache
-    def _get_wx_hourly(self, lat, lon, date):
+    def _get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
         # find first fwi source that applies to this
         for src in self._sources:
             if src.applies_to(lat, lon):
                 break
-        return src._get_wx_hourly(lat, lon, date)
+        return src._get_wx_hourly(lat, lon, datetime_start, datetime_end)

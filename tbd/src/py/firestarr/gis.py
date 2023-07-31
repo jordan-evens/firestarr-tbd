@@ -15,7 +15,9 @@ from common import (
     DIR_RASTER,
     do_nothing,
     ensure_dir,
+    is_empty,
     logging,
+    message_on_exception,
     unzip,
 )
 from net import try_save_http
@@ -40,6 +42,7 @@ def ensure_geometry_file(path):
     Derive a single geometry file from given path, downloading and/or
     extracting as necessary
     """
+    # FIX: @ensures to make sure this is threadsafe
     path_orig = path
     # support specifying a remote path
     if re.match("^https?://", path):
@@ -79,6 +82,10 @@ def ensure_geometry_file(path):
     if not os.path.isfile(file):
         raise RuntimeError(f"Missing expected file: {file}")
     return file
+
+
+def load_geometry_file(path):
+    return gpd.read_file(ensure_geometry_file(path))
 
 
 def GetFeatureCount(shp):
@@ -324,7 +331,7 @@ def find_raster_meridians(year=None):
         del prj
         del raster
     MERIDIANS = result
-    if 0 == len(result):
+    if is_empty(result):
         logging.error("Error: missing rasters in directory {}".format(raster_root))
     return result
 
@@ -387,12 +394,10 @@ def save_geojson(df, path):
     dir = os.path.dirname(path)
     base = os.path.splitext(os.path.basename(path))[0]
     file = os.path.join(dir, f"{base}.geojson")
-    try:
+    # HACK: don't lock on file until we fix reentrant locks
+    with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
         # HACK: geojson must be WGS84
         df.to_crs("WGS84").to_file(file)
-    except Exception as ex:
-        logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
-        raise ex
     return file
 
 
@@ -400,7 +405,8 @@ def save_shp(df, path):
     dir = os.path.dirname(path)
     base = os.path.splitext(os.path.basename(path))[0]
     file = os.path.join(dir, f"{base}.shp")
-    try:
+    # HACK: don't lock on file until we fix reentrant locks
+    with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
         cols = df.columns
         df = df.reset_index()
         keys = [x for x in df.columns if x not in cols]
@@ -410,9 +416,6 @@ def save_shp(df, path):
             if "date" in str(v).lower():
                 df[k] = df[k].astype(str)
         df.set_index(keys).to_file(file)
-    except Exception as ex:
-        logging.error(f"Error writing to {file}:\n{str(ex)}\n{df}")
-        raise ex
     return file
 
 
@@ -434,6 +437,8 @@ def make_point(lat, lon, crs=CRS_WGS84):
 
 
 def find_closest(df, lat, lon, crs=CRS_COMPARISON):
+    if df is None:
+        return df
     df["dist"] = df.to_crs(crs).distance(make_point(lat, lon, crs))
     return df.loc[df["dist"] == np.min(df["dist"])]
 

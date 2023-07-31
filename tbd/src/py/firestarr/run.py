@@ -7,36 +7,16 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (
-    BOUNDS,
-    CONCURRENT_SIMS,
-    DEFAULT_FILE_LOG_LEVEL,
-    DIR_OUTPUT,
-    DIR_SIMS,
-    MAX_NUM_DAYS,
-    Origin,
-    ensure_dir,
-    list_dirs,
-    log_entry_exit,
-    log_on_entry_exit,
-    logging,
-    parse_str_list,
-    try_remove,
-)
+from common import (BOUNDS, CONCURRENT_SIMS, DEFAULT_FILE_LOG_LEVEL,
+                    DIR_OUTPUT, DIR_SIMS, MAX_NUM_DAYS, Origin, ensure_dir,
+                    ensures, list_dirs, locks_for, log_entry_exit,
+                    log_on_entry_exit, logging, message_on_exception,
+                    try_remove)
 from datasources.datatypes import SourceFire
 from datasources.default import SourceFireActive
-from filelock import FileLock
 from fires import get_fires_folder, group_fires
-from gis import (
-    CRS_COMPARISON,
-    CRS_SIMINPUT,
-    CRS_WGS84,
-    area_ha,
-    make_gdf_from_series,
-    save_geojson,
-    save_shp,
-    to_gdf,
-)
+from gis import (CRS_COMPARISON, CRS_SIMINPUT, CRS_WGS84, area_ha,
+                 make_gdf_from_series, save_shp)
 from log import LOGGER_NAME, add_log_file
 from publish import publish_all
 from simulation import Simulation
@@ -152,7 +132,8 @@ class Run(object):
         self._file_fires = os.path.join(self._dir_out, "df_fires_prioritized.shp")
         # UTC time
         self._origin = Origin(self._start_time)
-        self._simulation = Simulation(self._dir_out)
+        self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
+        self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
 
     @log_order()
     def process(self):
@@ -162,39 +143,40 @@ class Run(object):
         # FIX: check the weather or folders here
         df_final = self.run_fires_in_dir(check_missing=False)
         logging.info(
-            f"Done running {len(df_final)} fires with a total simulation time of {df_final['sim_time'].sum()}"
+            f"Done running {len(df_final)} fires with a total simulation time"
+            f"of {df_final['sim_time'].sum()}"
         )
         return df_final
 
     @log_order()
     def prep_fires(self, force=False):
-        if os.path.isfile(self._file_fires):
-            if force:
+        @ensures(self._file_fires, True, replace=force)
+        def do_create(_):
+            if force and os.path.isfile(_):
                 logging.info("Deleting existing fires")
-                os.remove(self._file_fires)
-            else:
-                logging.info("Fires already prepared")
-                return
-        # keep a copy of the settings for reference
-        shutil.copy(
-            "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
-        )
-        # also keep binary instead of trying to track source
-        shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
-        src_groups = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
-        df_fires = src_groups.get_fires().to_crs(self._crs)
-        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups.shp"))
-        df_fires["area"] = area_ha(df_fires)
-        # HACK: make into list to get rid of index so multi-column assignment works
-        df_fires[["lat", "lon"]] = list(
-            tqdm_util.apply(
-                df_fires.centroid.to_crs(CRS_WGS84),
-                lambda pt: [pt.y, pt.x],
-                desc="Finding centroids",
+                os.remove(_)
+            # keep a copy of the settings for reference
+            shutil.copy(
+                "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
             )
-        )
-        df_prioritized = self.prioritize(df_fires)
-        save_shp(df_prioritized, self._file_fires)
+            # also keep binary instead of trying to track source
+            shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
+            df_fires = self._src_fires.get_fires().to_crs(self._crs)
+            save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups.shp"))
+            df_fires["area"] = area_ha(df_fires)
+            # HACK: make into list to get rid of index so multi-column assignment works
+            df_fires[["lat", "lon"]] = list(
+                tqdm_util.apply(
+                    df_fires.centroid.to_crs(CRS_WGS84),
+                    lambda pt: [pt.y, pt.x],
+                    desc="Finding centroids",
+                )
+            )
+            df_prioritized = self.prioritize(df_fires)
+            save_shp(df_prioritized, _)
+            return _
+
+        return do_create(self._file_fires)
 
     def load_fires(self):
         if not os.path.isfile(self._file_fires):
@@ -202,26 +184,32 @@ class Run(object):
         return gpd.read_file(self._file_fires).set_index(["fire_name"])
 
     @log_order()
-    def prep_folders(self):
+    def prep_folders(self, remove_existing=False):
         df_fires = self.load_fires()
-        if not self.find_unprepared(df_fires, remove_invalid=True):
-            return
-        df_fires["dir_sims"] = self._dir_sims
-        df_fires["start_time"] = self._start_time
+        if remove_existing:
+            # throw out folders and start over from df_fires
+            try_remove(self._dir_sims)
+        else:
+            if not self.find_unprepared(df_fires, remove_invalid=True):
+                return
 
         # @log_order_firename()
         def do_fire(row_fire):
-            # HACK: can't pickle with @log_order
-            with log_order_msg(f"do_fire({row_fire.fire_name})"):
-                df_fire = make_gdf_from_series(row_fire, self._crs)
-                return self._simulation.prepare(df_fire)
+            fire_name = row_fire.fire_name
+            # just want a nice error message if this fails
+            with message_on_exception(f"Error processing fire {fire_name}"):
+                # HACK: can't pickle with @log_order
+                with log_order_msg(f"do_fire({fire_name})"):
+                    df_fire = make_gdf_from_series(row_fire, self._crs)
+                    return self._simulation.prepare(df_fire)
 
+        list_rows = list(zip(*list(df_fires.reset_index().iterrows())))[1]
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
-        # for row_fire in list(zip(*list(df_fires.reset_index().iterrows())))[1]:
+        # for row_fire in list_rows:
         #     do_fire(row_fire)
         tqdm_util.pmap(
             do_fire,
-            list(zip(*list(df_fires.reset_index().iterrows())))[1],
+            list_rows,
             desc="Preparing groups",
         )
 
@@ -306,7 +294,7 @@ class Run(object):
         sim_time = 0
         sim_times = []
         NUM_TRIES = 5
-        file_lock_publish = os.path.join(self._dir_output, "publish.lock")
+        file_lock_publish = os.path.join(self._dir_output, "publish")
 
         @log_order()
         def check_publish(g, sim_results):
@@ -315,7 +303,7 @@ class Run(object):
             nonlocal sim_times
             nonlocal dates_out
             nonlocal results
-            with FileLock(file_lock_publish, -1):
+            with locks_for(file_lock_publish):
                 for i in range(len(sim_results)):
                     result = sim_results[i]
                     # should be in the same order as input

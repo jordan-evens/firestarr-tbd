@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
+from typing import final
 
 import geopandas as gpd
 import numpy as np
-from gis import CRS_COMPARISON, CRS_WGS84
+from gis import CRS_WGS84, make_empty_gdf
 
 COLUMNS_STATION = ["lat", "lon"]
-COLUMN_STREAM = "id"
 COLUMN_MODEL = "model"
-COLUMNS_MODEL = [COLUMN_MODEL, COLUMN_STREAM] + COLUMNS_STATION
+COLUMNS_STREAM = [COLUMN_MODEL, "id"]
+COLUMNS_MODEL = COLUMNS_STREAM + COLUMNS_STATION
 COLUMN_TIME = "datetime"
 COLUMNS_FWI = ["ffmc", "dmc", "dc"]
 COLUMNS_WEATHER = ["temp", "rh", "wd", "ws", "prec"]
@@ -28,30 +29,39 @@ COLUMNS = {
 }
 
 
-def get_columns(template):
+def get_key_and_columns(template):
     t = COLUMNS[template]
     key = t["key"]
     columns = key + [COLUMN_TIME] + t["columns"] + ["geometry"]
     return key, columns
 
 
+def get_columns(template):
+    return get_key_and_columns(template)[1]
+
+
+def make_template_empty(template):
+    return make_empty_gdf(get_columns(template))
+
+
 def check_columns(df, template):
-    key, columns = get_columns(template)
+    key, columns = get_key_and_columns(template)
     try:
         # sort based on columns in order from left to right
         # logging.debug("reset_index")
         df = df.reset_index()
         # logging.debug("columns")
         df = df[columns]
-        # logging.debug("sort_values")
-        df = df.sort_values([x for x in columns if x != "geometry"])
         if key:
             # logging.debug("set_index")
-            df = df.set_index(key)
+            df = df.set_index(key).sort_index()
         else:
             # logging.debug("reset_index")
             # renumber rows if no key
             df = df.reset_index(drop=True)
+        # logging.debug("sort_values")
+        # for some reason sorting on all columns in order doesn't actually sort?
+        df = df.sort_values([COLUMN_TIME])
         # HACK: keep everything in WGS84
         if isinstance(df, gpd.GeoDataFrame):
             # logging.debug("to_crs")
@@ -101,15 +111,18 @@ class Source(ABC):
 
     @classmethod
     @property
+    @final
     def columns(cls):
         return COLUMNS[cls._provides]["columns"]
 
     @classmethod
     @property
+    @final
     def key(cls):
         return COLUMNS[cls._provides]["key"]
 
     @classmethod
+    @final
     def check_columns(cls, df):
         return check_columns(df, cls._provides)
 
@@ -132,6 +145,7 @@ class SourceFeature(Source):
     def _get_features(self):
         pass
 
+    @final
     def get_features(self):
         return self.check_columns(self._get_features())
 
@@ -149,6 +163,7 @@ class SourceFire(Source):
     def _get_fires(self):
         pass
 
+    @final
     def get_fires(self):
         return self.check_columns(self._get_fires())
 
@@ -166,6 +181,7 @@ class SourceModel(Source):
     def _get_wx_model(self, lat, lon):
         pass
 
+    @final
     def get_wx_model(self, lat, lon):
         return self.check_columns(self._get_wx_model(lat, lon))
 
@@ -180,10 +196,11 @@ class SourceHourly(Source):
         return "hourly"
 
     @abstractmethod
-    def _get_wx_hourly(self, lat, lon, datetime_start=None, datetime_end=None):
+    def _get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
         pass
 
-    def get_wx_hourly(self, lat, lon, datetime_start=None, datetime_end=None):
+    @final
+    def get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
         return self.check_columns(
             self._get_wx_hourly(lat, lon, datetime_start, datetime_end)
         )
@@ -202,6 +219,7 @@ class SourceFwi(Source):
     def _get_fwi(self, lat, lon, date):
         pass
 
+    @final
     def get_fwi(self, lat, lon, date):
         return self.check_columns(self._get_fwi(lat, lon, date))
 
@@ -219,5 +237,6 @@ class SourceFireWeather(Source):
     def _get_fire_weather(self, lat, lon, date):
         pass
 
+    @final
     def get_fire_weather(self, lat, lon, date):
         return self.check_columns(self._get_fire_weather(lat, lon, date))

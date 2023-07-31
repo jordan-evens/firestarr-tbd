@@ -5,7 +5,7 @@ from functools import cache
 
 import pandas as pd
 import tqdm_util
-from common import logging
+from common import is_empty, logging
 from gis import CRS_COMPARISON, to_gdf
 from net import try_save_http
 
@@ -17,16 +17,12 @@ DEFAULT_STATUS_IGNORE = ["OUT", "UC", "BH", "U"]
 URL_CWFIS_DOWNLOADS = "https://cwfis.cfs.nrcan.gc.ca/downloads"
 
 
-def try_query_geoserver(
+def make_query_geoserver(
     table_name,
-    save_as,
     features=None,
     filter=None,
     wfs_root=WFS_ROOT,
     output_format="application/json",
-    keep_existing=True,
-    fct_pre_save=None,
-    fct_post_save=None,
 ):
     logging.debug(f"Getting table {table_name} in projection {str(CRS_COMPARISON)}")
     url = "&".join(
@@ -41,13 +37,7 @@ def try_query_geoserver(
     if filter is not None:
         url += f"&CQL_FILTER={urllib.parse.quote(filter)}"
     logging.debug(url)
-    return try_save_http(
-        url,
-        save_as,
-        keep_existing,
-        fct_pre_save=fct_pre_save,
-        fct_post_save=fct_post_save,
-    )
+    return url
 
 
 @cache
@@ -67,7 +57,7 @@ def get_wx_cwfis(
         logging.debug("Reading {}".format(_))
         df = pd.read_csv(_)
         # HACK: doesn't make column if df is empty
-        if 0 == len(df):
+        if is_empty(df):
             df["datetime"] = None
         else:
             df["datetime"] = tqdm_util.apply(
@@ -82,11 +72,15 @@ def get_wx_cwfis(
         gdf = to_gdf(df)
         return gdf
 
-    return try_query_geoserver(
-        layer,
+    return try_save_http(
+        make_query_geoserver(
+            layer,
+            features=f"rep_date,prov,lat,lon,elev,the_geom,{indices}",
+            filter=f"rep_date={year:04d}-{month:02d}-{day:02d}T12:00:00",
+            output_format="csv",
+        ),
         save_as,
-        features=f"rep_date,prov,lat,lon,elev,the_geom,{indices}",
-        filter=f"rep_date={year:04d}-{month:02d}-{day:02d}T12:00:00",
-        output_format="csv",
-        keep_existing=True,
+        True,
+        None,
+        do_parse,
     )

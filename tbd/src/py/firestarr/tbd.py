@@ -10,11 +10,10 @@ import pandas as pd
 from common import (
     WANT_DATES,
     ensure_dir,
-    finish_process,
     listdir_sorted,
-    lock_for,
+    locks_for,
     logging,
-    start_process,
+    run_process,
 )
 
 # set to "" if want intensity grids
@@ -35,7 +34,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
     # need directory for lock
     ensure_dir(os.path.dirname(file_sim))
     # lock before reading so if sim is running it will update file before lock ends
-    with lock_for(file_sim, remove_after=True, remove_on_exception=True):
+    with locks_for(file_sim):
         log_info = logging.info if verbose else nolog
         df_fire = gpd.read_file(file_sim)
         if 1 != len(df_fire):
@@ -86,11 +85,9 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
             if os.path.exists(file_log):
                 # if log says it ran then don't run it
                 # HACK: just use tail instead of looping or seeking ourselves
-                stdout, stderr = finish_process(
-                    start_process(["tail", "-1", file_log], "/appl/tbd")
-                )
+                stdout, stderr = run_process(["tail", "-1", file_log], "/appl/tbd")
                 if stdout:
-                    line = stdout.decode("utf-8").strip().split("\n")[-1]
+                    line = stdout.strip().split("\n")[-1]
                     g = re.match(
                         ".*Total simulation time was (.*) seconds", line
                     ).groups()
@@ -125,9 +122,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                     # run generated command for parsing data
                     run_what = [cmd] + shlex.split(args)
                     t0 = timeit.default_timer()
-                    stdout, stderr = finish_process(
-                        start_process(run_what, "/appl/tbd")
-                    )
+                    stdout, stderr = run_process(run_what, "/appl/tbd")
                     t1 = timeit.default_timer()
                     sim_time = t1 - t0
                     log_info("Took {}s to run simulations".format(sim_time))
@@ -136,9 +131,9 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                     # if sim failed we want to keep track of what happened
                     if stdout:
                         with open(file_log, "w") as f_log:
-                            f_log.write(stdout.decode("utf-8"))
+                            f_log.write(stdout)
                         with open(file_log.replace(".log", ".err.log"), "w") as f_log:
-                            f_log.write(stderr.decode("utf-8"))
+                            f_log.write(stderr)
                     raise ex
                 df_fire["sim_time"] = sim_time
                 gis.save_geojson(df_fire, file_sim)
