@@ -803,6 +803,14 @@ def find_ranges_missing(datetime_start, datetime_end, times, freq="H"):
     return ranges_missing
 
 
+def find_missing(df_wx, datetime_start, datetime_end):
+    return find_ranges_missing(
+        datetime_start,
+        datetime_end,
+        pd.to_datetime(df_wx["datetime"]) if df_wx is not None else [],
+    )
+
+
 def remove_timezone_utc(d):
     d = pd.to_datetime(d, utc=True)
     if isinstance(d, pd.Timestamp):

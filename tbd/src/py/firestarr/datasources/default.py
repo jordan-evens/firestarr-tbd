@@ -5,34 +5,15 @@ from functools import cache
 import datasources.spotwx
 import numpy as np
 import pandas as pd
-from common import (
-    DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
-    DIR_SRC_PY_FIRSTARR,
-    listdir_sorted,
-    logging,
-    pick_max,
-    pick_max_by_column,
-    to_utc,
-    tqdm_util,
-)
+from common import (DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
+                    DIR_SRC_PY_FIRSTARR, listdir_sorted, logging, pick_max,
+                    pick_max_by_column, to_utc, tqdm_util)
 from datasources.cwfis import SourceFeatureM3, SourceFireCiffc, SourceFwiCwfis
-from datasources.datatypes import (
-    SourceFeature,
-    SourceFire,
-    SourceFwi,
-    SourceHourly,
-    SourceModel,
-    make_template_empty,
-)
-from gis import (
-    CRS_COMPARISON,
-    CRS_WGS84,
-    KM_TO_M,
-    area_ha,
-    area_ha_to_radius_m,
-    save_shp,
-    to_gdf,
-)
+from datasources.datatypes import (SourceFeature, SourceFire, SourceFwi,
+                                   SourceHourly, SourceModel,
+                                   make_template_empty)
+from gis import (CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha,
+                 area_ha_to_radius_m, save_shp, to_gdf)
 
 STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
 
@@ -155,7 +136,7 @@ def find_sources_in_module(module, class_type):
     ]
 
 
-def find_sources(class_type, dir_search="private"):
+def find_sources_in_dir(class_type, dir_search="private"):
     path = os.path.join(DIR_SRC_PY_FIRSTARR, "datasources", dir_search)
     if not os.path.isdir(path):
         return []
@@ -166,6 +147,13 @@ def find_sources(class_type, dir_search="private"):
     return list(
         chain.from_iterable([find_sources_in_module(m, class_type) for m in modules])
     )
+
+
+def find_sources(class_type, private_first=False):
+    private = find_sources_in_dir(class_type, "private")
+    public = find_sources_in_dir(class_type, "public")
+    # some sources
+    return private + public if private_first else public + private
 
 
 class SourceFireActive(SourceFire):
@@ -187,9 +175,15 @@ class SourceFireActive(SourceFire):
         # sources for features that we don't have a fire attached to
         self._source_features = [
             SourceFeatureM3(self._dir_out, self._origin),
-        ] + [s(self._dir_out) for s in find_sources(SourceFeature)]
+        ] + [
+            # want private sources last so they override public ones
+            s(self._dir_out)
+            for s in find_sources(SourceFeature, private_first=False)
+        ]
         # sources for features that area associated with specific fires
-        self._source_fires = [s(self._dir_out) for s in find_sources(SourceFire)]
+        self._source_fires = [
+            s(self._dir_out) for s in find_sources(SourceFire, private_first=False)
+        ]
 
     @cache
     def _get_fires(self):
@@ -279,9 +273,10 @@ class SourceFwiBest(SourceFwi):
     ) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        self._sources = [s(self._dir_out) for s in find_sources(SourceFwi)] + [
-            SourceFwiCwfis(self._dir_out)
-        ]
+        # want private sources first since it stops at first match
+        self._sources = [
+            s(self._dir_out) for s in find_sources(SourceFwi, private_first=True)
+        ] + [SourceFwiCwfis(self._dir_out)]
 
     @cache
     def _get_fwi(self, lat, lon, date):
@@ -297,7 +292,9 @@ class SourceModelAll(SourceModel):
         super().__init__(bounds=None)
         self._dir_out = dir_out
         self._sources = [datasources.spotwx.SourceGEPS(self._dir_out)] + [
-            s(self._dir_out) for s in find_sources(SourceModel)
+            # order doesn't matter since everything gets used
+            s(self._dir_out)
+            for s in find_sources(SourceModel)
         ]
 
     def _get_wx_model(self, lat, lon):
@@ -322,7 +319,11 @@ class SourceHourlyBest(SourceHourly):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
         self._dir_out = dir_out
-        self._sources = [s(self._dir_out) for s in find_sources(SourceHourly)] + [
+        self._sources = [
+            # want private sources first since it stops at first match
+            s(self._dir_out)
+            for s in find_sources(SourceHourly, private_first=True)
+        ] + [
             # need some default hourly weather source
             SourceHourlyEmpty()
         ]
