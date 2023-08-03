@@ -15,22 +15,6 @@ RUN apt-get install -y \
   && export C_INCLUDE_PATH=/usr/include/gdal
 
 
-# shouldn't need any of those libraries to build perf
-# cmake isn't required either, but just reuse that image instead of base gcc
-FROM gcc-cmake-updated AS perf
-ARG PERF_VERSION
-ARG perf_server=https://mirrors.edge.kernel.org
-ARG perf_dir=${perf_server}/pub/linux/kernel/tools/perf
-ARG perf_url=${perf_dir}/v${PERF_VERSION}/perf-${PERF_VERSION}.tar.gz
-WORKDIR /tmp
-RUN apt-get install -y flex bison \
-  && wget --no-check-certificate ${perf_url} \
-  && tar -xvf perf-${PERF_VERSION}.tar.gz \
-  && cd perf-${PERF_VERSION}/tools/perf \
-  && make -j $(nproc) install \
-  && cp perf /usr/local/bin
-
-
 FROM gcc-cmake-with_libs AS gcc-cmake-python
 WORKDIR /appl/
 RUN apt-get install -y python3-pip libpython3-dev python3-venv sudo \
@@ -43,7 +27,11 @@ RUN apt-get install -y python3-pip libpython3-dev python3-venv sudo \
 
 FROM gcc-cmake-python AS tbd_dev
 ARG USERNAME
-RUN apt-get install -y gdb valgrind time nano ministat
+RUN apt-get install -y locales \
+  && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
+  && locale-gen
+RUN apt-get install -y gdb valgrind time nano ministat \
+  libdwarf-dev libelf-dev libdw-dev linux-perf
 ARG USER_ID
 RUN groupadd --gid ${USER_ID} ${USERNAME} \
   && useradd --uid ${USER_ID} --gid ${USER_ID} -m ${USERNAME} \
@@ -55,7 +43,6 @@ RUN chown -R ${USERNAME}:${USERNAME} /appl/.venv \
   && echo source /appl/.venv/bin/activate >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 WORKDIR /appl/tbd/
-COPY --from=perf /usr/local/bin/perf /usr/local/bin/
 COPY .docker/requirements_tbd.txt /appl/requirements_tbd.txt
 RUN . /appl/.venv/bin/activate \
   && python -m pip install -r /appl/requirements_tbd.txt
