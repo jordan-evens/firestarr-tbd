@@ -2,15 +2,15 @@ ARG GCC_VERSION
 
 
 # So we can start from an updated image at various steps
-FROM ghcr.io/jordan-evens/gcc-cmake:$GCC_VERSION AS gcc-cmake-updated
+FROM gcc:$GCC_VERSION AS gcc-updated
 RUN apt-get update --fix-missing
 
 
-FROM gcc-cmake-updated AS gcc-cmake-with_libs
+FROM gcc-updated AS gcc-cmake-with_libs
 RUN apt-get install -y \
   cron curl nano procps psmisc tar util-linux unzip wget zip \
   libgdal-dev gdal-bin \
-  libtiff-dev libgeotiff-dev \
+  libtiff-dev libgeotiff-dev cmake \
   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
   && export C_INCLUDE_PATH=/usr/include/gdal
 
