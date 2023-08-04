@@ -276,6 +276,8 @@ def get_hourly_date(dir_out, layer, date):
             )
             df["id"] = 0
             df["model"] = "observed"
+            # HACK: wind can be 'null' so set to 0 if it is
+            df.loc[df["wd"].isna(), "wd"] = 0
             df[COLUMN_TIME] = remove_timezone_utc(df[COLUMN_TIME])
             return df
 
