@@ -5,8 +5,10 @@ import shlex
 import timeit
 
 import geopandas as gpd
+import gis
 import pandas as pd
 from common import (
+    DIR_TBD,
     WANT_DATES,
     ensure_dir,
     listdir_sorted,
@@ -14,8 +16,6 @@ from common import (
     logging,
     run_process,
 )
-
-import gis
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -74,7 +74,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
             tz = int(tz)
             log_info("Timezone offset is {}".format(tz))
             start_date = start_time.date()
-            cmd = "./tbd"
+            cmd = os.path.join(DIR_TBD, "tbd")
             wx_file = os.path.join(dir_fire, data["wx"])
             want_dates = WANT_DATES
             max_days = data["max_days"]
@@ -95,11 +95,19 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                     if g:
                         sim_time = int(g[0])
             if not sim_time:
+
+                def strip_dir(path):
+                    p = os.path.abspath(path)
+                    d = os.path.abspath(dir_fire)
+                    if p.startswith(d):
+                        p = "./" + p[len(d) + 1 :]
+                    return p
+
                 stdout, stderr = None, None
                 try:
                     args = " ".join(
                         [
-                            f'"{dir_fire}" {start_date} {lat} {lon}',
+                            f'"{strip_dir(dir_fire)}" {start_date} {lat} {lon}',
                             f"{hour:02d}:{minute:02d}",
                             NO_INTENSITY,
                             f"--ffmc {data['ffmc_old']}",
@@ -107,12 +115,12 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                             f"--dc {data['dc_old']}",
                             f"--apcp_prev {data['apcp_prev']}",
                             f'-v --output_date_offsets "{fmt_offsets}"',
-                            f' --wx "{wx_file}"',
-                            f' --log "{file_log}"',
+                            f' --wx "{strip_dir(wx_file)}"',
+                            f' --log "{strip_dir(file_log)}"',
                         ]
                     )
                     if perim is not None:
-                        args = args + ' --perim "{}"'.format(perim)
+                        args = args + f' --perim "{strip_dir(perim)}"'
                     args = args.replace("\\", "/")
                     file_sh = os.path.join(dir_fire, "sim.sh")
                     with open(file_sh, "w") as f_out:
@@ -123,7 +131,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                     # run generated command for parsing data
                     run_what = [cmd] + shlex.split(args)
                     t0 = timeit.default_timer()
-                    stdout, stderr = run_process(run_what, "/appl/tbd")
+                    stdout, stderr = run_process(run_what, dir_fire)
                     t1 = timeit.default_timer()
                     sim_time = t1 - t0
                     log_info("Took {}s to run simulations".format(sim_time))

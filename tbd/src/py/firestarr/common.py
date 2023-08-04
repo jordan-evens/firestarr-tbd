@@ -109,7 +109,8 @@ DIR_SRC_PY = os.path.dirname(DIR_SRC_PY_FIRSTARR)
 DIR_SRC_PY_CFFDRSNG = os.path.join(DIR_SRC_PY, "cffdrs-ng")
 sys.path.append(DIR_SRC_PY_CFFDRSNG)
 
-DIR_SCRIPTS = "/appl/tbd/scripts"
+DIR_TBD = "/appl/tbd"
+DIR_SCRIPTS = os.path.join(DIR_TBD, "scripts")
 
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
 DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))
