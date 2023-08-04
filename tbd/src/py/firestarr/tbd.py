@@ -5,7 +5,6 @@ import shlex
 import timeit
 
 import geopandas as gpd
-import gis
 import pandas as pd
 from common import (
     WANT_DATES,
@@ -15,6 +14,8 @@ from common import (
     logging,
     run_process,
 )
+
+import gis
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -45,8 +46,8 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
             df_fire["changed"] = False
             return df_fire
         changed = False
+        fire_name = data["fire_name"]
         if not data.get("sim_time", None):
-            fire_name = data["fire_name"]
             lat = float(data["lat"])
             lon = float(data["lon"])
             start_time = pd.to_datetime(data["start_time"])
