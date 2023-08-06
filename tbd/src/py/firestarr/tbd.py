@@ -5,10 +5,10 @@ import shlex
 import timeit
 
 import geopandas as gpd
-import gis
 import pandas as pd
 from common import (
     DIR_TBD,
+    SECONDS_PER_HOUR,
     WANT_DATES,
     ensure_dir,
     listdir_sorted,
@@ -16,6 +16,8 @@ from common import (
     logging,
     run_process,
 )
+
+import gis
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -66,7 +68,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
             log_info("Startup coordinates are {}, {}".format(lat, lon))
             hour = start_time.hour
             minute = start_time.minute
-            tz = start_time.tz.utcoffset(start_time).total_seconds() / 60.0 / 60.0
+            tz = start_time.tz.utcoffset(start_time).total_seconds() / SECONDS_PER_HOUR
             # HACK: I think there might be issues with forecasts being at the half hour?
             if math.floor(tz) != tz:
                 # logging.warning("Rounding down to deal with partial hour timezone")
@@ -100,7 +102,9 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                     p = os.path.abspath(path)
                     d = os.path.abspath(dir_fire)
                     if p.startswith(d):
-                        p = "./" + p[len(d) + 1 :]
+                        p = p[len(d) + 1 :]
+                    if 0 == len(p):
+                        p = "."
                     return p
 
                 stdout, stderr = None, None
@@ -114,13 +118,14 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                             f"--dmc {data['dmc_old']}",
                             f"--dc {data['dc_old']}",
                             f"--apcp_prev {data['apcp_prev']}",
-                            f'-v --output_date_offsets "{fmt_offsets}"',
-                            f' --wx "{strip_dir(wx_file)}"',
-                            f' --log "{strip_dir(file_log)}"',
+                            "-v",
+                            f'--output_date_offsets "{fmt_offsets}"',
+                            f"--wx {strip_dir(wx_file)}",
+                            f"--log {strip_dir(file_log)}",
                         ]
                     )
                     if perim is not None:
-                        args = args + f' --perim "{strip_dir(perim)}"'
+                        args = args + f" --perim {strip_dir(perim)}"
                     args = args.replace("\\", "/")
                     file_sh = os.path.join(dir_fire, "sim.sh")
                     with open(file_sh, "w") as f_out:

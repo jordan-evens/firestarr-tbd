@@ -9,17 +9,8 @@ import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import (
-    DIR_DOWNLOAD,
-    DIR_EXTRACTED,
-    DIR_RASTER,
-    do_nothing,
-    ensure_dir,
-    is_empty,
-    logging,
-    message_on_exception,
-    unzip,
-)
+from common import (DIR_DOWNLOAD, DIR_EXTRACTED, DIR_RASTER, do_nothing,
+                    ensure_dir, is_empty, logging, message_on_exception, unzip)
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 
@@ -436,11 +427,24 @@ def make_point(lat, lon, crs=CRS_WGS84):
     return pt
 
 
-def find_closest(df, lat, lon, crs=CRS_COMPARISON):
+def find_closest(df, lat, lon, crs=CRS_COMPARISON, fill_missing=False):
     if df is None:
         return df
     df["dist"] = df.to_crs(crs).distance(make_point(lat, lon, crs))
-    return df.loc[df["dist"] == np.min(df["dist"])]
+    if not fill_missing:
+        # previous behaviour - expected for other functions that might already
+        # have different coodinates on purpose
+        return df.loc[df["dist"] == np.min(df["dist"])]
+    # sort by lat/lon as well in case equidistant
+    df = df.sort_values(["dist", "lat", "lon"])
+    # pick closest for each time
+    df_closest = df.groupby(["datetime"]).first()
+    if 1 != len(np.unique(df_closest[["lat", "lon"]])):
+        logging.warning(
+            "Data missing for closest station for some hours so substituted"
+        )
+    df_closest.crs = df.crs
+    return df_closest.to_crs(CRS_WGS84)
 
 
 def area_ha(df):

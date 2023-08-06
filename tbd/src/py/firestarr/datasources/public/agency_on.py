@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import urllib.parse
+from collections import Counter
 from functools import cache
 
 import geopandas as gpd
@@ -14,12 +15,14 @@ from common import (
     FMT_DATE_YMD,
     FMT_DATETIME,
     FMT_FILE_MINUTE,
+    SECONDS_PER_HOUR,
     do_nothing,
     ensure_dir,
-    ensures,
     is_empty,
     locks_for,
+    logging,
     remove_timezone_utc,
+    try_remove,
 )
 from datasources.datatypes import (
     COLUMN_TIME,
@@ -218,11 +221,12 @@ class SourceFwiON(SourceFwi):
 
 
 def make_file_name(layer, hr_begin, hr_end, dir_out=DIR_AGENCY_ON):
+    fmt_end = "" if hr_end is None else f"_{hr_end.strftime(FMT_FILE_MINUTE)}"
     return os.path.join(
         dir_out,
         f"on_wx_layer{layer}_"
         f"{hr_begin.strftime(FMT_FILE_MINUTE)}"
-        f"_{hr_end.strftime(FMT_FILE_MINUTE)}.geojson",
+        f"{fmt_end}.geojson",
     )
 
 
@@ -235,7 +239,6 @@ def file_for_date(layer, d, dir_out=DIR_AGENCY_ON):
 
 @cache
 def get_hourly_date(dir_out, layer, date):
-    layer = LAYER_HOURLY
     latest = check_latest(layer)
     date_utc = pd.Timestamp(date).tz_localize("UTC")
     if date_utc > latest:
@@ -245,14 +248,23 @@ def get_hourly_date(dir_out, layer, date):
     # can be returned - should be more than enough, so just get full day for all
     # stations
     file_wx_date = file_for_date(layer, date, dir_out)
-
-    @ensures(
-        file_wx_date,
-        True,
-        fct_process=gpd.read_file,
-        msg_error=(f"Couldn't get hourly weather for {date}"),
-    )
-    def do_create(_):
+    with locks_for(file_wx_date):
+        if os.path.isfile(file_wx_date):
+            df = gpd.read_file(file_wx_date)
+            times = np.unique(df["datetime"])
+            expected = (
+                24
+                if np.max(df["datetime"]).date() < latest.date()
+                else (latest - date_utc).total_seconds() / SECONDS_PER_HOUR
+            )
+            # chance that a station is missing data even though hours exist for others
+            c = Counter(df["datetime"])
+            if expected > len(times) or 1 != len(np.unique(list(c.values()))):
+                # need to get again because old file isn't complete
+                try_remove(file_wx_date)
+            else:
+                # same amount of data for all hours so should be okay
+                return df
         hr_begin = pd.to_datetime(date)
         hr_end = pd.to_datetime(date) + datetime.timedelta(hours=23)
         # ask for any ranges we're missing
@@ -288,47 +300,60 @@ def get_hourly_date(dir_out, layer, date):
             fct_parse=do_parse,
         )
         df = check_columns(df, "hourly")
-        save_geojson(df, _)
-        return _
-
-    return do_create(file_wx_date)
+        save_geojson(df, file_wx_date)
+        if 1 != len(np.unique(list(Counter(df["datetime"]).values()))):
+            logging.warning("Some stations are missing data for some hours")
+        return gpd.read_file(file_wx_date)
 
 
 @cache
 def get_hourly(dir_out, layer, datetime_start, datetime_end):
-    if datetime_end is None:
-        datetime_end = check_latest(layer)
-    # remove timezone so matching works later
-    datetime_start = remove_timezone_utc(datetime_start)
-    datetime_end = remove_timezone_utc(datetime_end)
     file_stn_wx = make_file_name(layer, datetime_start, datetime_end, dir_out)
+    with locks_for(file_stn_wx):
+        if datetime_end is None:
+            datetime_end = check_latest(layer)
+        # remove timezone so matching works later
+        datetime_start = remove_timezone_utc(datetime_start)
+        datetime_end = remove_timezone_utc(datetime_end)
+        if datetime_start > datetime_end:
+            return make_template_empty("hourly")
+        if not os.path.exists(file_stn_wx):
+            df_wx = None
+            for d in pd.date_range(
+                datetime_start.date(),
+                datetime_end.date(),
+                freq="D",
+                inclusive="both",
+            ):
+                df_wx = pd.concat([df_wx, get_hourly_date(dir_out, layer, d)])
+            df_wx["datetime"] = remove_timezone_utc(df_wx["datetime"])
+            df_wx = df_wx.sort_values([COLUMN_TIME])
+            df_wx = df_wx.loc[
+                (df_wx["datetime"] >= datetime_start)
+                & (df_wx["datetime"] <= datetime_end)
+            ]
+            save_geojson(df_wx, file_stn_wx)
+        return gpd.read_file(file_stn_wx)
 
-    @ensures(
-        file_stn_wx,
-        True,
-        fct_process=gpd.read_file,
-        msg_error=(
-            f"Couldn't get hourly weather from" f"{datetime_start} to {datetime_end}"
-        ),
+
+@cache
+def get_wx_hourly(dir_out, lat, lon, datetime_start, datetime_end=None):
+    layer = LAYER_HOURLY
+    file_wx = os.path.join(
+        dir_out,
+        f"on_wx_layer{layer}_{fmt_rounded(lat)}_{fmt_rounded(lon)}.geojson",
     )
-    def do_create(_):
-        df_wx = None
-        for d in pd.date_range(
-            datetime_start.date(),
-            datetime_end.date(),
-            freq="D",
-            inclusive="both",
-        ):
-            df_wx = pd.concat([df_wx, get_hourly_date(dir_out, layer, d)])
-        df_wx["datetime"] = remove_timezone_utc(df_wx["datetime"])
-        df_wx = df_wx.sort_values([COLUMN_TIME])
-        df_wx = df_wx.loc[
-            (df_wx["datetime"] >= datetime_start) & (df_wx["datetime"] <= datetime_end)
-        ]
-        save_geojson(df_wx, _)
-        return _
 
-    return do_create(file_stn_wx)
+    # don't try checking for updates within the same run
+    with locks_for(file_wx):
+        if not os.path.exists(file_wx):
+            df_hourly = get_hourly(dir_out, layer, datetime_start, datetime_end)
+            if is_empty(df_hourly):
+                return df_hourly
+            # CHECK: might get station that's closest but doesn't exist for timespan
+            df_wx = find_closest(df_hourly, lat, lon, fill_missing=True)
+            save_geojson(df_wx, file_wx)
+        return gpd.read_file(file_wx)
 
 
 class SourceHourlyON(SourceHourly):
@@ -338,27 +363,5 @@ class SourceHourlyON(SourceHourly):
 
     def _get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
         lat, lon = fix_coords(lat, lon)
-        layer = LAYER_HOURLY
-        file_wx = os.path.join(
-            self._dir_out,
-            f"on_wx_layer{layer}_{fmt_rounded(lat)}_{fmt_rounded(lon)}.geojson",
-        )
-
-        # don't try checking for updates within the same run
-        @ensures(
-            file_wx,
-            True,
-            fct_process=gpd.read_file,
-            msg_error=(
-                f"Couldn't get hourly weather for ({lat}, {lon}) from"
-                f"{datetime_start} to {datetime_end}"
-            ),
-        )
-        def do_create(_, datetime_start, datetime_end):
-            df_hourly = get_hourly(self._dir_out, layer, datetime_start, datetime_end)
-            # CHECK: might get station that's closest but doesn't exist for timespan
-            df_wx = find_closest(df_hourly, lat, lon)
-            save_geojson(df_wx, _)
-            return _
-
-        return do_create(file_wx, datetime_start, datetime_end)
+        # want this in another function so it caches
+        return get_wx_hourly(self._dir_out, lat, lon, datetime_start, datetime_end)

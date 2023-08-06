@@ -7,18 +7,37 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (BOUNDS, CONCURRENT_SIMS, DEFAULT_FILE_LOG_LEVEL,
-                    DIR_OUTPUT, DIR_SIMS, MAX_NUM_DAYS, Origin, ensure_dir,
-                    ensures, list_dirs, locks_for, log_entry_exit,
-                    log_on_entry_exit, logging, message_on_exception,
-                    try_remove)
+from common import (
+    BOUNDS,
+    CONCURRENT_SIMS,
+    DEFAULT_FILE_LOG_LEVEL,
+    DIR_OUTPUT,
+    DIR_SIMS,
+    MAX_NUM_DAYS,
+    Origin,
+    ensure_dir,
+    ensures,
+    list_dirs,
+    locks_for,
+    log_entry_exit,
+    log_on_entry_exit,
+    logging,
+    message_on_exception,
+    try_remove,
+)
 from datasources.datatypes import SourceFire
 from datasources.default import SourceFireActive
 from fires import get_fires_folder, group_fires
-from gis import (CRS_COMPARISON, CRS_SIMINPUT, CRS_WGS84, area_ha,
-                 make_gdf_from_series, save_shp)
+from gis import (
+    CRS_COMPARISON,
+    CRS_SIMINPUT,
+    CRS_WGS84,
+    area_ha,
+    make_gdf_from_series,
+    save_shp,
+)
 from log import LOGGER_NAME, add_log_file
-from publish import publish_all
+from publish import merge_dirs, publish_all
 from simulation import Simulation
 
 import tbd
@@ -354,6 +373,9 @@ class Run(object):
                     )
                     publish_all(self._dir_output, force=True)
                     logging.debug(f"Done publishing results for {g}")
+                else:
+                    merge_dirs(self._dir_output, force=True)
+                    logging.debug(f"Done merging directories for {g}")
 
         tqdm_util.pmap_by_group(
             self.do_run_fire,

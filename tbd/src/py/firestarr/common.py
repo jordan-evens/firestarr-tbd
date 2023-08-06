@@ -124,6 +124,10 @@ DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
 DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
 DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
 
+MINUTES_PER_HOUR = 60
+SECONDS_PER_MINUTE = 60
+SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE
+
 
 def listdir_sorted(path):
     return sorted(os.listdir(path))
@@ -821,8 +825,8 @@ def remove_timezone_utc(d):
 
 def tz_from_offset(offset):
     # FIX: must be a better way but just do this for now
-    utcoffset_hours = offset.total_seconds() / 60 / 60
-    h, m = abs(int(utcoffset_hours)), int((utcoffset_hours % 1) * 60)
+    utcoffset_hours = offset.total_seconds() / SECONDS_PER_HOUR
+    h, m = abs(int(utcoffset_hours)), int((utcoffset_hours % 1) * MINUTES_PER_HOUR)
     sign = "+" if utcoffset_hours >= 0 else "-"
     return tzoffset(f"Z{sign}{h:02d}{m:02d}", offset)
 

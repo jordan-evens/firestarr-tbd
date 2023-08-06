@@ -7,10 +7,12 @@ import pandas as pd
 import pytz
 from common import (
     FLAG_DEBUG,
+    SECONDS_PER_HOUR,
     cffdrs,
     ensures,
     is_empty,
     logging,
+    remove_timezone_utc,
     tqdm_util,
     tz_from_offset,
 )
@@ -102,7 +104,7 @@ class Simulation(object):
                 .tz_convert("UTC")
                 .tz_localize(None)
             )
-            utcoffset_hours = utcoffset.total_seconds() / 60 / 60
+            utcoffset_hours = utcoffset.total_seconds() / SECONDS_PER_HOUR
             # do this instead of using utcoffset() so we know it's LST
             tz_lst = tz_from_offset(utcoffset)
             file_wx = _.replace(".geojson", "_wx.csv")
@@ -122,8 +124,9 @@ class Simulation(object):
             ).iloc[0][["ffmc", "dmc", "dc", COLUMN_TIME]]
             # make sure we convert to LST if it's LDT
             time_startup = date_startup.tz_localize(tz_lst).tz_convert("UTC")
-            df_wx_hourly = self._src_hourly.get_wx_hourly(
-                lat, lon, time_startup
+            # HACK: get hourly for date not time, so we can know when latest is
+            df_wx_hourly_date = self._src_hourly.get_wx_hourly(
+                lat, lon, time_startup.date()
             ).reset_index()
             df_wx_models = self._src_models.get_wx_model(lat, lon)
             # fill before selecting after hourly so that we always have the hour
@@ -132,8 +135,8 @@ class Simulation(object):
                 [wx_interpolate(g) for i, g in df_wx_models.groupby(COLUMN_MODEL)]
             )
             cur_time = None
-            if not is_empty(df_wx_hourly):
-                cur_time = max(df_wx_hourly[COLUMN_TIME])
+            if not is_empty(df_wx_hourly_date):
+                cur_time = max(df_wx_hourly_date[COLUMN_TIME])
                 df_wx_forecast = df_wx_forecast.loc[
                     df_wx_forecast[COLUMN_TIME] > cur_time
                 ]
@@ -164,6 +167,13 @@ class Simulation(object):
                 else:
                     df_spliced = df_model
             df_streams = None
+            # HACK: avoid comparing to empty df
+            df_wx_hourly = df_wx_hourly_date
+            if not is_empty(df_wx_hourly):
+                # select just whatever's after startup indices time
+                df_wx_hourly = df_wx_hourly_date.loc[
+                    df_wx_hourly_date["datetime"] >= remove_timezone_utc(time_startup)
+                ]
             if is_empty(df_wx_hourly):
                 # if no hourly weather then start at start of streams
                 df_streams = df_spliced
@@ -177,6 +187,9 @@ class Simulation(object):
                         df_streams = pd.concat([df_streams, df_cur])
             df_streams = df_streams.set_index(COLUMNS_STREAM)
             df_streams["Scenario"] = None
+            # avoid:
+            # 'PerformanceWarning: indexing past lexsort depth may impact performance'
+            df_streams = df_streams.sort_index()
             df_stream_ids = df_streams.index.drop_duplicates()
             for i, idx in enumerate(df_stream_ids):
                 df_streams.loc[idx, "Scenario"] = i
@@ -212,6 +225,23 @@ class Simulation(object):
                     desc="Splitting date into columns",
                 )
             )
+            df_wx_fire = df_wx_fire[
+                [
+                    "ID",
+                    "LAT",
+                    "LONG",
+                    "TIMESTAMP",
+                    "YR",
+                    "MON",
+                    "DAY",
+                    "HR",
+                    "TEMP",
+                    "RH",
+                    "WD",
+                    "WS",
+                    "PREC",
+                ]
+            ].sort_values(["ID", "LAT", "LONG", "TIMESTAMP"])
             # NOTE: expects weather in localtime, but uses utcoffset to
             # figure out local sunrise/sunset
             df_fwi = cffdrs.hFWI(
