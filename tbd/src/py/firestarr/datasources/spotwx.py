@@ -17,9 +17,10 @@ from common import (
     remove_timezone_utc,
 )
 from datasources.datatypes import SourceModel
-from gis import save_geojson, to_gdf
 from net import try_save_http
 from pyrate_limiter import Duration, FileLockSQLiteBucket, Limiter, RequestRate
+
+from gis import save_geojson, to_gdf
 
 DIR_SPOTWX = ensure_dir(os.path.join(DIR_DOWNLOAD, "spotwx"))
 # GEPS model is 0.5 degree resoltion, so two digits is too much
@@ -183,6 +184,11 @@ def query_wx_ensembles_rounded(model, lat, lon):
             raise RuntimeError("Expected UTC times")
         df.columns = [x.lower() for x in df.columns]
         df["datetime"] = remove_timezone_utc(df["datetime"])
+        num_days = len(np.unique(df["datetime"].dt.date))
+        if 14 > num_days:
+            raise RuntimeError(
+                f"Expected at least 14 days of weather in GEPS model but got {num_days}"
+            )
         df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
         df["issuedate"] = remove_timezone_utc(df["issuedate"])
         index_final = ["model", "lat", "lon", "issuedate", "id"]
