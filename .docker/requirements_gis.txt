@@ -1,10 +1,10 @@
-pandas
-numpy
-rasterio
 ConfigParser
-shapely
 geopandas
+numpy
+pandas
 pycrs
-scipy
+rasterio
 requests
+scipy
+shapely
 tqdm
