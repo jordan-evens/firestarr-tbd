@@ -5,6 +5,7 @@ import shlex
 import timeit
 
 import geopandas as gpd
+import gis
 import pandas as pd
 from common import (
     DIR_TBD,
@@ -16,8 +17,6 @@ from common import (
     logging,
     run_process,
 )
-
-import gis
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -81,7 +80,8 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
             want_dates = WANT_DATES
             max_days = data["max_days"]
             date_offsets = [x for x in want_dates if x <= max_days]
-            fmt_offsets = "{" + ", ".join([str(x) for x in date_offsets]) + "}"
+            # want format like a list with no spaces
+            fmt_offsets = "[" + ",".join([str(x) for x in date_offsets]) + "]"
             file_log = file_sim.replace(".geojson", ".log")
             df_fire["log_file"] = file_log
             sim_time = None
@@ -119,7 +119,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                             f"--dc {data['dc_old']}",
                             f"--apcp_prev {data['apcp_prev']}",
                             "-v",
-                            f'--output_date_offsets "{fmt_offsets}"',
+                            f"--output_date_offsets {fmt_offsets}",
                             f"--wx {strip_dir(wx_file)}",
                             f"--log {strip_dir(file_log)}",
                         ]
