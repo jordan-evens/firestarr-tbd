@@ -98,7 +98,7 @@ def get_model_dir(model):
     lat = BOUNDS["latitude"]["mid"]
     lon = BOUNDS["longitude"]["mid"]
     url = make_spotwx_query(model, lat, lon, output="archive")
-    save_as = os.path.join(DIR_SPOTWX, model, f"spotwx_{model}_current.csv")
+    save_as = os.path.join(ensure_dir(os.path.join(DIR_SPOTWX, model)), f"spotwx_{model}_current.csv")
 
     def do_parse(df):
         model_time = np.max(
