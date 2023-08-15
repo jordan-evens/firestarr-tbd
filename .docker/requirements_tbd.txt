@@ -1,3 +1,4 @@
+azure-batch
 azure-storage-blob
 bs4
 ConfigParser

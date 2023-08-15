@@ -46,6 +46,21 @@ services:
     cap_add:
       - SYS_PTRACE
 
+  tbd_prod_stable:
+    image: tbd_prod_stable
+    build:
+      context: .
+      target: tbd_prod_stable
+      dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
+      tags:
+        - tbd_prod_stable:${VERSION}
+    volumes:
+      - data:/appl/data
+
   tbd_prod_svc:
     image: tbd_prod_svc
     build:
