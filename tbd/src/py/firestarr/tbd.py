@@ -28,7 +28,7 @@ def get_simulation_file(dir_fire):
     return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
 
 
-def run_fire_from_folder(dir_fire, dir_output, verbose=False):
+def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False):
     def nolog(*args, **kwargs):
         pass
 
@@ -132,6 +132,8 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False):
                         f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
                     # NOTE: needs to be octal base
                     os.chmod(file_sh, 0o775)
+                    if prepare_only:
+                        return None
                     log_info(f"Running: {cmd} {args}")
                     # run generated command for parsing data
                     run_what = [cmd] + shlex.split(args)
