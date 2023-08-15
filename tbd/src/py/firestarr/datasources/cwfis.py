@@ -281,7 +281,7 @@ class SourceFwiCwfisDownload(SourceFwi):
         return try_save_http(
             cls.URL_STNS,
             os.path.join(dir_out, os.path.basename(cls.URL_STNS)),
-            keep_existing=False,
+            keep_existing=True,
             fct_pre_save=None,
             fct_post_save=lambda _: gpd.read_file(_)[["aes", "wmo", "lat", "lon"]],
         )
@@ -315,7 +315,7 @@ class SourceFwiCwfisDownload(SourceFwi):
         return try_save_http(
             url,
             os.path.join(dir_out, os.path.basename(url)),
-            keep_existing=False,
+            keep_existing=True,
             fct_pre_save=None,
             fct_post_save=do_parse,
             check_code=True,
