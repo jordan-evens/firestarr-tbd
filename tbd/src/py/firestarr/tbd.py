@@ -1,7 +1,6 @@
 import math
 import os
 import re
-import shlex
 import time
 import timeit
 
@@ -9,7 +8,16 @@ import geopandas as gpd
 import gis
 import pandas as pd
 import psutil
+from azurebatch.batch_container import (
+    add_job,
+    add_simulation_task,
+    check_task_running,
+    get_batch_client,
+    have_batch_config,
+)
 from common import (
+    DIR_DATA,
+    DIR_SIMS,
     DIR_TBD,
     NUM_RETRIES,
     SECONDS_PER_HOUR,
@@ -26,17 +34,18 @@ from common import (
 NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
 
+TASK_SLEEP = 5
 
-def run_firestarr(dir_fire):
+_RUN_FIRESTARR = None
+_CHECK_RUNNING = None
+_BATCH_CLIENT = None
+_JOB_ID = None
+
+
+def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
     try:
-        # run generated command for parsing data
-        t0 = timeit.default_timer()
-        # expect everything to be in sim.sh
         stdout, stderr = run_process(["./sim.sh"], dir_fire)
-        t1 = timeit.default_timer()
-        sim_time = t1 - t0
-        return sim_time
     except Exception as ex:
         # if sim failed we want to keep track of what happened
         if stdout:
@@ -47,7 +56,7 @@ def run_firestarr(dir_fire):
         raise ex
 
 
-def check_running(dir_fire):
+def check_running_local(dir_fire):
     processes = []
     for p in psutil.process_iter():
         try:
@@ -58,6 +67,65 @@ def check_running(dir_fire):
         except psutil.NoSuchProcess:
             continue
     return 0 < len(processes)
+
+
+def run_firestarr_batch(dir_fire):
+    task_id = add_simulation_task(_BATCH_CLIENT, _JOB_ID, dir_fire)
+    while check_task_running(_BATCH_CLIENT, _JOB_ID, task_id):
+        time.sleep(TASK_SLEEP)
+
+
+def check_running_batch(dir_fire):
+    return check_task_running(_BATCH_CLIENT, _JOB_ID, dir_fire)
+
+
+def assign_firestarr_batch(dir_fire):
+    global _RUN_FIRESTARR
+    global _CHECK_RUNNING
+    global _BATCH_CLIENT
+    global _JOB_ID
+    with locks_for(os.path.join(DIR_DATA, "assign_batch_client")):
+        # if have_batch_config():
+        #     _RUN_FIRESTARR = run_firestarr_batch
+        #     _BATCH_CLIENT = get_batch_client()
+        #     job_id = None
+        #     if dir_fire.startswith(DIR_SIMS):
+        #         job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
+        #         job_id = job_id[: job_id.index("/")]
+        #     _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
+        #     _CHECK_RUNNING = check_running_batch
+        #     return True
+        _RUN_FIRESTARR = run_firestarr_local
+        _CHECK_RUNNING = check_running_local
+        return False
+
+
+def check_firestarr_batch(dir_fire):
+    with locks_for(os.path.join(DIR_DATA, "check_batch_client")):
+        if _RUN_FIRESTARR is None:
+            assign_firestarr_batch(dir_fire)
+    return _RUN_FIRESTARR(dir_fire)
+
+
+def check_firestarr_running(dir_fire):
+    with locks_for(os.path.join(DIR_DATA, "check_batch_client")):
+        if _CHECK_RUNNING is None:
+            assign_firestarr_batch(dir_fire)
+    return _CHECK_RUNNING(dir_fire)
+
+
+def run_firestarr(dir_fire):
+    # run generated command for parsing data
+    t0 = timeit.default_timer()
+    # expect everything to be in sim.sh
+    (_RUN_FIRESTARR or check_firestarr_batch)(dir_fire)
+    t1 = timeit.default_timer()
+    sim_time = t1 - t0
+    return sim_time
+
+
+def check_running(dir_fire):
+    return (_CHECK_RUNNING or check_firestarr_running)(dir_fire)
 
 
 def get_simulation_file(dir_fire):
@@ -205,7 +273,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             x for x in outputs if x.endswith("tif") and x.startswith("probability")
         ]
         dates_out = []
-        dir_region = os.path.join(dir_output, "initial")
+        dir_region = ensure_dir(os.path.join(dir_output, "initial"))
         for prob in probs:
             logging.debug(f"Adding raster to final outputs: {prob}")
             # want to put each probability raster into right date so we can combine them

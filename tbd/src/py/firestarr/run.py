@@ -42,7 +42,7 @@ from publish import merge_dirs, publish_all
 from simulation import Simulation
 
 import tbd
-from tbd import get_simulation_file
+from tbd import assign_firestarr_batch, get_simulation_file
 
 LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
 
@@ -312,6 +312,7 @@ class Run(object):
         if check_missing:
             if self.find_unprepared(df_fires):
                 self.prep_folders()
+        is_batch = assign_firestarr_batch(self._dir_sims)
         # HACK: order by PRIORITY so it doesn't make it alphabetical by ID
         dirs_sim = {
             id[1]: [os.path.join(self._dir_sims, x) for x in g.index]
@@ -324,7 +325,7 @@ class Run(object):
         sim_time = 0
         sim_times = []
         # FIX: this is just failing and delaying things over and over right now
-        NUM_TRIES = 0
+        NUM_TRIES = 5
         file_lock_publish = os.path.join(self._dir_output, "publish")
 
         @log_order()
@@ -396,7 +397,8 @@ class Run(object):
         tqdm_util.pmap_by_group(
             self.do_run_fire,
             dirs_sim,
-            max_processes=CONCURRENT_SIMS,
+            max_processes=len(df_fires) if is_batch else CONCURRENT_SIMS,
+            no_limit=is_batch,
             desc="Running simulations",
             callback_group=callback_publish,
         )

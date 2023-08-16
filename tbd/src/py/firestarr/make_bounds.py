@@ -146,7 +146,7 @@ def update_bounds(
         14,
     ]
     df_parks_all = df_parks_all.set_index(["EN"]).to_crs(crs_orig)
-    df_canada = pd.concat([df_canada, df_parks_all])
+    df_canada = pd.concat([df_canada, df_parks_all]).sort_index()
     centroids_canada = centroids(df_canada)
 
     def to_file(df, name):
@@ -158,13 +158,15 @@ def update_bounds(
     )
     df = df_bounds.set_index(["EN"])
     if "Parks Canada" not in df.index:
-        df = pd.concat([df, df_parks_all])
+        df = pd.concat([df, df_parks_all]).sort_index()
     df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
     df = to_file(df.reset_index(), "bounds_exact")
     df = to_file(explode(df), "explode")
     df = to_file(buffer(df, 100), "buffer")
     df = to_file(dissolve(df), "buffer_simplify_dissolve")
+    df = to_file(explode(df), "explode_dissolve")
     df = to_file(fill(df), "buffer_simplify_dissolve_fill")
+    df = to_file(dissolve(df), "redissolve")
     df = to_file(simplify(df, 10), "simplify_10km")
     df = to_file(simplify(df, 100), "simplify_100km")
     assert list(df["EN"]) == list(df_bounds["EN"])

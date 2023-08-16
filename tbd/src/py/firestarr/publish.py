@@ -182,6 +182,8 @@ def merge_dirs(dir_input=None, dates=None, force=False):
     dir_input = find_latest_outputs(dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
+    if not os.path.isdir(dir_initial):
+        return None
     run_name = os.path.basename(dir_input)
     run_id = run_name[run_name.index("_") + 1 :]
     result = merge_dir(dir_initial, run_id, force=force)

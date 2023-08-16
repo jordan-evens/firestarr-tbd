@@ -376,7 +376,7 @@ def project_raster(
     try:
         input_raster = gdal.Open(filename)
     except RuntimeError as ex:
-        logging.error("Removing invalid file {filename}")
+        logging.error(f"Removing invalid file {filename}")
         logging.error("".join(traceback.format_exception(ex)))
         # delete invalid input and return None
         try_remove(filename)
