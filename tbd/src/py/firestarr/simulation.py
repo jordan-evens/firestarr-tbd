@@ -7,6 +7,7 @@ import pandas as pd
 import pytz
 from common import (
     FLAG_DEBUG,
+    NUM_RETRIES,
     SECONDS_PER_HOUR,
     cffdrs,
     ensures,
@@ -82,7 +83,13 @@ class Simulation(object):
         file_sim = get_simulation_file(dir_fire)
 
         # want to return directory name of created file
-        @ensures(file_sim, True, fct_process=os.path.dirname, mkdirs=True)
+        @ensures(
+            file_sim,
+            True,
+            fct_process=os.path.dirname,
+            mkdirs=True,
+            retries=NUM_RETRIES,
+        )
         def do_create(_):
             logging.debug("Saving %s to %s", fire_name, dir_fire)
             # this isn't going to work with locks but do we need to do it?

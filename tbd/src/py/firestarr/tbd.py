@@ -5,7 +5,6 @@ import shlex
 import timeit
 
 import geopandas as gpd
-import gis
 import pandas as pd
 from common import (
     DIR_TBD,
@@ -17,6 +16,8 @@ from common import (
     logging,
     run_process,
 )
+
+import gis
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -150,7 +151,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
                             f_log.write(stdout)
                         with open(file_log.replace(".log", ".err.log"), "w") as f_log:
                             f_log.write(stderr)
-                    raise ex
+                    return ex
                 df_fire["sim_time"] = sim_time
                 gis.save_geojson(df_fire, file_sim)
                 changed = True

@@ -264,9 +264,14 @@ class Run(object):
 
     @log_order(show_args=["dir_fire"])
     def do_run_fire(self, dir_fire):
-        return tbd.run_fire_from_folder(
-            dir_fire, self._dir_output, verbose=self._verbose
-        )
+        try:
+            return tbd.run_fire_from_folder(
+                dir_fire, self._dir_output, verbose=self._verbose
+            )
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception as ex:
+            return ex
 
     def find_unprepared(self, df_fires, remove_invalid=False):
         dirs_fire = list_dirs(self._dir_sims)
@@ -288,9 +293,11 @@ class Run(object):
         if missing:
             logging.info(f"Need to make directories for {len(missing)} simulations")
             if remove_invalid:
+                dirs_missing = [os.path.join(self._dir_sims, x) for x in missing]
+                dirs_missing_existing = [p for p in dirs_missing if os.path.isdir(p)]
                 tqdm_util.apply(
-                    [os.path.join(self._dir_sims, x) for x in missing],
-                    try_remove,
+                    dirs_missing_existing,
+                    shutil.rmtree,
                     desc="Removing invalid fire directories",
                 )
         return missing

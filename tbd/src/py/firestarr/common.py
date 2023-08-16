@@ -25,6 +25,8 @@ from osgeo import gdal
 
 FLAG_DEBUG = False
 
+NUM_RETRIES = 5
+
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE_YMD = "%Y%m%d"
 FMT_TIME = "%H%M"

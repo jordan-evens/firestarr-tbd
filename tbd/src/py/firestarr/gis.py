@@ -9,8 +9,19 @@ import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import (DIR_DOWNLOAD, DIR_EXTRACTED, DIR_RASTER, do_nothing,
-                    ensure_dir, is_empty, logging, message_on_exception, unzip)
+from common import (
+    DIR_DOWNLOAD,
+    DIR_EXTRACTED,
+    DIR_RASTER,
+    NUM_RETRIES,
+    do_nothing,
+    ensure_dir,
+    ensures,
+    is_empty,
+    logging,
+    message_on_exception,
+    unzip,
+)
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 
@@ -359,26 +370,38 @@ def project_raster(
         output_raster = filename[:-4] + ".tif"
     ensure_dir(os.path.dirname(output_raster))
     logging.debug(f"Projecting {filename} to {output_raster}")
-    warp = gdal.Warp(
-        output_raster,
-        input_raster,
-        dstNodata=nodata,
-        options=gdal.WarpOptions(
-            dstSRS=crs,
-            format=format,
-            xRes=resolution,
-            yRes=resolution,
-            outputBounds=outputBounds,
-            creationOptions=options,
-        ),
+
+    bounds = None
+
+    @ensures(
+        paths=output_raster, remove_on_exception=True, replace=True, retries=NUM_RETRIES
     )
-    geoTransform = warp.GetGeoTransform()
-    minx = geoTransform[0]
-    maxy = geoTransform[3]
-    maxx = minx + geoTransform[1] * warp.RasterXSize
-    miny = maxy + geoTransform[5] * warp.RasterYSize
-    warp = None
-    return [minx, miny, maxx, maxy]
+    def do_warp(_):
+        nonlocal bounds
+        warp = gdal.Warp(
+            _,
+            input_raster,
+            dstNodata=nodata,
+            options=gdal.WarpOptions(
+                dstSRS=crs,
+                format=format,
+                xRes=resolution,
+                yRes=resolution,
+                outputBounds=outputBounds,
+                creationOptions=options,
+            ),
+        )
+        geoTransform = warp.GetGeoTransform()
+        minx = geoTransform[0]
+        maxy = geoTransform[3]
+        maxx = minx + geoTransform[1] * warp.RasterXSize
+        miny = maxy + geoTransform[5] * warp.RasterYSize
+        bounds = [minx, miny, maxx, maxy]
+        warp = None
+        return _
+
+    do_warp(output_raster)
+    return bounds
 
 
 def save_geojson(df, path):

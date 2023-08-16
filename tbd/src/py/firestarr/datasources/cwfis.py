@@ -77,7 +77,7 @@ class SourceFeatureM3Download(SourceFeature):
                 f = try_save_http(
                     url,
                     os.path.join(self._dir_out, os.path.basename(url)),
-                    keep_existing=False,
+                    keep_existing=True,
                     fct_pre_save=None,
                     fct_post_save=None,
                 )
