@@ -27,6 +27,26 @@ NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
 
 
+def run_firestarr(dir_fire):
+    stdout, stderr = None, None
+    try:
+        # run generated command for parsing data
+        t0 = timeit.default_timer()
+        # expect everything to be in sim.sh
+        stdout, stderr = run_process(["./sim.sh"], dir_fire)
+        t1 = timeit.default_timer()
+        sim_time = t1 - t0
+        return sim_time
+    except Exception as ex:
+        # if sim failed we want to keep track of what happened
+        if stdout:
+            with open(os.path.join(dir_fire, "stdout.log"), "w") as f_log:
+                f_log.write(stdout)
+            with open(os.path.join(dir_fire, "stderr.log"), "w") as f_log:
+                f_log.write(stderr)
+        raise ex
+
+
 def check_running(dir_fire):
     processes = []
     for p in psutil.process_iter():
@@ -143,50 +163,35 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
                     p = "."
                 return p
 
-            stdout, stderr = None, None
-            try:
-                args = " ".join(
-                    [
-                        f'"{strip_dir(dir_fire)}" {start_date} {lat} {lon}',
-                        f"{hour:02d}:{minute:02d}",
-                        NO_INTENSITY,
-                        f"--ffmc {data['ffmc_old']}",
-                        f"--dmc {data['dmc_old']}",
-                        f"--dc {data['dc_old']}",
-                        f"--apcp_prev {data['apcp_prev']}",
-                        "-v",
-                        f"--output_date_offsets {fmt_offsets}",
-                        f"--wx {strip_dir(wx_file)}",
-                        f"--log {strip_dir(file_log)}",
-                    ]
-                )
-                if perim is not None:
-                    args = args + f" --perim {strip_dir(perim)}"
-                args = args.replace("\\", "/")
-                file_sh = os.path.join(dir_fire, "sim.sh")
-                with open(file_sh, "w") as f_out:
-                    f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
-                # NOTE: needs to be octal base
-                os.chmod(file_sh, 0o775)
-                if prepare_only:
-                    return None
-                log_info(f"Running: {cmd} {args}")
-                # run generated command for parsing data
-                run_what = [cmd] + shlex.split(args)
-                t0 = timeit.default_timer()
-                stdout, stderr = run_process(run_what, dir_fire)
-                t1 = timeit.default_timer()
-                sim_time = t1 - t0
-                log_info("Took {}s to run simulations".format(sim_time))
-                # if sim worked then it made a log itself so don't bother
-            except Exception as ex:
-                # if sim failed we want to keep track of what happened
-                if stdout:
-                    with open(file_log, "w") as f_log:
-                        f_log.write(stdout)
-                    with open(file_log.replace(".log", ".err.log"), "w") as f_log:
-                        f_log.write(stderr)
-                raise ex
+            args = " ".join(
+                [
+                    f'"{strip_dir(dir_fire)}" {start_date} {lat} {lon}',
+                    f"{hour:02d}:{minute:02d}",
+                    NO_INTENSITY,
+                    f"--ffmc {data['ffmc_old']}",
+                    f"--dmc {data['dmc_old']}",
+                    f"--dc {data['dc_old']}",
+                    f"--apcp_prev {data['apcp_prev']}",
+                    "-v",
+                    f"--output_date_offsets {fmt_offsets}",
+                    f"--wx {strip_dir(wx_file)}",
+                    f"--log {strip_dir(file_log)}",
+                ]
+            )
+            if perim is not None:
+                args = args + f" --perim {strip_dir(perim)}"
+            args = args.replace("\\", "/")
+            file_sh = os.path.join(dir_fire, "sim.sh")
+            with open(file_sh, "w") as f_out:
+                f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
+            # NOTE: needs to be octal base
+            os.chmod(file_sh, 0o775)
+            if prepare_only:
+                return None
+            log_info(f"Running: {cmd} {args}")
+            sim_time = run_firestarr(dir_fire)
+            log_info("Took {}s to run simulations".format(sim_time))
+            # if sim worked then it made a log itself so don't bother
             df_fire["sim_time"] = sim_time
             gis.save_geojson(df_fire, file_sim)
             changed = True

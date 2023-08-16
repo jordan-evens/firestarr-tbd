@@ -160,7 +160,9 @@ def save_http(
         if r:
             # logging.debug(f"{_} was downloaded already")
             return r
-        r = _save_http_uncached((fct_pre_save or do_nothing)(url), _)
+        # HACK: put in one last lock so it doesn't download twice
+        with locks_for(_ + ".tmp"):
+            r = _save_http_cached((fct_pre_save or do_nothing)(url), _)
         # logging.debug(f"do_save({_}) - returning {r}")
         # mark_downloaded(_)
         return _
