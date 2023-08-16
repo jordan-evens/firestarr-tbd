@@ -72,12 +72,17 @@ def ensure_geometry_file(path):
     files_features = [
         x for x in files if os.path.splitext(x)[1].lower() in VALID_GEOMETRY_EXTENSIONS
     ]
+    # HACK: use .shp if there is one
+    have_shp = False
     if 1 < len(files_features):
         # TODO: verify if any other formats have duplicate extensions associated
         # generate list of .shp before removing from it so should be fine
         for x in [x for x in files_features if x.endswith(".shp")]:
+            have_shp = True
             # if shapefile then .dbf of same name would go with it
             files_features.remove(x.replace(".shp", ".dbf"))
+    if have_shp:
+        files_features = [x for x in files_features if x.endswith(".shp")]
     if 1 != len(files_features):
         raise RuntimeError(f"Unable to derive valid feature file for {path_orig}")
     file = files_features[0]
@@ -398,9 +403,21 @@ def project_raster(
         miny = maxy + geoTransform[5] * warp.RasterYSize
         bounds = [minx, miny, maxx, maxy]
         warp = None
+        # HACK: make sure this exists and is correct
+        test_open = gdal.Open(_)
+        test_open = None
         return _
 
-    do_warp(output_raster)
+    # logging.info("Running gdal_merge_max()")
+    use_exceptions = gdal.GetUseExceptions()
+    try:
+        # HACK: if exceptions are on then gdal_merge throws one
+        gdal.DontUseExceptions()
+        do_warp(output_raster)
+    finally:
+        if use_exceptions:
+            gdal.UseExceptions()
+
     return bounds
 
 
@@ -410,6 +427,9 @@ def save_geojson(df, path):
     file = os.path.join(dir, f"{base}.geojson")
     # HACK: don't lock on file until we fix reentrant locks
     with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
+        # HACK: avoid "The GeoJSON driver does not overwrite existing files."
+        if os.path.isfile(file):
+            os.remove(file)
         # HACK: geojson must be WGS84
         df.to_crs("WGS84").to_file(file)
     return file

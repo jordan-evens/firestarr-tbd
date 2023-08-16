@@ -1,19 +1,22 @@
 """Provides a way of overriding the logging method depending on whether we're in ArcMap or not"""
 
 import logging
-
-import sys
 import os
+import sys
 
 # HACK: do this here so it outputs when run but doesn't override
 ## default logger
 logger = logging.getLogger()
 ## formatter to use for log messages
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+)
 LOG_LEVEL = "DEBUG"
+
 
 class ArcpyHandler(logging.StreamHandler):
     """Overrides emit so that output is visible in ArcMap"""
+
     def emit(self, record):
         """Use print to output record since StreamHandler doesn't want to work in ArcMap"""
         print(formatter.format(record))
@@ -27,7 +30,7 @@ def removeHandlers():
 
 def addHandler():
     """Check if running in ArcMap and override handler so it just prints if we are"""
-    if os.path.basename(sys.executable).lower() == 'arcmap.exe':
+    if os.path.basename(sys.executable).lower() == "arcmap.exe":
         handler = ArcpyHandler()
     else:
         handler = logging.StreamHandler()

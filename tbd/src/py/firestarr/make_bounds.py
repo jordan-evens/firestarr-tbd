@@ -2,6 +2,7 @@ import os
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import shapely.geometry
 from common import DIR_GENERATED, ensures
 from gis import CRS_WGS84, load_geometry_file
@@ -12,6 +13,9 @@ BUFFER_RESOLUTION = 32
 SERVER_CENSUS = "https://www12.statcan.gc.ca/census-recensement"
 URL_CANADA = (
     f"{SERVER_CENSUS}/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip"
+)
+URL_PARKS = (
+    "https://clss.nrcan-rncan.gc.ca/data-donnees/nplb_llpn/CLAB_CA_2023-03-07.zip"
 )
 centroids_canada = None
 DIR_BOUNDS = os.path.join(DIR_GENERATED, "bounds")
@@ -131,6 +135,18 @@ def update_bounds(
         file_bounds=file_bounds, dir_out=DIR_BOUNDS
     ).set_index(["EN"])
     crs_orig = df_canada.crs
+
+    df_parks = load_geometry_file(URL_PARKS)
+    df_parks_all = df_parks.dissolve()[["geometry"]]
+    df_parks_all[["EN", "ID", "FR", "PRIORITY", "DURATION"]] = [
+        "Parks Canada",
+        "PC",
+        "Parcs Canada",
+        2,
+        14,
+    ]
+    df_parks_all = df_parks_all.set_index(["EN"]).to_crs(crs_orig)
+    df_canada = pd.concat([df_canada, df_parks_all])
     centroids_canada = centroids(df_canada)
 
     def to_file(df, name):
@@ -141,6 +157,8 @@ def update_bounds(
         "bounds",
     )
     df = df_bounds.set_index(["EN"])
+    if "Parks Canada" not in df.index:
+        df = pd.concat([df, df_parks_all])
     df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
     df = to_file(df.reset_index(), "bounds_exact")
     df = to_file(explode(df), "explode")

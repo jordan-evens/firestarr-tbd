@@ -56,8 +56,8 @@ TIMEDELTA_HOUR = datetime.timedelta(hours=1)
 
 # use default for pmap() if None
 # CONCURRENT_SIMS = None
-# # HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 2)
+# HACK: try just running a few at a time since time limit is low
+CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 4)
 
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
@@ -392,7 +392,7 @@ def pick_max_by_column(a, b, column, index=None):
 
 
 # standard function we can use as a default wrapper if nothing special happens
-def do_nothing(x):
+def do_nothing(x, *args, **kwargs):
     return x
 
 
@@ -614,6 +614,9 @@ def ensure(
                     logging.error(f"Raising {ex_current}")
                     # have to remove or why would result change?
                     try_remove(list_paths)
+                    # HACK: seems to freeze on retry otherwise?
+                    for p in [lock.lock_file for lock in locks]:
+                        try_remove(p)
                     raise ex_current
                 # HACK: check that it returns what we asked for so we know it's
                 #       updated to work properly with this and just return path

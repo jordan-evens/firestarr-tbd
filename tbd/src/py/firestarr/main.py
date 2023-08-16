@@ -29,12 +29,14 @@ if __name__ == "__main__":
     # HACK: just get some kind of parsing for right now
     do_resume, args = check_arg("--resume", args)
     no_publish, args = check_arg("--no-publish", args)
+    no_merge, args = check_arg("--no-merge", args)
     do_publish = not no_publish
+    do_merge = not no_merge
     if do_resume:
         if 1 < len(args):
             logging.fatal(f"Too many arguments:\n\t {sys.argv}")
         dir_resume = args[0] if args else None
-        run = make_resume(dir_resume, do_publish=do_publish)
+        run = make_resume(dir_resume, do_publish=do_publish, do_merge=do_merge)
     else:
         max_days = int(args[1]) if len(args) > 1 else None
         dir_arg = args[0] if len(args) > 0 else None
@@ -49,5 +51,10 @@ if __name__ == "__main__":
             run = Run(dir=dir_arg, do_publish=do_publish)
             logging.info(f"Resuming simulations in {dir_arg}")
         else:
-            run = Run(dir_fires=dir_arg, max_days=max_days, do_publish=do_publish)
+            run = Run(
+                dir_fires=dir_arg,
+                max_days=max_days,
+                do_publish=do_publish,
+                do_merge=do_merge,
+            )
     df_final = run.process()

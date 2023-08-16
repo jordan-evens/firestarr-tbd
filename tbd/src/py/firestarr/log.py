@@ -14,7 +14,9 @@ from logging import (
 
 DEFAULT_LEVEL = INFO
 # fixed-width for levelname so '-' before message always lines up
-DEFAULT_FORMAT = "%(asctime)s - %(levelname)8s - %(message)s"
+DEFAULT_FORMAT = (
+    "%(asctime)s - %(levelname)8s - [%(filename)s:%(lineno)d] - %(message)s"
+)
 
 
 # HACK: want to have a thing called "logging" that refers to our own logger

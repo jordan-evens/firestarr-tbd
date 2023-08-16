@@ -486,11 +486,13 @@ def gdal_merge_max(argv=None):
 
     # logging.info("Running gdal_merge_max()")
     use_exceptions = gdal.GetUseExceptions()
-    # HACK: if exceptions are on then gdal_merge throws one
-    gdal.DontUseExceptions()
-    do_merge(argv)
-    if use_exceptions:
-        gdal.UseExceptions()
+    try:
+        # HACK: if exceptions are on then gdal_merge throws one
+        gdal.DontUseExceptions()
+        do_merge(argv)
+    finally:
+        if use_exceptions:
+            gdal.UseExceptions()
 
 
 def raster_copy_max_with_nodata(

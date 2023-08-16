@@ -15,6 +15,7 @@ from common import (
     DIR_SIMS,
     MAX_NUM_DAYS,
     Origin,
+    do_nothing,
     ensure_dir,
     ensures,
     list_dirs,
@@ -106,12 +107,14 @@ class Run(object):
         dir=None,
         max_days=None,
         do_publish=True,
+        do_merge=True,
         crs=CRS_COMPARISON,
         verbose=False,
     ) -> None:
         self._verbose = verbose
         self._max_days = MAX_NUM_DAYS if not max_days else max_days
         self._do_publish = do_publish
+        self._do_merge = do_merge or do_publish
         self._dir_fires = dir_fires
         self._prefix = (
             "m3"
@@ -271,7 +274,8 @@ class Run(object):
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
-            return ex
+            logging.error(ex)
+            return None
 
     def find_unprepared(self, df_fires, remove_invalid=False):
         dirs_fire = list_dirs(self._dir_sims)
@@ -319,7 +323,8 @@ class Run(object):
         results = {}
         sim_time = 0
         sim_times = []
-        NUM_TRIES = 5
+        # FIX: this is just failing and delaying things over and over right now
+        NUM_TRIES = 0
         file_lock_publish = os.path.join(self._dir_output, "publish")
 
         @log_order()
@@ -339,7 +344,8 @@ class Run(object):
                     tries = NUM_TRIES
                     # try again if failed
                     while (
-                        isinstance(result, Exception)
+                        result is None
+                        or isinstance(result, Exception)
                         or (not np.all(result.get("postprocessed", False)))
                     ) and tries > 0:
                         logging.warning("Retrying running %s", dir_fire)
@@ -384,12 +390,13 @@ class Run(object):
                     merge_dirs(self._dir_output, force=True)
                     logging.debug(f"Done merging directories for {g}")
 
+        callback_publish = check_publish if self._do_merge else do_nothing
         tqdm_util.pmap_by_group(
             self.do_run_fire,
             dirs_sim,
             max_processes=CONCURRENT_SIMS,
             desc="Running simulations",
-            callback_group=check_publish,
+            callback_group=callback_publish,
         )
         try_remove(file_lock_publish)
         # return all_results, list(all_dates), total_time
