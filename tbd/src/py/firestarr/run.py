@@ -176,7 +176,7 @@ class Run(object):
         def do_create(_):
             if force and os.path.isfile(_):
                 logging.info("Deleting existing fires")
-                os.remove(_)
+                try_remove(_)
             # keep a copy of the settings for reference
             shutil.copy(
                 "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
@@ -351,8 +351,10 @@ class Run(object):
                         logging.warning("Retrying running %s", dir_fire)
                         result = self.do_run_fire(dir_fire)
                         tries -= 1
-                    if isinstance(result, Exception) or (
-                        not np.all(result.get("sim_time", False))
+                    if (
+                        result is None
+                        or isinstance(result, Exception)
+                        or (not np.all(result.get("sim_time", False)))
                     ):
                         logging.warning("Could not run fire %s", dir_fire)
                     elif not np.all(result.get("postprocessed", False)):

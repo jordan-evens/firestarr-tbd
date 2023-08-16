@@ -215,6 +215,8 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
                 extent = gis.project_raster(
                     os.path.join(dir_fire, prob), file_out, nodata=None
                 )
+                if extent is None:
+                    raise RuntimeError("Fire {dir_fire} has invalid output file {prob}")
                 # if file didn't exist then it's changed now
                 changed = True
         perims = [
@@ -235,13 +237,17 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             if changed or not os.path.isfile(file_out):
                 perim = perims[0]
                 log_info(f"Adding raster to final outputs: {perim}")
-                gis.project_raster(
+                extent = gis.project_raster(
                     os.path.join(dir_fire, perim),
                     file_out,
                     outputBounds=extent,
                     # HACK: if nodata is none then 0's should just show up as 0?
                     nodata=None,
                 )
+                if extent is None:
+                    raise RuntimeError(
+                        "Fire {dir_fire} has invalid output file {perim}"
+                    )
                 # if file didn't exist then it's changed now
                 changed = True
         # geojson can't save list so make string

@@ -3,6 +3,7 @@ import itertools
 import os
 import shutil
 import time
+import traceback
 
 import gis
 import tqdm_util
@@ -17,6 +18,7 @@ from common import (
     list_dirs,
     listdir_sorted,
     logging,
+    try_remove,
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
@@ -81,15 +83,22 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
             if not os.path.isfile(f_crs):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full extent of the UTM zone?)
-                gis.project_raster(
-                    f, f_crs, resolution=100, nodata=0, crs=f"EPSG:{gis.CRS_COMPARISON}"
+                b = gis.project_raster(
+                    f,
+                    f_crs,
+                    resolution=100,
+                    nodata=0,
+                    crs=f"EPSG:{gis.CRS_COMPARISON}",
                 )
+                if b is None:
+                    return b
                 changed = True
             return f_crs
 
         files_crs = tqdm_util.pmap(
             reproject, files, desc=f"Reprojecting for {dir_in_for_what}"
         )
+        files_crs = [x for x in files_crs if x is not None]
         file_root = os.path.join(
             dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
         )

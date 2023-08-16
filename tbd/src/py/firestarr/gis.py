@@ -4,6 +4,7 @@ import math
 import os
 import re
 import sys
+import traceback
 
 import fiona.drvsupport
 import geopandas as gpd
@@ -20,6 +21,7 @@ from common import (
     is_empty,
     logging,
     message_on_exception,
+    try_remove,
     unzip,
 )
 from net import try_save_http
@@ -370,7 +372,16 @@ def project_raster(
     resolution=None,
     format=None,
 ):
-    input_raster = gdal.Open(filename)
+    input_raster = None
+    try:
+        input_raster = gdal.Open(filename)
+    except RuntimeError as ex:
+        logging.error("Removing invalid file {filename}")
+        logging.error("".join(traceback.format_exception(ex)))
+        # delete invalid input and return None
+        try_remove(filename)
+        return None
+
     if output_raster is None:
         output_raster = filename[:-4] + ".tif"
     ensure_dir(os.path.dirname(output_raster))
@@ -429,7 +440,7 @@ def save_geojson(df, path):
     with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
         # HACK: avoid "The GeoJSON driver does not overwrite existing files."
         if os.path.isfile(file):
-            os.remove(file)
+            try_remove(file)
         # HACK: geojson must be WGS84
         df.to_crs("WGS84").to_file(file)
     return file

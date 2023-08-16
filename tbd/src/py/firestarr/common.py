@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 from contextlib import contextmanager
 from functools import cache, wraps
@@ -262,7 +263,7 @@ def filterXY(data):
     return data
 
 
-def try_remove(paths, verbose=True):
+def try_remove(paths, verbose=False):
     """!
     Delete path but ignore errors if can't while raising old error
     @param path Path to delete
@@ -500,7 +501,7 @@ def log_on_entry_exit(msg, logger=logging):
     logger.debug(f"END   - {msg}")
 
 
-DEFAULT_MKDIRS = False
+DEFAULT_MKDIRS = True
 
 
 def ensure_string_list(paths):
@@ -547,13 +548,25 @@ def locks_for(paths):
     paths = ensure_string_list(paths)
     try:
         # FIX: deadlocks if same thread thread tries to get same file
-        locks = [LOCK_TRACKER.get_lock(path) for path in paths]
-        for lock in locks:
-            lock.acquire()
+        attempted_locks = [LOCK_TRACKER.get_lock(path) for path in paths]
+        locks = []
+        for lock in attempted_locks:
+            try:
+                lock.acquire()
+                locks.append(lock)
+            except FileNotFoundError:
+                # lock is missing, so must have been deleted
+                pass
         yield locks
     finally:
         for lock in locks:
-            lock.release()
+            # HACK: is this causing the errors about deleting locks
+            try:
+                lock.release()
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception:
+                pass
 
 
 def paths_exist(paths):
@@ -607,7 +620,7 @@ def ensure(
                         result = fct_create(list_paths)
                         logging.debug(f"fct_create({list_paths}) made {result}")
                     except Exception as ex:
-                        logging.error(f"Caught {ex}")
+                        logging.error("".join(traceback.format_exception(ex)))
                         ex_current = ex
                         retries -= 1
                 if ex_current is not None:
@@ -629,13 +642,19 @@ def ensure(
             yield result
             # since the file now exists, we can remove the lock since everything
             # can just read it now
-            for p in [lock.lock_file for lock in locks]:
-                try_remove(p)
+            for lock in locks:
+                try:
+                    # HACK: maybe getting lock_file is causing the error?
+                    try_remove(lock.lock_file)
+                except KeyboardInterrupt as ex:
+                    raise ex
+                except Exception:
+                    pass
     except Exception as ex:
         # use default logger if none specified
         if logger is None:
             logger = logging
-        logger.error(
+        logger.debug(
             "\n\t".join(
                 [f"Raising {ex}", (msg_error or f"Could not ensure {list_paths}")]
                 + ([f"Removing {remove_on_exception}"] if remove_on_exception else [])

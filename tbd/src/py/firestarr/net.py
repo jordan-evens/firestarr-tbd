@@ -183,7 +183,7 @@ def save_http(
             raise RuntimeError(f"Expected {save_as} to be marked as downloaded")
         return r
     except Exception as ex:
-        logging.error(ex)
+        logging.debug(ex)
         # @ensures should have taken care of delting file
         mark_downloaded(save_as, False)
         raise ex
