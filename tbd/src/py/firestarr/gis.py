@@ -15,12 +15,12 @@ from common import (
     DIR_EXTRACTED,
     DIR_RASTER,
     NUM_RETRIES,
+    call_safe,
     do_nothing,
     ensure_dir,
     ensures,
     is_empty,
     logging,
-    message_on_exception,
     try_remove,
     unzip,
 )
@@ -39,6 +39,10 @@ CRS_SIMINPUT = CRS_NAD83
 VALID_GEOMETRY_EXTENSIONS = [
     f".{x}" for x in sorted(fiona.drvsupport.vector_driver_extensions().keys())
 ]
+
+
+def read_gpd_file_safe(*args, **kwargs):
+    return call_safe(gpd.read_file, *args, **kwargs)
 
 
 def ensure_geometry_file(path):
@@ -94,7 +98,7 @@ def ensure_geometry_file(path):
 
 
 def load_geometry_file(path):
-    return gpd.read_file(ensure_geometry_file(path))
+    return read_gpd_file_safe(ensure_geometry_file(path))
 
 
 def GetFeatureCount(shp):
@@ -160,9 +164,9 @@ def Project(src, outputShapefile, outSpatialRef):
     @param outSpatialRef Spatial reference to project into
     @return None
     """
-    df = gpd.read_file(src)
+    df = read_gpd_file_safe(src)
     df_out = df.to_crs(outSpatialRef.ExportToWkt())
-    df_out.to_file(outputShapefile)
+    call_safe(df_out.to_file, outputShapefile)
 
 
 class Extent(object):
@@ -393,31 +397,37 @@ def project_raster(
         paths=output_raster, remove_on_exception=True, replace=True, retries=NUM_RETRIES
     )
     def do_warp(_):
-        nonlocal bounds
-        warp = gdal.Warp(
-            _,
-            input_raster,
-            dstNodata=nodata,
-            options=gdal.WarpOptions(
-                dstSRS=crs,
-                format=format,
-                xRes=resolution,
-                yRes=resolution,
-                outputBounds=outputBounds,
-                creationOptions=options,
-            ),
-        )
-        geoTransform = warp.GetGeoTransform()
-        minx = geoTransform[0]
-        maxy = geoTransform[3]
-        maxx = minx + geoTransform[1] * warp.RasterXSize
-        miny = maxy + geoTransform[5] * warp.RasterYSize
-        bounds = [minx, miny, maxx, maxy]
-        warp = None
-        # HACK: make sure this exists and is correct
-        test_open = gdal.Open(_)
-        test_open = None
-        return _
+        def do_save(*args, **kwargs):
+            nonlocal bounds
+            warp = gdal.Warp(
+                _,
+                input_raster,
+                dstNodata=nodata,
+                options=gdal.WarpOptions(
+                    dstSRS=crs,
+                    format=format,
+                    xRes=resolution,
+                    yRes=resolution,
+                    outputBounds=outputBounds,
+                    creationOptions=options,
+                ),
+            )
+            geoTransform = warp.GetGeoTransform()
+            minx = geoTransform[0]
+            maxy = geoTransform[3]
+            maxx = minx + geoTransform[1] * warp.RasterXSize
+            miny = maxy + geoTransform[5] * warp.RasterYSize
+            bounds = [minx, miny, maxx, maxy]
+
+            warp = None
+            # HACK: make sure this exists and is correct
+            test_open = gdal.Open(_)
+            # HACK: avoid warning about unused variable
+            if test_open is not None:
+                test_open = None
+            return _
+
+        return call_safe(do_save)
 
     # logging.info("Running gdal_merge_max()")
     use_exceptions = gdal.GetUseExceptions()
@@ -436,14 +446,20 @@ def save_geojson(df, path):
     dir = os.path.dirname(path)
     base = os.path.splitext(os.path.basename(path))[0]
     file = os.path.join(dir, f"{base}.geojson")
-    # HACK: don't lock on file until we fix reentrant locks
-    with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
+    try:
         # HACK: avoid "The GeoJSON driver does not overwrite existing files."
         if os.path.isfile(file):
             try_remove(file)
         # HACK: geojson must be WGS84
-        df.to_crs("WGS84").to_file(file)
-    return file
+        df_crs = df.to_crs("WGS84")
+        call_safe(df_crs.to_file, file)
+        return file
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n\t{df}")
+        logging.error("".join(traceback.format_exception(ex)))
+        raise ex
 
 
 def save_shp(df, path):
@@ -451,7 +467,7 @@ def save_shp(df, path):
     base = os.path.splitext(os.path.basename(path))[0]
     file = os.path.join(dir, f"{base}.shp")
     # HACK: don't lock on file until we fix reentrant locks
-    with message_on_exception(msg=f"Error writing to {file}:\n\t{df}"):
+    try:
         cols = df.columns
         df = df.reset_index()
         keys = [x for x in df.columns if x not in cols]
@@ -460,8 +476,15 @@ def save_shp(df, path):
             # HACK: convert any type of date into string
             if "date" in str(v).lower():
                 df[k] = df[k].astype(str)
-        df.set_index(keys).to_file(file)
-    return file
+        df_index = df.set_index(keys)
+        call_safe(df_index.to_file, file)
+        return file
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error(f"Error writing to {file}:\n\t{df}")
+        logging.error("".join(traceback.format_exception(ex)))
+        raise ex
 
 
 def to_gdf(df, crs=CRS_WGS84):

@@ -6,7 +6,6 @@ import urllib.parse
 from collections import Counter
 from functools import cache
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
@@ -32,7 +31,7 @@ from datasources.datatypes import (
     make_template_empty,
 )
 from datasources.spotwx import fix_coords, fmt_rounded
-from gis import find_closest, save_geojson
+from gis import find_closest, read_gpd_file_safe, save_geojson
 from make_bounds import get_features_canada
 from net import try_save_http
 
@@ -77,7 +76,7 @@ def fix_dates(df):
 def parse_by_extension(path):
     format = os.path.splitext(path)[-1][1:]
     if "geojson" == format:
-        return fix_dates(gpd.read_file(path))
+        return fix_dates(read_gpd_file_safe(path))
     with open(path) as f:
         if "pjson" == format:
             return json.load(f)
@@ -208,7 +207,7 @@ def get_fwi(date):
             if is_empty(df):
                 return df
             save_geojson(df, file_fwi_date)
-        return gpd.read_file(file_fwi_date)
+        return read_gpd_file_safe(file_fwi_date)
 
 
 class SourceFwiON(SourceFwi):
@@ -250,7 +249,7 @@ def get_hourly_date(dir_out, layer, date):
     file_wx_date = file_for_date(layer, date, dir_out)
     with locks_for(file_wx_date):
         if os.path.isfile(file_wx_date):
-            df = gpd.read_file(file_wx_date)
+            df = read_gpd_file_safe(file_wx_date)
             times = np.unique(df["datetime"])
             expected = (
                 24
@@ -303,7 +302,7 @@ def get_hourly_date(dir_out, layer, date):
         save_geojson(df, file_wx_date)
         if 1 != len(np.unique(list(Counter(df["datetime"]).values()))):
             logging.warning("Some stations are missing data for some hours")
-        return gpd.read_file(file_wx_date)
+        return read_gpd_file_safe(file_wx_date)
 
 
 @cache
@@ -333,7 +332,7 @@ def get_hourly(dir_out, layer, datetime_start, datetime_end):
                 & (df_wx["datetime"] <= datetime_end)
             ]
             save_geojson(df_wx, file_stn_wx)
-        return gpd.read_file(file_stn_wx)
+        return read_gpd_file_safe(file_stn_wx)
 
 
 @cache
@@ -353,7 +352,7 @@ def get_wx_hourly(dir_out, lat, lon, datetime_start, datetime_end=None):
             # CHECK: might get station that's closest but doesn't exist for timespan
             df_wx = find_closest(df_hourly, lat, lon, fill_missing=True)
             save_geojson(df_wx, file_wx)
-        return gpd.read_file(file_wx)
+        return read_gpd_file_safe(file_wx)
 
 
 class SourceHourlyON(SourceHourly):

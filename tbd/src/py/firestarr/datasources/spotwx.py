@@ -2,7 +2,6 @@ import datetime
 import os
 from functools import cache
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
@@ -14,13 +13,13 @@ from common import (
     ensure_dir,
     ensures,
     logging,
+    read_csv_safe,
     remove_timezone_utc,
 )
 from datasources.datatypes import SourceModel
+from gis import read_gpd_file_safe, save_geojson, to_gdf
 from net import try_save_http
 from pyrate_limiter import Duration, FileLockSQLiteBucket, Limiter, RequestRate
-
-from gis import save_geojson, to_gdf
 
 DIR_SPOTWX = ensure_dir(os.path.join(DIR_DOWNLOAD, "spotwx"))
 # GEPS model is 0.5 degree resoltion, so two digits is too much
@@ -73,7 +72,7 @@ def make_spotwx_query(model, lat, lon, **kwargs):
 
 def make_spotwx_parse(need_column, fct_parse=None, expected_value=None):
     def do_parse(_):
-        df = pd.read_csv(_, encoding="utf-8")
+        df = read_csv_safe(_, encoding="utf-8")
         # df.columns = [x.lower for x in df.columns]
         valid = need_column in df.columns
         if valid:
@@ -98,7 +97,9 @@ def get_model_dir(model):
     lat = BOUNDS["latitude"]["mid"]
     lon = BOUNDS["longitude"]["mid"]
     url = make_spotwx_query(model, lat, lon, output="archive")
-    save_as = os.path.join(ensure_dir(os.path.join(DIR_SPOTWX, model)), f"spotwx_{model}_current.csv")
+    save_as = os.path.join(
+        ensure_dir(os.path.join(DIR_SPOTWX, model)), f"spotwx_{model}_current.csv"
+    )
 
     def do_parse(df):
         model_time = np.max(
@@ -233,7 +234,7 @@ class SourceGEPS(SourceModel):
         @ensures(
             file_out,
             True,
-            fct_process=gpd.read_file,
+            fct_process=read_gpd_file_safe,
             retries=1,
         )
         def do_create(_):

@@ -1,7 +1,6 @@
 import datetime
 import os
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytz
@@ -14,6 +13,7 @@ from common import (
     is_empty,
     logging,
     remove_timezone_utc,
+    to_csv_safe,
     tqdm_util,
     tz_from_offset,
 )
@@ -24,7 +24,7 @@ from datasources.default import (
     SourceModelAll,
     wx_interpolate,
 )
-from gis import save_geojson
+from gis import read_gpd_file_safe, save_geojson
 from timezonefinder import TimezoneFinder
 
 from tbd import get_simulation_file
@@ -59,7 +59,7 @@ def save_wx_input(df_wx, file_wx):
     ]
     # remove timezone so it outputs in expected format
     df_wx["Date"] = df_wx["Date"].apply(lambda x: x.tz_localize(None))
-    df_wx.round(2).to_csv(file_wx, index=False, quoting=False)
+    to_csv_safe(df_wx.round(2), file_wx, index=False, quoting=False)
     return file_wx
 
 
@@ -218,7 +218,7 @@ class Simulation(object):
             if FLAG_DEBUG:
                 # make it easier to see problems if cffdrs isn't working
                 save_geojson(df_wx, file_wx_streams)
-                df_wx = gpd.read_file(file_wx_streams)
+                df_wx = read_gpd_file_safe(file_wx_streams)
             df_wx_fire = df_wx.rename(columns={"lon": "long", COLUMN_TIME: "TIMESTAMP"})
             # remove timezone so it gets formatted properly
             df_wx_fire.loc[:, "TIMESTAMP"] = [

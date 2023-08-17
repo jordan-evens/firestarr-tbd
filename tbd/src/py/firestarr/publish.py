@@ -3,7 +3,6 @@ import itertools
 import os
 import shutil
 import time
-import traceback
 
 import gis
 import tqdm_util
@@ -14,14 +13,18 @@ from common import (
     FMT_DATE_YMD,
     FORMAT_OUTPUT,
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
+    call_safe,
     ensure_dir,
     list_dirs,
     listdir_sorted,
     logging,
-    try_remove,
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
+
+
+def merge_safe(*args, **kwargs):
+    return call_safe(gdal_merge_max, *args, **kwargs)
 
 
 def publish_all(dir_current=None, force=False):
@@ -116,7 +119,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
                 os.remove(file_tmp)
             if os.path.isfile(file_base):
                 os.remove(file_base)
-            gdal_merge_max(
+            merge_safe(
                 (
                     [
                         "",

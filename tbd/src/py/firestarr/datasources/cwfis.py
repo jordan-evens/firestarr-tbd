@@ -3,7 +3,6 @@ import os
 from collections import Counter
 from functools import cache
 
-import geopandas as gpd
 import model_data
 import pandas as pd
 import tqdm_util
@@ -12,6 +11,7 @@ from common import (
     FMT_DATE_YMD,
     USE_CWFIS_SERVICE,
     logging,
+    read_csv_safe,
     to_utc,
 )
 from datasources.datatypes import (
@@ -21,7 +21,7 @@ from datasources.datatypes import (
     make_point,
     make_template_empty,
 )
-from gis import CRS_COMPARISON, CRS_WGS84, to_gdf
+from gis import CRS_COMPARISON, CRS_WGS84, read_gpd_file_safe, to_gdf
 from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, make_query_geoserver
 from net import try_save_http
 
@@ -48,7 +48,7 @@ class SourceFeatureM3Service(SourceFeature):
 
         def do_parse(_):
             logging.debug(f"Reading {_}")
-            df = gpd.read_file(_)
+            df = read_gpd_file_safe(_)
             df["datetime"] = to_utc(df["lastdate"])
             since = pd.to_datetime(self._last_active_since, utc=True)
             return df.loc[df["datetime"] >= since]
@@ -81,7 +81,7 @@ class SourceFeatureM3Download(SourceFeature):
                     fct_pre_save=None,
                     fct_post_save=None,
                 )
-            gdf = gpd.read_file(f)
+            gdf = read_gpd_file_safe(f)
             return gdf
 
         df = get_shp("perimeters")
@@ -147,7 +147,7 @@ class SourceFireDipService(SourceFire):
         )
 
         def do_parse(_):
-            gdf = gpd.read_file(_)
+            gdf = read_gpd_file_safe(_)
             # only get latest status for each fire
             gdf = gdf.iloc[gdf.groupby(["firename"])["last_rep_date"].idxmax()]
             gdf = gdf.rename(
@@ -195,7 +195,7 @@ class SourceFireCiffcService(SourceFire):
         )
 
         def do_parse(_):
-            gdf = gpd.read_file(_)
+            gdf = read_gpd_file_safe(_)
             gdf = gdf.rename(
                 columns={
                     "field_status_date": "datetime",
@@ -283,7 +283,7 @@ class SourceFwiCwfisDownload(SourceFwi):
             os.path.join(dir_out, os.path.basename(cls.URL_STNS)),
             keep_existing=True,
             fct_pre_save=None,
-            fct_post_save=lambda _: gpd.read_file(_)[["aes", "wmo", "lat", "lon"]],
+            fct_post_save=lambda _: read_gpd_file_safe(_)[["aes", "wmo", "lat", "lon"]],
         )
 
     @classmethod
@@ -297,7 +297,7 @@ class SourceFwiCwfisDownload(SourceFwi):
             if _ is None:
                 return None
             logging.debug("Reading {}".format(_))
-            df = pd.read_csv(_, skipinitialspace=True)
+            df = read_csv_safe(_, skipinitialspace=True)
             df = df.loc[df["NAME"] != "NAME"]
             df.columns = [x.lower() for x in df.columns]
             df = df.loc[~df["ffmc"].isna()]

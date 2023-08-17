@@ -2,8 +2,8 @@ import datetime
 import os
 import shutil
 import timeit
+import traceback
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm_util
@@ -23,7 +23,6 @@ from common import (
     log_entry_exit,
     log_on_entry_exit,
     logging,
-    message_on_exception,
     try_remove,
 )
 from datasources.datatypes import SourceFire
@@ -35,6 +34,7 @@ from gis import (
     CRS_WGS84,
     area_ha,
     make_gdf_from_series,
+    read_gpd_file_safe,
     save_shp,
 )
 from log import LOGGER_NAME, add_log_file
@@ -203,27 +203,33 @@ class Run(object):
     def load_fires(self):
         if not os.path.isfile(self._file_fires):
             raise RuntimeError(f"Expected fires to be in file {self._file_fires}")
-        return gpd.read_file(self._file_fires).set_index(["fire_name"])
+        return read_gpd_file_safe(self._file_fires).set_index(["fire_name"])
 
     @log_order()
-    def prep_folders(self, remove_existing=False):
+    def prep_folders(self, remove_existing=False, remove_invalid=False):
         df_fires = self.load_fires()
         if remove_existing:
             # throw out folders and start over from df_fires
             try_remove(self._dir_sims)
         else:
-            if not self.find_unprepared(df_fires, remove_invalid=True):
+            if not self.find_unprepared(df_fires, remove_directory=remove_invalid):
                 return
 
         # @log_order_firename()
         def do_fire(row_fire):
             fire_name = row_fire.fire_name
             # just want a nice error message if this fails
-            with message_on_exception(f"Error processing fire {fire_name}"):
+            try:
                 # HACK: can't pickle with @log_order
                 with log_order_msg(f"do_fire({fire_name})"):
                     df_fire = make_gdf_from_series(row_fire, self._crs)
                     return self._simulation.prepare(df_fire)
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception as ex:
+                logging.error(f"Error processing fire {fire_name}")
+                logging.error("".join(traceback.format_exception(ex)))
+                raise ex
 
         list_rows = list(zip(*list(df_fires.reset_index().iterrows())))[1]
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
@@ -241,7 +247,7 @@ class Run(object):
         if df_bounds is None:
             file_bounds = BOUNDS["bounds"]
             if file_bounds:
-                df_bounds = gpd.read_file(file_bounds).to_crs(df.crs)
+                df_bounds = read_gpd_file_safe(file_bounds).to_crs(df.crs)
         df[["ID", "PRIORITY", "DURATION"]] = "", 0, self._max_days
         if df_bounds is not None:
             df_join = df[["geometry"]].sjoin(df_bounds)
@@ -277,7 +283,7 @@ class Run(object):
             logging.error(ex)
             return None
 
-    def find_unprepared(self, df_fires, remove_invalid=False):
+    def find_unprepared(self, df_fires, remove_directory=False):
         dirs_fire = list_dirs(self._dir_sims)
         fire_names = set(df_fires.index)
         dir_names = set(dirs_fire)
@@ -289,21 +295,41 @@ class Run(object):
         expected = {
             f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names
         }
+
+        def check_file(file_sim):
+            try:
+                if os.path.isfile(file_sim):
+                    df_fire = read_gpd_file_safe(file_sim)
+                    if 1 != len(df_fire):
+                        raise RuntimeError(
+                            f"Expected exactly one fire in file {file_sim}"
+                        )
+                    return True
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception:
+                pass
+            return False
+
         missing = [
             fire_name
             for fire_name, file_sim in expected.items()
-            if not os.path.isfile(file_sim)
+            if not check_file(file_sim)
         ]
         if missing:
-            logging.info(f"Need to make directories for {len(missing)} simulations")
-            if remove_invalid:
+            if remove_directory:
+                logging.info(f"Need to make directories for {len(missing)} simulations")
                 dirs_missing = [os.path.join(self._dir_sims, x) for x in missing]
                 dirs_missing_existing = [p for p in dirs_missing if os.path.isdir(p)]
                 tqdm_util.apply(
                     dirs_missing_existing,
-                    shutil.rmtree,
+                    try_remove,
                     desc="Removing invalid fire directories",
                 )
+            else:
+                logging.info(f"Need to fix geojson for {len(missing)} simulations")
+                for fire_name, file_sim in expected.items():
+                    try_remove(file_sim)
         return missing
 
     def run_fires_in_dir(self, check_missing=True):
@@ -320,7 +346,6 @@ class Run(object):
         }
         # run for each boundary in order
         changed = False
-        dates_out = set([])
         results = {}
         sim_time = 0
         sim_times = []
@@ -333,7 +358,6 @@ class Run(object):
             nonlocal changed
             nonlocal sim_time
             nonlocal sim_times
-            nonlocal dates_out
             nonlocal results
             with locks_for(file_lock_publish):
                 for i in range(len(sim_results)):
@@ -358,10 +382,6 @@ class Run(object):
                         or (not np.all(result.get("sim_time", False)))
                     ):
                         logging.warning("Could not run fire %s", dir_fire)
-                    elif not np.all(result.get("postprocessed", False)):
-                        logging.warning(
-                            "Ran fire %s, but couldn't postprocess" % dir_fire
-                        )
                     else:
                         if 1 != len(result):
                             raise RuntimeError(
@@ -377,9 +397,6 @@ class Run(object):
                                 cur_time = int(cur_time)
                                 sim_time += cur_time
                                 sim_times.append(cur_time)
-                            dates_out = dates_out.union(
-                                set(row_result.get("dates_out", []))
-                            )
                 if self._do_publish and changed:
                     n = len(sim_times)
                     logging.info(

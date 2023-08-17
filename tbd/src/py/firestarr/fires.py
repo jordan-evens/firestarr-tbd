@@ -12,6 +12,7 @@ from gis import (
     KM_TO_M,
     GetSpatialReference,
     find_raster_meridians,
+    read_gpd_file_safe,
 )
 
 
@@ -168,7 +169,7 @@ def get_fires_folder(dir_fires, crs=CRS_COMPARISON):
     for root, dirs, files in os.walk(dir_fires):
         for f in [x for x in files if x.lower().endswith(".shp")]:
             file_shp = os.path.join(root, f)
-            df_fire = gpd.read_file(file_shp).to_crs(proj)
+            df_fire = read_gpd_file_safe(file_shp).to_crs(proj)
             df_fires = pd.concat([df_fires, df_fire])
     df_fires["fire_name"] = df_fires["FIRENUMB"]
     return df_fires

@@ -8,7 +8,7 @@ import azure.batch.models as batchmodels
 import azurebatch.config as config
 from tqdm import tqdm
 
-_RELATIVE_MOUNT_PATH = "firestarr_data"
+RELATIVE_MOUNT_PATH = "firestarr_data"
 
 
 def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=False):
@@ -52,7 +52,7 @@ def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=Fals
                     batchmodels.AzureBlobFileSystemConfiguration(
                         account_name=config._STORAGE_ACCOUNT_NAME,
                         container_name=config._STORAGE_CONTAINER,
-                        relative_mount_path=_RELATIVE_MOUNT_PATH,
+                        relative_mount_path=RELATIVE_MOUNT_PATH,
                         account_key=config._STORAGE_KEY,
                         blobfuse_options="-o attr_timeout=240 -o entry_timeout=240 -o negative_timeout=120 -o allow_other",
                     )
@@ -226,7 +226,7 @@ def add_monolithic_task(batch_client, job_id):
                         # "--rm",
                         # "--name=tbd_prod_stable",
                         "--workdir /appl/tbd",
-                        f"-v /mnt/batch/tasks/fsmounts/{_RELATIVE_MOUNT_PATH}:/appl/data",
+                        f"-v /mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}:/appl/data",
                     ]
                 ),
             ),
@@ -301,8 +301,8 @@ def add_simulation_task(batch_client, job_id, dir_fire):
             id=task_id,
             # command_line=f"/bin/bash -c 'cd {dir_fire} && ./sim.sh'",
             # command_line=f"{dir_fire}/sim.sh",
-            # command_line="./sim.sh",
-            command_line="",
+            command_line="./sim.sh",
+            # command_line="",
             # command_line=f"""-c 'cd {dir_fire} && ./sim.sh' """,
             container_settings=batchmodels.TaskContainerSettings(
                 image_name=config._CONTAINER_BIN,
@@ -311,11 +311,11 @@ def add_simulation_task(batch_client, job_id, dir_fire):
                         "--rm",
                         # f"--entrypoint=\"/bin/bash -c 'cd {dir_fire} && ./sim.sh'\"",
                         # "--entrypoint /bin/bash",
-                        # "--entrypoint /bin/sh",
+                        "--entrypoint /bin/sh",
                         f"--workdir {dir_fire}",
                         # "--entrypoint ./sim.sh",
                         # f"--workdir /appl/tbd",
-                        f"-v /mnt/batch/tasks/fsmounts/{_RELATIVE_MOUNT_PATH}:/appl/data",
+                        f"-v /mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}:/appl/data",
                     ]
                 ),
                 registry=batchmodels.ContainerRegistry(

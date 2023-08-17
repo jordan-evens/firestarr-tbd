@@ -1,11 +1,10 @@
 import os
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import shapely.geometry
 from common import DIR_GENERATED, ensures
-from gis import CRS_WGS84, load_geometry_file
+from gis import CRS_WGS84, load_geometry_file, read_gpd_file_safe
 
 KM_TO_M = 1000
 BY_NAME = {}
@@ -103,7 +102,7 @@ def get_features_canada(
 ):
     file_out = os.path.join(dir_out, "canada.shp")
 
-    @ensures(file_out, True, fct_process=gpd.read_file, mkdirs=True)
+    @ensures(file_out, True, fct_process=read_gpd_file_safe, mkdirs=True)
     def do_create(_):
         # col_name needs to be english name of area so it can join
         # on bounds column EN
@@ -153,7 +152,7 @@ def update_bounds(
         return to_file_dir(df, name, dir_out, centroids_canada)
 
     df_bounds = to_file(
-        gpd.read_file(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
+        read_gpd_file_safe(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
         "bounds",
     )
     df = df_bounds.set_index(["EN"])

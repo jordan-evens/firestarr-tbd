@@ -3,9 +3,8 @@ import os
 import urllib
 from functools import cache
 
-import pandas as pd
 import tqdm_util
-from common import is_empty, logging
+from common import is_empty, logging, read_csv_safe
 from gis import CRS_COMPARISON, to_gdf
 from net import try_save_http
 
@@ -55,7 +54,7 @@ def get_wx_cwfis(
 
     def do_parse(_):
         logging.debug("Reading {}".format(_))
-        df = pd.read_csv(_)
+        df = read_csv_safe(_)
         # HACK: doesn't make column if df is empty
         if is_empty(df):
             df["datetime"] = None

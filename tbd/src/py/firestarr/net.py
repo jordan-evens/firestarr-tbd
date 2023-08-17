@@ -13,6 +13,7 @@ import requests
 import tqdm_util
 from common import (
     FLAG_DEBUG,
+    call_safe,
     do_nothing,
     ensure_dir,
     ensures,
@@ -106,7 +107,7 @@ def _save_http_uncached(url, save_as):
 
 @cache
 def _save_http_cached(url, save_as):
-    return _save_http_uncached(url, save_as)
+    return call_safe(_save_http_uncached, url, save_as)
 
 
 def check_downloaded(path):
@@ -184,6 +185,8 @@ def save_http(
         if not check_downloaded(save_as):
             raise RuntimeError(f"Expected {save_as} to be marked as downloaded")
         return r
+    except KeyboardInterrupt as ex:
+        raise ex
     except Exception as ex:
         logging.debug(ex)
         # @ensures should have taken care of delting file
@@ -217,6 +220,8 @@ def try_save_http(
     while True:
         try:
             return save_http(url, save_as, keep_existing, fct_pre_save, fct_post_save)
+        except KeyboardInterrupt as ex:
+            raise ex
         except Exception as ex:
             logging.info(f"Caught {ex} in {__name__}")
             if isinstance(ex, KeyboardInterrupt):

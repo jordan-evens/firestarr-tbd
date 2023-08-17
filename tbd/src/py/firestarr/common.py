@@ -58,7 +58,7 @@ TIMEDELTA_HOUR = datetime.timedelta(hours=1)
 # use default for pmap() if None
 # CONCURRENT_SIMS = None
 # HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 4)
+CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 8)
 
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
@@ -92,13 +92,24 @@ DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
 
+def call_safe(fct, *args, **kwargs):
+    while True:
+        try:
+            return fct(*args, **kwargs)
+        except OSError:
+            # ignore OSError because azure is throwing them all the time
+            pass
+        except Exception as ex:
+            raise ex
+
+
 def ensure_dir(dir):
     """!
     Check if directory exists and make it if not
     @param dir Directory to ensure existence of
     @return None
     """
-    os.makedirs(dir, exist_ok=True)
+    call_safe(os.makedirs, dir, exist_ok=True)
     if not os.path.isdir(dir):
         logging.fatal("Could not create directory {}".format(dir))
         sys.exit(-1)
@@ -432,65 +443,6 @@ class Origin(object):
         return self.offset(1)
 
 
-# @contextmanager
-# def cleanup_on_exception(remove_paths=None, msg=None, logger=None):
-#     """
-#     Want a way to ensure that files are accessed properly between threads
-#     and invalid results are removed. Also lets us use specific error messages
-#     when raising
-#     """
-#     try:
-#         if remove_paths is None and msg is None:
-#             raise RuntimeError(
-#                 "Expected at least one of remove_paths or msg to have a value"
-#             )
-#         yield
-#     except Exception as ex:
-#         # use default logger if none specified
-#         if logger is None:
-#             logger = logging
-#         msg = "" if not msg else f"\n\t{msg}"
-#         if remove_paths:
-#             msg += f"\n\tRemoving {remove_paths}"
-#         logger.error(f"Raising {ex}{msg}")
-#         if remove_paths:
-#             # HACK: strings are iterable, so can't just check if that works
-#             if isinstance(remove_paths, str):
-#                 remove_paths = [remove_paths]
-#             for path in remove_paths:
-#                 try_remove(path)
-#         raise ex
-
-
-# output a message but just raise the exception again
-@contextmanager
-def message_on_exception(msg, logger=None):
-    try:
-        yield
-    except Exception as ex:
-        # use default logger if none specified
-        if logger is None:
-            logger = logging
-        logger.error(f"Raising {ex}\n\t{msg}")
-        raise ex
-
-
-# @contextmanager
-# def lock_for(path, remove_after=False, remove_on_exception=False):
-#     # simplify locking because we're trying to access a specific file
-#     file_lock = path + ".lock"
-#     try:
-#         with FileLock(file_lock, -1):
-#             yield
-#         if remove_after:
-#             try_remove(file_lock, False)
-#     except Exception as ex:
-#         logging.error(f"Error while waiting for lock on {path}\n\t{ex}")
-#         if remove_on_exception:
-#             try_remove(file_lock, False)
-#         raise ex
-
-
 @contextmanager
 def log_on_entry_exit(msg, logger=logging):
     logger.info(f"START - {msg}")
@@ -552,7 +504,7 @@ def locks_for(paths):
         locks = []
         for lock in attempted_locks:
             try:
-                lock.acquire()
+                call_safe(lock.acquire)
                 locks.append(lock)
             except FileNotFoundError:
                 # lock is missing, so must have been deleted
@@ -619,6 +571,8 @@ def ensure(
                         # fct is expected to make the path
                         result = fct_create(list_paths)
                         logging.debug(f"fct_create({list_paths}) made {result}")
+                    except KeyboardInterrupt as ex:
+                        raise ex
                     except Exception as ex:
                         logging.error("".join(traceback.format_exception(ex)))
                         ex_current = ex
@@ -650,6 +604,8 @@ def ensure(
                     raise ex
                 except Exception:
                     pass
+    except KeyboardInterrupt as ex:
+        raise ex
     except Exception as ex:
         # use default logger if none specified
         if logger is None:
@@ -701,6 +657,8 @@ def ensures(
                     ):
                         try:
                             return (fct_process or do_nothing)(paths)
+                        except KeyboardInterrupt as ex:
+                            raise ex
                         except Exception as ex:
                             # failed parsing file
                             ex_current = ex
@@ -708,8 +666,11 @@ def ensures(
                                 f"Failed parsing {paths} so removing and retrying"
                             )
                             try_remove(paths)
+                except KeyboardInterrupt as ex:
+                    raise ex
                 except Exception as ex:
                     logging.error(f"Failed getting file: {ex}")
+                    logging.error("".join(traceback.format_exception(ex)))
                     # failed getting file
                     ex_current = ex
                 retries -= 1
@@ -857,3 +818,14 @@ def tz_from_offset(offset):
 
 def is_empty(df):
     return df is None or 0 == len(df)
+
+
+def to_csv_safe(df, file_csv, *args, **kwargs):
+    def do_save(*args, **kwargs):
+        return df.to_csv(file_csv, *args, **kwargs)
+
+    return call_safe(do_save, *args, **kwargs)
+
+
+def read_csv_safe(*args, **kwargs):
+    return call_safe(pd.read_csv, *args, **kwargs)
