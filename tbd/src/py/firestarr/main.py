@@ -57,4 +57,4 @@ if __name__ == "__main__":
                 do_publish=do_publish,
                 do_merge=do_merge,
             )
-    df_final = run.process()
+    df_final, changed = run.process()

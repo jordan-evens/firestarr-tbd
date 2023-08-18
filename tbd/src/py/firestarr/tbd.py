@@ -7,6 +7,13 @@ import timeit
 import pandas as pd
 import psutil
 from azurebatch.batch_container import add_simulation_task, check_task_running
+
+# from azurebatch.batch_container import (
+#     add_job,
+#     get_batch_client,
+#     have_batch_config,
+# )
+# from common import DIR_SIMS
 from common import (
     DIR_DATA,
     DIR_TBD,
@@ -135,6 +142,60 @@ def check_running(dir_fire):
 def get_simulation_file(dir_fire):
     fire_name = os.path.basename(dir_fire)
     return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
+
+
+def copy_fire_outputs(dir_fire, dir_output, changed):
+    # simulation was done or is now, but outputs don't exist
+    logging.debug(f"Collecting outputs from {dir_fire}")
+    fire_name = os.path.basename(dir_fire)
+    outputs = listdir_sorted(dir_fire)
+    extent = None
+    probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
+    dir_region = ensure_dir(os.path.join(dir_output, "initial"))
+    for prob in probs:
+        logging.debug(f"Adding raster to final outputs: {prob}")
+        # want to put each probability raster into right date so we can combine them
+        d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
+        # FIX: want all of these to be output at the size of the largest?
+        # FIX: still doesn't show whole area that was simulated
+        file_out = os.path.join(dir_region, d, fire_name + ".tif")
+        if changed or not os.path.isfile(file_out):
+            extent = project_raster(os.path.join(dir_fire, prob), file_out, nodata=None)
+            if extent is None:
+                raise RuntimeError(f"Fire {dir_fire} has invalid output file {prob}")
+            # if file didn't exist then it's changed now
+            changed = True
+    perims = [
+        x
+        for x in outputs
+        if (
+            x.endswith("tif")
+            and not (
+                x.startswith("probability")
+                or x.startswith("interim")
+                or x.startswith("intensity")
+                or "dem.tif" == x
+                or "fuel.tif" == x
+            )
+        )
+    ]
+    if len(perims) > 0:
+        file_out = os.path.join(dir_region, "perim", fire_name + ".tif")
+        if changed or not os.path.isfile(file_out):
+            perim = perims[0]
+            logging.debug(f"Adding raster to final outputs: {perim}")
+            extent = project_raster(
+                os.path.join(dir_fire, perim),
+                file_out,
+                outputBounds=extent,
+                # HACK: if nodata is none then 0's should just show up as 0?
+                nodata=None,
+            )
+            if extent is None:
+                raise RuntimeError(f"Fire {dir_fire} has invalid output file {perim}")
+            # if file didn't exist then it's changed now
+            changed = True
+    return changed
 
 
 def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False):
@@ -277,66 +338,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
-        # simulation was done or is now, but outputs don't exist
-        logging.debug(f"Collecting outputs from {dir_fire}")
-        outputs = listdir_sorted(dir_fire)
-        extent = None
-        probs = [
-            x for x in outputs if x.endswith("tif") and x.startswith("probability")
-        ]
-        dir_region = ensure_dir(os.path.join(dir_output, "initial"))
-        for prob in probs:
-            logging.debug(f"Adding raster to final outputs: {prob}")
-            # want to put each probability raster into right date so we can combine them
-            d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
-            # FIX: want all of these to be output at the size of the largest?
-            # FIX: still doesn't show whole area that was simulated
-            file_out = os.path.join(dir_region, d, fire_name + ".tif")
-            if changed or not os.path.isfile(file_out):
-                extent = project_raster(
-                    os.path.join(dir_fire, prob), file_out, nodata=None
-                )
-                if extent is None:
-                    raise RuntimeError(
-                        f"Fire {dir_fire} has invalid output file {prob}"
-                    )
-                # if file didn't exist then it's changed now
-                changed = True
-        perims = [
-            x
-            for x in outputs
-            if (
-                x.endswith("tif")
-                and not (
-                    x.startswith("probability")
-                    or x.startswith("interim")
-                    or x.startswith("intensity")
-                    or "dem.tif" == x
-                    or "fuel.tif" == x
-                )
-            )
-        ]
-        if len(perims) > 0:
-            file_out = os.path.join(dir_region, "perim", fire_name + ".tif")
-            if changed or not os.path.isfile(file_out):
-                perim = perims[0]
-                log_info(f"Adding raster to final outputs: {perim}")
-                extent = project_raster(
-                    os.path.join(dir_fire, perim),
-                    file_out,
-                    outputBounds=extent,
-                    # HACK: if nodata is none then 0's should just show up as 0?
-                    nodata=None,
-                )
-                if extent is None:
-                    raise RuntimeError(
-                        f"Fire {dir_fire} has invalid output file {perim}"
-                    )
-                # if file didn't exist then it's changed now
-                changed = True
-        # df_fire["postprocessed"] = True
-        if "dates_out" in df_fire.columns:
-            del df_fire["dates_out"]
+        changed = copy_fire_outputs(dir_fire, dir_output, changed)
         save_geojson(df_fire, file_sim)
         # HACK: for some reason geojson can read a list as a column but not write it
         df_fire = read_gpd_file_safe(file_sim)

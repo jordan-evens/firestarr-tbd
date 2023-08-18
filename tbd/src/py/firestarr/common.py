@@ -18,6 +18,7 @@ from logging import getLogger
 
 import numpy as np
 import pandas as pd
+import psutil
 import tqdm_util
 from dateutil.tz import tzoffset
 from filelock import FileLock
@@ -829,3 +830,22 @@ def to_csv_safe(df, file_csv, *args, **kwargs):
 
 def read_csv_safe(*args, **kwargs):
     return call_safe(pd.read_csv, *args, **kwargs)
+
+
+def count_procs(name="tbd"):
+    processes = []
+    for p in psutil.process_iter():
+        try:
+            if p.name() == name:
+                processes.append(
+                    p.as_dict(attrs=["cpu_times", "name", "pid", "status"])
+                )
+        except psutil.NoSuchProcess:
+            continue
+    return len(processes)
+
+
+def run_after_done(fct, *args, **kwargs):
+    while count_procs() > 0:
+        time.sleep(10)
+    return fct(*args, **kwargs)

@@ -5,13 +5,16 @@ _POOL_VM_SIZE = "STANDARD_F72S_V2"
 _POOL_ID_BOTH = "pool_firestarr_both"
 _POOL_ID_PY = "pool_firestarr_py"
 _POOL_ID_BIN = "pool_firestarr_bin"
-_MIN_NODES = 1
+_MIN_NODES = 0
 _MAX_NODES = 100
 _AUTO_SCALE_FORMULA = "\n".join(
     [
         "$samples = $ActiveTasks.GetSamplePercent(TimeInterval_Minute);",
+        "$usage = $CPUPercent.GetSample(TimeInterval_Minute * 3, 20);",
+        "$usage_avg = avg($usage);",
+        "$min_nodes = $usage_avg < (1 / 72 * 0.8) ? 0 : 1;",
         "$tasks = $samples < 1 ? 0 : $ActiveTasks.GetSample(1);",
-        f"$TargetDedicatedNodes = max({_MIN_NODES}, min({_MAX_NODES}, $tasks));",
+        "$TargetDedicatedNodes = max($min_nodes, min(100, $tasks));",
         "$NodeDeallocationOption = taskcompletion;",
     ]
 )
@@ -22,6 +25,7 @@ _BATCH_ACCOUNT_URL = f"https://{_BATCH_ACCOUNT_NAME}.canadacentral.batch.azure.c
 _STORAGE_ACCOUNT_NAME = ""
 _STORAGE_CONTAINER = ""
 _STORAGE_KEY = ""
+_STORAGE_ACCOUNT_URL = f"https://{_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
 _REGISTRY_USER_NAME = ""
 _REGISTRY_PASSWORD = ""
 _REGISTRY_SERVER = f"{_REGISTRY_USER_NAME}.azurecr.io"

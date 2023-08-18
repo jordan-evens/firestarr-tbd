@@ -163,12 +163,12 @@ class Run(object):
         self.prep_fires()
         self.prep_folders()
         # FIX: check the weather or folders here
-        df_final = self.run_fires_in_dir(check_missing=False)
+        df_final, changed = self.run_fires_in_dir(check_missing=False)
         logging.info(
             f"Done running {len(df_final)} fires with a total simulation time"
             f"of {df_final['sim_time'].sum()}"
         )
-        return df_final
+        return df_final, changed
 
     @log_order()
     def prep_fires(self, force=False):
@@ -436,7 +436,7 @@ class Run(object):
         )
         # FIX: save doesn't work with fields in there right now
         # save_geojson(df_final, self._file_fires)
-        return df_final
+        return df_final, changed
 
 
 def make_resume(dir_resume=None, *args, **kwargs):
