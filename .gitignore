@@ -1,6 +1,6 @@
 .vscode
 *.pyc
-data
+**/data
 documentation/*.tag
 documentation/dia
 documentation/doxygen
@@ -11,6 +11,7 @@ documentation/html
 log*.txt
 pyfire/venv
 *.whl
+**/dist
 **/logs
 **/build
 **/private
