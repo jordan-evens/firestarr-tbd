@@ -8,6 +8,7 @@ from azure.storage.blob import BlobServiceClient, ExponentialRetry
 from common import (
     CONFIG,
     DIR_OUTPUT,
+    DIR_SIMS,
     DIR_ZIP,
     FMT_DATE_YMD,
     is_empty,
@@ -74,6 +75,34 @@ def find_latest():
     return os.path.join(DIR_OUTPUT, os.path.splitext(zips[-1])[0])
 
 
+def upload_static():
+    if not read_config():
+        logging.info("Azure not configured so not publishing static files")
+        return False
+    logging.info("Azure configured so publishing static files")
+    dir_bounds = "/appl/data/generated/bounds"
+    files_bounds = [x for x in listdir_sorted(dir_bounds) if x.startswith("bounds.")]
+    if container is None:
+        # wait until we know we need it
+        container = get_container()
+    logging.info("Listing blobs")
+    dir_remote = "static"
+    # delete old blobs
+    blob_list = [
+        x for x in container.list_blobs(name_starts_with=f"{dir_remote}/bounds.")
+    ]
+    for blob in blob_list:
+        logging.info(f"Deleting {blob.name}")
+        container.delete_blob(blob.name)
+    # archive_current(container)
+    for f in files_bounds:
+        logging.info(f"Pushing {f}")
+        path = os.path.join(dir_bounds, f)
+        # HACK: just upload into archive too so we don't have to move later
+        with open(path, "rb") as data:
+            container.upload_blob(name=f"{dir_remote}/{f}", data=data, overwrite=True)
+
+
 def upload_dir(dir_run=None):
     if not read_config():
         logging.info(f"Azure not configured so not publishing {dir_run}")
@@ -110,6 +139,24 @@ def upload_dir(dir_run=None):
     if container is None:
         # wait until we know we need it
         container = get_container()
+    dir_sim_data = os.path.join(DIR_SIMS, run_name, "data")
+    dir_shp = "current_shp"
+    file_root = "df_fires_prioritized"
+    files_group = [
+        x for x in listdir_sorted(dir_sim_data) if x.startswith(f"{file_root}.")
+    ]
+    blob_list = [
+        x for x in container.list_blobs(name_starts_with=f"{dir_shp}/{file_root}")
+    ]
+    for blob in blob_list:
+        logging.info(f"Deleting {blob.name}")
+        container.delete_blob(blob.name)
+    for f in files_group:
+        path = os.path.join(dir_sim_data, f)
+        with open(path, "rb") as data:
+            container.upload_blob(
+                name=f"{dir_shp}/{f}", data=data, metadata=metadata, overwrite=True
+            )
     logging.info("Listing blobs")
     # delete old blobs
     blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]

@@ -371,7 +371,7 @@ class Run(object):
                     while (
                         result is None
                         or isinstance(result, Exception)
-                        or (not np.all(result.get("postprocessed", False)))
+                        # or (not np.all(result.get("postprocessed", False)))
                     ) and tries > 0:
                         logging.warning("Retrying running %s", dir_fire)
                         result = self.do_run_fire(dir_fire)
