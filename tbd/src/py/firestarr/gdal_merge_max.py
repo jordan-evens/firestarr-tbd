@@ -200,6 +200,8 @@ class file_info_max(object):
 
         # Open the source file, and copy the selected region.
         s_fh = gdal.Open(self.filename)
+        if s_fh is None:
+            raise RuntimeError(f"Couldn't open file {self.filename}")
 
         return raster_copy_max(
             s_fh,

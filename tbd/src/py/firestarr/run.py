@@ -2,7 +2,6 @@ import datetime
 import os
 import shutil
 import timeit
-import traceback
 
 import numpy as np
 import pandas as pd
@@ -15,6 +14,7 @@ from common import (
     DIR_SIMS,
     MAX_NUM_DAYS,
     Origin,
+    call_safe,
     do_nothing,
     ensure_dir,
     ensures,
@@ -245,8 +245,8 @@ class Run(object):
             df_fires_prepared = pd.concat([read_gpd_file_safe(f) for f in files_sim])
             save_shp(df_fires_prepared, self._dir_out, "df_fires_prepared.shp")
         except Exception as ex:
-            logging.error(f"Couldn't save prepared fires")
-            logging.error(get_stack(ex))
+            logging.debug("Couldn't save prepared fires")
+            logging.debug(get_stack(ex))
 
     @log_order(show_args=False)
     def prioritize(self, df_fires, df_bounds=None):
@@ -281,13 +281,20 @@ class Run(object):
     @log_order(show_args=["dir_fire"])
     def do_run_fire(self, dir_fire):
         try:
-            return tbd.run_fire_from_folder(
-                dir_fire, self._dir_output, verbose=self._verbose
+            # return tbd.run_fire_from_folder(
+            #     dir_fire, self._dir_output, verbose=self._verbose
+            # )
+            return call_safe(
+                tbd.run_fire_from_folder,
+                dir_fire,
+                self._dir_output,
+                verbose=self._verbose,
             )
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
             logging.error(ex)
+            logging.error(get_stack(ex))
             return None
 
     def find_unprepared(self, df_fires, remove_directory=False):
@@ -438,13 +445,13 @@ class Run(object):
                 min(sim_times),
                 max(sim_times),
             )
+        df_final = pd.concat(
+            [make_gdf_from_series(r, self._crs) for r in results.values()]
+        )
         try:
-            df_final = pd.concat(
-                [make_gdf_from_series(r, self._crs) for r in results.values()]
-            )
             save_shp(df_final, self._dir_out, "df_fires_final.shp")
         except Exception as ex:
-            logging.error(f"Couldn't save final fires")
+            logging.error("Couldn't save final fires")
             logging.error(get_stack(ex))
         return df_final, changed
 

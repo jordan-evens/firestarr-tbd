@@ -101,9 +101,11 @@ def call_safe(fct, *args, **kwargs):
     while True:
         try:
             return fct(*args, **kwargs)
-        except OSError:
-            # ignore OSError because azure is throwing them all the time
-            pass
+        except OSError as ex:
+            # ignore because azure is throwing them all the time
+            # OSError: [Errno 5] Input/output
+            if 5 != ex.errno:
+                raise ex
         except Exception as ex:
             raise ex
 
@@ -285,22 +287,25 @@ def try_remove(paths, verbose=False):
     @param path Path to delete
     @return None
     """
-    if not FLAG_DEBUG and paths:
+    if paths:
         paths = ensure_string_list(paths)
         for path in paths:
-            try:
-                if os.path.isfile(path):
-                    if verbose:
-                        logging.debug("Trying to delete file {}".format(path))
-                    os.remove(path)
-                elif os.path.isdir(path):
-                    if verbose:
-                        logging.debug("Trying to remove directory {}".format(path))
-                    shutil.rmtree(path, ignore_errors=True)
-            except KeyboardInterrupt as ex:
-                raise ex
-            except Exception:
-                pass
+            # remove locks even if debugging
+            # if not FLAG_DEBUG or path.endswith(".lock"):
+            if not FLAG_DEBUG:
+                try:
+                    if os.path.isfile(path):
+                        if verbose:
+                            logging.debug("Trying to delete file {}".format(path))
+                        os.remove(path)
+                    elif os.path.isdir(path):
+                        if verbose:
+                            logging.debug("Trying to remove directory {}".format(path))
+                        shutil.rmtree(path, ignore_errors=True)
+                except KeyboardInterrupt as ex:
+                    raise ex
+                except Exception:
+                    pass
 
 
 def split_line(line):
