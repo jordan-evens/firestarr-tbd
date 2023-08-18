@@ -4,7 +4,6 @@ import math
 import os
 import re
 import sys
-import traceback
 
 import fiona.drvsupport
 import geopandas as gpd
@@ -19,6 +18,7 @@ from common import (
     do_nothing,
     ensure_dir,
     ensures,
+    get_stack,
     is_empty,
     logging,
     try_remove,
@@ -381,7 +381,7 @@ def project_raster(
         input_raster = gdal.Open(filename)
     except RuntimeError as ex:
         logging.error(f"Removing invalid file {filename}")
-        logging.error("".join(traceback.format_exception(ex)))
+        logging.error(get_stack(ex))
         # delete invalid input and return None
         try_remove(filename)
         return None
@@ -458,7 +458,7 @@ def save_geojson(df, path):
         raise ex
     except Exception as ex:
         logging.error(f"Error writing to {file}:\n\t{df}")
-        logging.error("".join(traceback.format_exception(ex)))
+        logging.error(get_stack(ex))
         raise ex
 
 
@@ -483,7 +483,7 @@ def save_shp(df, path):
         raise ex
     except Exception as ex:
         logging.error(f"Error writing to {file}:\n\t{df}")
-        logging.error("".join(traceback.format_exception(ex)))
+        logging.error(get_stack(ex))
         raise ex
 
 

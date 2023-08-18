@@ -19,7 +19,7 @@ else
     FILE_CURRENT=${DIR}/${MODEL}_current
     FILE_TMP=${DIR}/${MODEL}_tmp
     FILE_LOG=${DIR}/${MODEL}_log
-    source /appl/.venv/bin/activate
+    source /appl/.venv/bin/activate || echo No venv
     cd /appl/tbd
     # echo ${CURDATE} >> ${FILE_LOG}
     # copy after trying instead of going right to ${FILE_LATEST} in case curl fails and makes an empty file

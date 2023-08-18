@@ -27,9 +27,9 @@ def merge_safe(*args, **kwargs):
     return call_safe(gdal_merge_max, *args, **kwargs)
 
 
-def publish_all(dir_current=None, force=False):
+def publish_all(dir_current=None, force=False, force_project=False):
     dir_current = find_latest_outputs(dir_current)
-    merge_dirs(dir_current, force=force)
+    merge_dirs(dir_current, force=force, force_project=force_project)
     import publish_azure
 
     publish_azure.upload_dir(dir_current)
@@ -40,7 +40,13 @@ def publish_all(dir_current=None, force=False):
     publish_geoserver.publish_folder(dir_current)
 
 
-def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
+def merge_dir(
+    dir_base,
+    run_id,
+    force=False,
+    force_project=False,
+    creation_options=CREATION_OPTIONS,
+):
     logging.info("Merging {}".format(dir_base))
     co = list(
         itertools.chain.from_iterable(map(lambda x: ["-co", x], creation_options))
@@ -83,7 +89,7 @@ def merge_dir(dir_base, run_id, force=False, creation_options=CREATION_OPTIONS):
             nonlocal changed
             f_crs = os.path.join(dir_crs, os.path.basename(f))
             # don't project if file already exists, but keep track of file for merge
-            if not os.path.isfile(f_crs):
+            if force_project or not os.path.isfile(f_crs):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full extent of the UTM zone?)
                 b = gis.project_raster(
@@ -181,7 +187,7 @@ def find_latest_outputs(dir_output=None):
     return dir_output
 
 
-def merge_dirs(dir_input=None, dates=None, force=False):
+def merge_dirs(dir_input=None, dates=None, force=False, force_project=False):
     dir_input = find_latest_outputs(dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_initial = os.path.join(dir_input, "initial")
@@ -189,7 +195,7 @@ def merge_dirs(dir_input=None, dates=None, force=False):
         return None
     run_name = os.path.basename(dir_input)
     run_id = run_name[run_name.index("_") + 1 :]
-    result = merge_dir(dir_initial, run_id, force=force)
+    result = merge_dir(dir_initial, run_id, force=force, force_project=force_project)
     logging.info("Final results of merge are in %s", result)
     run_id = os.path.basename(dir_input)
     file_zip = os.path.join(DIR_ZIP, f"{run_name}.zip")

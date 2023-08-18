@@ -93,6 +93,10 @@ DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
 
 
+def get_stack(ex):
+    return "".join(traceback.format_exception(ex))
+
+
 def call_safe(fct, *args, **kwargs):
     while True:
         try:
@@ -575,7 +579,7 @@ def ensure(
                     except KeyboardInterrupt as ex:
                         raise ex
                     except Exception as ex:
-                        logging.error("".join(traceback.format_exception(ex)))
+                        logging.error(get_stack(ex))
                         ex_current = ex
                         retries -= 1
                 if ex_current is not None:
@@ -671,7 +675,7 @@ def ensures(
                     raise ex
                 except Exception as ex:
                     logging.error(f"Failed getting file: {ex}")
-                    logging.error("".join(traceback.format_exception(ex)))
+                    logging.error(get_stack(ex))
                     # failed getting file
                     ex_current = ex
                 retries -= 1

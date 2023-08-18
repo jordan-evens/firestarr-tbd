@@ -18,6 +18,7 @@ from common import (
     do_nothing,
     ensure_dir,
     ensures,
+    get_stack,
     list_dirs,
     locks_for,
     log_entry_exit,
@@ -228,18 +229,24 @@ class Run(object):
                 raise ex
             except Exception as ex:
                 logging.error(f"Error processing fire {fire_name}")
-                logging.error("".join(traceback.format_exception(ex)))
+                logging.error(get_stack(ex))
                 raise ex
 
         list_rows = list(zip(*list(df_fires.reset_index().iterrows())))[1]
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
         # for row_fire in list_rows:
         #     do_fire(row_fire)
-        tqdm_util.pmap(
+        files_sim = tqdm_util.pmap(
             do_fire,
             list_rows,
             desc="Preparing groups",
         )
+        try:
+            df_fires_prepared = pd.concat([read_gpd_file_safe(f) for f in files_sim])
+            save_shp(df_fires_prepared, self._dir_out, "df_fires_prepared.shp")
+        except Exception as ex:
+            logging.error(f"Couldn't save prepared fires")
+            logging.error(get_stack(ex))
 
     @log_order(show_args=False)
     def prioritize(self, df_fires, df_bounds=None):
@@ -431,11 +438,14 @@ class Run(object):
                 min(sim_times),
                 max(sim_times),
             )
-        df_final = pd.concat(
-            [make_gdf_from_series(r, self._crs) for r in results.values()]
-        )
-        # FIX: save doesn't work with fields in there right now
-        # save_geojson(df_final, self._file_fires)
+        try:
+            df_final = pd.concat(
+                [make_gdf_from_series(r, self._crs) for r in results.values()]
+            )
+            save_shp(df_final, self._dir_out, "df_fires_final.shp")
+        except Exception as ex:
+            logging.error(f"Couldn't save final fires")
+            logging.error(get_stack(ex))
         return df_final, changed
 
 

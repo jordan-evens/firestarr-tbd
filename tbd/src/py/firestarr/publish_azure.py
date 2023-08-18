@@ -76,6 +76,7 @@ def find_latest():
 
 
 def upload_static():
+    global container
     if not read_config():
         logging.info("Azure not configured so not publishing static files")
         return False
