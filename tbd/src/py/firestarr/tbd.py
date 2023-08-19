@@ -144,7 +144,7 @@ def get_simulation_file(dir_fire):
     return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
 
 
-def copy_fire_outputs(dir_fire, dir_output, changed):
+def copy_fire_outputs(dir_fire, dir_output, changed, suffix=""):
     # simulation was done or is now, but outputs don't exist
     logging.debug(f"Collecting outputs from {dir_fire}")
     fire_name = os.path.basename(dir_fire)
@@ -158,7 +158,7 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
         d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
         # FIX: want all of these to be output at the size of the largest?
         # FIX: still doesn't show whole area that was simulated
-        file_out = os.path.join(dir_region, d, fire_name + ".tif")
+        file_out = os.path.join(dir_region, d, f"{fire_name}{suffix}.tif")
         if changed or not os.path.isfile(file_out):
             extent = project_raster(os.path.join(dir_fire, prob), file_out, nodata=None)
             if extent is None:
@@ -180,7 +180,7 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
         )
     ]
     if len(perims) > 0:
-        file_out = os.path.join(dir_region, "perim", fire_name + ".tif")
+        file_out = os.path.join(dir_region, "perim", f"{fire_name}{suffix}.tif")
         if changed or not os.path.isfile(file_out):
             perim = perims[0]
             logging.debug(f"Adding raster to final outputs: {perim}")

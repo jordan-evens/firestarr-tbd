@@ -4,6 +4,7 @@ bs4
 ConfigParser
 filelock
 geopandas
+ipython
 multiprocess
 numpy
 pandas

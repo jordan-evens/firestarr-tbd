@@ -91,8 +91,7 @@ def make_spotwx_parse(need_column, fct_parse=None, expected_value=None):
     return do_parse
 
 
-@cache
-def get_model_dir(model):
+def get_model_dir_uncached(model):
     # request middle of bounds since point shouldn't change model time
     lat = BOUNDS["latitude"]["mid"]
     lon = BOUNDS["longitude"]["mid"]
@@ -116,6 +115,21 @@ def get_model_dir(model):
         fct_pre_save=limit_api,
         fct_post_save=make_spotwx_parse("modelrun", do_parse),
     )
+
+
+# HACK: allow setting so it doesn't use current all the time
+_MODEL_DIR = None
+
+
+def set_model_dir(dir_model):
+    global _MODEL_DIR
+    _MODEL_DIR = dir_model
+
+
+@cache
+def get_model_dir(model):
+    global _MODEL_DIR
+    return _MODEL_DIR or get_model_dir_uncached(model)
 
 
 def get_rounding():

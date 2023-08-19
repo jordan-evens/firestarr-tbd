@@ -1,7 +1,20 @@
 import os
 import sys
+import time
 
-from common import DEFAULT_FILE_LOG_LEVEL, DIR_LOG, DIR_OUTPUT, logging
+import pandas as pd
+from common import (
+    DEFAULT_FILE_LOG_LEVEL,
+    DIR_LOG,
+    DIR_OUTPUT,
+    FILE_CURRENT,
+    FILE_LATEST,
+    SECONDS_PER_MINUTE,
+    WX_MODEL,
+    locks_for,
+    logging,
+)
+from datasources.spotwx import get_model_dir_uncached, set_model_dir
 from log import add_log_rotating
 from run import Run, make_resume
 
@@ -9,7 +22,7 @@ LOG_MAIN = add_log_rotating(
     os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
 )
 logging.info("Starting main.py")
-
+WAIT_WX = SECONDS_PER_MINUTE * 5
 
 sys.path.append(os.path.dirname(sys.executable))
 sys.path.append("/usr/local/bin")
@@ -30,8 +43,31 @@ if __name__ == "__main__":
     do_resume, args = check_arg("--resume", args)
     no_publish, args = check_arg("--no-publish", args)
     no_merge, args = check_arg("--no-merge", args)
+    no_wait, args = check_arg("--no-wait", args)
     do_publish = not no_publish
     do_merge = not no_merge
+    do_wait = not no_wait
+    if do_wait:
+        # want to make sure that we're going to run this with new weather
+        wx_updated = False
+        with locks_for([FILE_CURRENT, FILE_LATEST]):
+            current = pd.read_csv(FILE_CURRENT)
+            latest = pd.read_csv(FILE_LATEST)
+            wx_updated = not current.equals(latest)
+        while True:
+            dir_model = get_model_dir_uncached(WX_MODEL)
+            modelrun = os.path.basename(dir_model)
+            # HACK: just trying to check if run used this weather
+            prev = make_resume(do_publish=False, do_merge=False)
+            wx_updated = prev._modelrun != modelrun
+            if wx_updated:
+                # HACK: need to set this so cache isn't used
+                set_model_dir(dir_model)
+                break
+            logging.info(
+                f"Previous run already used {modelrun} - waiting {WAIT_WX}s for updated weather"
+            )
+            time.sleep(WAIT_WX)
     if do_resume:
         if 1 < len(args):
             logging.fatal(f"Too many arguments:\n\t {sys.argv}")
@@ -57,4 +93,4 @@ if __name__ == "__main__":
                 do_publish=do_publish,
                 do_merge=do_merge,
             )
-    df_final, changed = run.process()
+    df_final = run.run_until_successful()

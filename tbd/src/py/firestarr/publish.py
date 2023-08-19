@@ -20,24 +20,27 @@ from common import (
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
-from tqdm_util import pmap, tqdm
+from tqdm_util import tqdm
 
 
 def merge_safe(*args, **kwargs):
     return call_safe(gdal_merge_max, *args, **kwargs)
 
 
-def publish_all(dir_current=None, force=False, force_project=False):
+def publish_all(dir_current=None, changed_only=True, force=False, force_project=False):
     dir_current = find_latest_outputs(dir_current)
-    merge_dirs(dir_current, force=force, force_project=force_project)
-    import publish_azure
+    changed = merge_dirs(
+        dir_current, changed_only=changed_only, force=force, force_project=force_project
+    )
+    if changed or force:
+        import publish_azure
 
-    publish_azure.upload_dir(dir_current)
-    # HACK: might be my imagination, but maybe there's a delay so wait a bit
-    time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
-    import publish_geoserver
+        publish_azure.upload_dir(dir_current)
+        # HACK: might be my imagination, but maybe there's a delay so wait a bit
+        time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
+        import publish_geoserver
 
-    publish_geoserver.publish_folder(dir_current)
+        publish_geoserver.publish_folder(dir_current)
 
 
 def find_latest_outputs(dir_output=None):
@@ -61,15 +64,17 @@ def find_latest_outputs(dir_output=None):
 
 def merge_dirs(
     dir_input=None,
+    changed_only=True,
     force=False,
     force_project=False,
     creation_options=CREATION_OPTIONS,
 ):
+    any_change = False
     dir_input = find_latest_outputs(dir_input)
     # expecting dir_input to be a path ending in a runid of form '%Y%m%d%H%M'
     dir_base = os.path.join(dir_input, "initial")
     if not os.path.isdir(dir_base):
-        return None
+        raise RuntimeError(f"Directory {dir_base} missing")
     run_name = os.path.basename(dir_input)
     run_id = run_name[run_name.index("_") + 1 :]
     logging.info("Merging {}".format(dir_base))
@@ -108,10 +113,9 @@ def merge_dirs(
             dir_for_what = f"day_{offset:02d}"
             description = "probability"
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
-        changed = False
 
         def reproject(f):
-            nonlocal changed
+            changed = False
             f_crs = os.path.join(dir_crs, os.path.basename(f))
             # don't project if file already exists, but keep track of file for merge
             if force_project or not os.path.isfile(f_crs):
@@ -127,10 +131,17 @@ def merge_dirs(
                 if b is None:
                     return b
                 changed = True
-            return f_crs
+            return changed, f_crs
 
-        files_crs = pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
-        files_crs = [x for x in files_crs if x is not None]
+        results_crs = [
+            reproject(f)
+            for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}")
+        ]
+        # results_crs = pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
+        results_crs = [x for x in results_crs if x is not None]
+        files_crs = [x[1] for x in results_crs]
+        files_crs_changed = [x[1] for x in results_crs if x[0]]
+        changed = 0 < len(files_crs_changed)
         file_root = os.path.join(
             dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
         )
@@ -146,8 +157,10 @@ def merge_dirs(
             #       in case it's merging into existing and causing problems
             if os.path.isfile(file_tmp):
                 os.remove(file_tmp)
-            if os.path.isfile(file_base):
-                os.remove(file_base)
+            if changed_only and os.path.isfile(file_base):
+                files_merge = files_crs_changed + [file_base]
+            else:
+                files_merge = files_crs
             merge_safe(
                 (
                     [
@@ -160,9 +173,11 @@ def merge_dirs(
                     ]
                     + co
                     + ["-o", file_tmp]
-                    + files_crs
+                    + files_merge
                 )
             )
+            if os.path.isfile(file_base):
+                os.remove(file_base)
             if "GTiff" == FORMAT_OUTPUT:
                 shutil.move(file_tmp, file_base)
             else:
@@ -186,12 +201,15 @@ def merge_dirs(
                     ],
                 )
                 os.remove(file_tmp)
+            changed = True
+            any_change = any_change or changed
         else:
             logging.info(f"Output already exists for {file_base}")
 
     logging.info("Final results of merge are in %s", dir_out)
     run_id = os.path.basename(dir_input)
     file_zip = os.path.join(DIR_ZIP, f"{run_name}.zip")
-    logging.info("Creating archive %s", file_zip)
-    zip_folder(file_zip, dir_out)
-    return dir_out
+    if any_change or not os.path.isfile(file_zip):
+        logging.info("Creating archive %s", file_zip)
+        zip_folder(file_zip, dir_out)
+    return any_change

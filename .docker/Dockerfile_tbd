@@ -129,7 +129,7 @@ USER ${USERNAME}
 ENTRYPOINT /bin/bash
 
 FROM tbd_prod AS tbd_prod_stable
-ENTRYPOINT /bin/bash -c "cd /appl/tbd && /appl/tbd/scripts/lock_run.sh"
+ENTRYPOINT /bin/bash -c "cd /appl/tbd && /appl/tbd/scripts/force_run.sh"
 
 FROM tbd_prod AS tbd_prod_svc
 USER root

@@ -1,6 +1,5 @@
 """Ontario's publicly available data"""
 import datetime
-import json
 import os
 import urllib.parse
 from collections import Counter
@@ -20,6 +19,7 @@ from common import (
     is_empty,
     locks_for,
     logging,
+    read_json_safe,
     remove_timezone_utc,
     try_remove,
 )
@@ -77,9 +77,9 @@ def parse_by_extension(path):
     format = os.path.splitext(path)[-1][1:]
     if "geojson" == format:
         return fix_dates(read_gpd_file_safe(path))
+    if "pjson" == format:
+        return read_json_safe(path)
     with open(path) as f:
-        if "pjson" == format:
-            return json.load(f)
         return f.readlines()
 
 

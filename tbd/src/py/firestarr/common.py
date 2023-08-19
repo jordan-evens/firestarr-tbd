@@ -25,7 +25,7 @@ from filelock import FileLock
 from log import logging
 from osgeo import gdal
 
-FLAG_DEBUG = False
+FLAG_DEBUG = True
 
 NUM_RETRIES = 5
 
@@ -46,6 +46,10 @@ MAX_NUM_DAYS = 14
 DEFAULT_M3_LAST_ACTIVE = datetime.timedelta(days=30)
 DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS = 1
 DEFAULT_LAST_ACTIVE_SINCE_OFFSET = None
+
+WX_MODEL = "geps"
+FILE_CURRENT = f"/appl/data/{WX_MODEL}_current"
+FILE_LATEST = f"/appl/data/{WX_MODEL}_latest"
 
 PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
 
@@ -242,9 +246,7 @@ def read_config(force=False):
         if not os.path.isfile(file_bounds):
             if DEFAULT_BOUNDS == file_bounds:
                 logging.fatal("Default bounds specified but file does not exist")
-                raise RuntimeError(
-                    "Default bounds specified but file does not exist"
-                )
+                raise RuntimeError("Default bounds specified but file does not exist")
         BOUNDS = {
             "latitude": {
                 "min": float(CONFIG["BOUNDS_LATITUDE_MIN"]),
@@ -402,10 +404,11 @@ def zip_folder(zip_name, path):
 
 
 def dump_json(data, path):
-    dir = os.path.dirname(path)
+    dir_out = os.path.dirname(path)
     base = os.path.splitext(os.path.basename(path))[0]
-    file = os.path.join(dir, f"{base}.json")
+    file = os.path.join(dir_out, f"{base}.json")
 
+    @ensures(paths=file, remove_on_exception=True)
     def fct_create(_):
         # NOTE: json.dumps() first and then write string so
         #      file is okay if dump fails
@@ -416,9 +419,17 @@ def dump_json(data, path):
             # HACK: not getting full string when using f.write(s)
             json.dump(data, f)
             # f.write(s)
+        return _
 
-    with ensure(file, fct_create, True, msg=f"Error writing to {file}:\n\t{data}"):
-        return file
+    return call_safe(fct_create, file)
+
+
+def read_json_safe(path):
+    def do_read(_):
+        with open(_) as f:
+            return json.load(f)
+
+    return call_safe(do_read, path)
 
 
 def pick_max(a, b):

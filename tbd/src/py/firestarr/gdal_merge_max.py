@@ -32,6 +32,7 @@
 # # anssi.pekkarinen@fao.org
 
 import math
+import os
 
 import numpy as np
 from osgeo import gdal
@@ -204,6 +205,8 @@ class file_info_max(object):
             return 1
 
         # Open the source file, and copy the selected region.
+        if not os.path.isfile(self.filename):
+            raise RuntimeError(f"No such file {self.filename}")
         s_fh = gdal.Open(self.filename)
         if s_fh is None:
             raise RuntimeError(f"Couldn't open file {self.filename}")
