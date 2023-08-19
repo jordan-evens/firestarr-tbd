@@ -47,7 +47,7 @@ from gis import (
 from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
 from simulation import Simulation
-from tqdm_util import tqdm
+from tqdm_util import pmap, tqdm
 
 import tbd
 from tbd import (
@@ -251,12 +251,13 @@ class Run(object):
         has_temp = {}
 
         if is_incomplete:
-            for dir_fire, df_fire in tqdm(
-                is_incomplete.items(),
-                total=len(is_incomplete),
-                desc="Fixing incomplete",
-            ):
-                self.do_run_fire(dir_fire)
+            pmap(self.do_run_fire, is_complete.keys(), desc="Fixing incomplete")
+            # for dir_fire, df_fire in tqdm(
+            #     is_incomplete.items(),
+            #     total=len(is_incomplete),
+            #     desc="Fixing incomplete",
+            # ):
+            #     self.do_run_fire(dir_fire)
 
         dir_output = self._dir_output
         dir_tmp = ensure_dir(os.path.join(self._dir_out, "tmp"))
@@ -273,9 +274,10 @@ class Run(object):
         def remove_files_tmp(check=False):
             shutil.rmtree(dir_tmp)
             files_tmp = find_files_tmp()
-            print(f"Removing {files_tmp}")
-            for f in files_tmp:
-                os.remove(f)
+            if files_tmp:
+                print(f"Removing {files_tmp}")
+                for f in files_tmp:
+                    os.remove(f)
             if check:
                 files_tmp = find_files_tmp()
                 if files_tmp:
@@ -290,6 +292,10 @@ class Run(object):
         ):
             probs, interim = find_outputs(dir_fire)
             if probs:
+                # already have final outputs so leave alone
+                continue
+            if not interim:
+                logging.info(f"No interim outputs yet for {dir_fire}")
                 continue
             dir_tmp_fire = os.path.join(dir_tmp, os.path.basename(dir_fire))
             shutil.copytree(dir_fire, dir_tmp_fire)
@@ -537,6 +543,7 @@ class Run(object):
         }
         # run for each boundary in order
         changed = False
+        any_change = False
         results = {}
         sim_time = 0
         sim_times = []
@@ -547,6 +554,7 @@ class Run(object):
         @log_order()
         def check_publish(g, sim_results):
             nonlocal changed
+            nonlocal any_change
             nonlocal sim_time
             nonlocal sim_times
             nonlocal results
@@ -588,6 +596,7 @@ class Run(object):
                                 cur_time = int(cur_time)
                                 sim_time += cur_time
                                 sim_times.append(cur_time)
+                any_change = any_change or changed
                 if self._do_publish and changed:
                     n = len(sim_times)
                     logging.info(
@@ -597,6 +606,8 @@ class Run(object):
                     )
                     publish_all(self._dir_output, force=changed)
                     logging.debug(f"Done publishing results for {g}")
+                    # no longer changed because we just published
+                    changed = False
                 else:
                     if merge_dirs(self._dir_output, force=changed):
                         # merge resulted in change
@@ -632,7 +643,7 @@ class Run(object):
         except Exception as ex:
             logging.error("Couldn't save final fires")
             logging.error(get_stack(ex))
-        return df_final, changed
+        return df_final, any_change
 
 
 def make_resume(dir_resume=None, *args, **kwargs):
