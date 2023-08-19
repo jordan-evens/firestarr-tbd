@@ -1,3 +1,4 @@
+import datetime
 import os
 import sys
 import time
@@ -15,11 +16,13 @@ from common import (
     logging,
 )
 from datasources.spotwx import get_model_dir_uncached, set_model_dir
-from log import add_log_rotating
+from log import add_log_file
 from run import Run, make_resume
 
-LOG_MAIN = add_log_rotating(
-    os.path.join(DIR_LOG, "firestarr.log"), level=DEFAULT_FILE_LOG_LEVEL
+# NOTE: rotating log file doesn't help because this isn't continuously running
+LOG_MAIN = add_log_file(
+    os.path.join(DIR_LOG, f"firestarr_{datetime.date.today().strftime('%Y%m%d')}.log"),
+    level=DEFAULT_FILE_LOG_LEVEL,
 )
 logging.info("Starting main.py")
 WAIT_WX = SECONDS_PER_MINUTE * 5
