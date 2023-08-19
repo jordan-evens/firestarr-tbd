@@ -152,6 +152,8 @@ MINUTES_PER_HOUR = 60
 SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 
+DEFAULT_BOUNDS = "bounds.geojson"
+
 
 def listdir_sorted(path):
     return sorted(os.listdir(path))
@@ -181,7 +183,8 @@ def read_config(force=False):
             "BOUNDS_LATITUDE_MAX": "84",
             "BOUNDS_LONGITUDE_MIN": "-141",
             "BOUNDS_LONGITUDE_MAX": "-52",
-            "BOUNDS_FILE": "",
+            # use bounds from local directory if not specified
+            "BOUNDS_FILE": DEFAULT_BOUNDS,
             "SPOTWX_API_KEY": "",
             "SPOTWX_API_LIMITs": "150",
             "AZURE_URL": "",
@@ -229,6 +232,19 @@ def read_config(force=False):
         for k, v in config.items("GLOBAL"):
             v = v.strip('"') if v.startswith('"') and v.endswith('"') else v.strip("'")
             CONFIG[k.upper()] = v
+        file_bounds = CONFIG["BOUNDS_FILE"]
+        if not os.path.isfile(file_bounds):
+            if DEFAULT_BOUNDS != file_bounds:
+                logging.warning(
+                    f"Bounds specified as {file_bounds} but not found - reverting to {DEFAULT_BOUNDS}"
+                )
+                file_bounds = DEFAULT_BOUNDS
+        if not os.path.isfile(file_bounds):
+            if DEFAULT_BOUNDS == file_bounds:
+                logging.fatal("Default bounds specified but file does not exist")
+                raise RuntimeError(
+                    "Default bounds specified but file does not exist"
+                )
         BOUNDS = {
             "latitude": {
                 "min": float(CONFIG["BOUNDS_LATITUDE_MIN"]),
@@ -238,7 +254,7 @@ def read_config(force=False):
                 "min": float(CONFIG["BOUNDS_LONGITUDE_MIN"]),
                 "max": float(CONFIG["BOUNDS_LONGITUDE_MAX"]),
             },
-            "bounds": CONFIG["BOUNDS_FILE"],
+            "bounds": file_bounds,
         }
         for k in ["latitude", "longitude"]:
             high, low = BOUNDS[k]["max"], BOUNDS[k]["min"]

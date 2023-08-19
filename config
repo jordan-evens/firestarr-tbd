@@ -16,7 +16,7 @@ BOUNDS_LONGITUDE_MIN=-141
 BOUNDS_LONGITUDE_MAX=-52
 
 # area to look at for simulations
-BOUNDS_FILE="bounds.geojson"
+BOUNDS_FILE="/appl/data/bounds.geojson"
 
 # requires a spotwx.io API key to get ensemble weather
 SPOTWX_API_KEY=
