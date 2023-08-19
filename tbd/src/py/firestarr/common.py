@@ -100,17 +100,25 @@ DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 def get_stack(ex):
     return "".join(traceback.format_exception(ex))
 
+from fiona.errors import FionaError
+
 
 def call_safe(fct, *args, **kwargs):
     retries = NUM_RETRIES
     while True:
         try:
             return fct(*args, **kwargs)
-        except OSError as ex:
+        except Exception as ex:
+            str_stack = get_stack(ex)
+            ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
+            ignore_ok = ignore_ok or (
+                isinstance(ex, FionaError)
+                and "Input/output error" in str_stack
+            )
             # ignore because azure is throwing them all the time
             # OSError: [Errno 5] Input/output
-            if retries <= 0 or 5 != ex.errno:
-                logging.error(get_stack(ex))
+            if retries <= 0 or not ignore_ok:
+                logging.error(str_stack)
                 raise ex
             retries -= 1
         except Exception as ex:

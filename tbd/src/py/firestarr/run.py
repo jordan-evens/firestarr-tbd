@@ -417,7 +417,9 @@ class Run(object):
             desc="Preparing groups",
         )
         try:
-            df_fires_prepared = pd.concat([read_gpd_file_safe(f) for f in files_sim])
+            df_fires_prepared = pd.concat(
+                [read_gpd_file_safe(get_simulation_file(f)) for f in files_sim]
+            )
             save_shp(df_fires_prepared, self._dir_out, "df_fires_prepared.shp")
         except Exception as ex:
             logging.debug("Couldn't save prepared fires")
