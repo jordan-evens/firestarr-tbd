@@ -39,6 +39,7 @@ from osgeo_utils.auxiliary.util import GetOutputDriverFor
 
 # import logging
 from tqdm import tqdm
+from tqdm_util import pmap
 
 __version__ = "$id$"[5:-1]
 
@@ -69,11 +70,15 @@ def names_to_fileinfos(names):
     than names if some of the names could not be opened as GDAL files.
     """
 
-    file_infos = []
-    for name in names:
+    def init(name):
         fi = file_info_max()
         if fi.init_from_name(name) == 1:
-            file_infos.append(fi)
+            return fi
+        return None
+
+    file_infos = pmap(init, names, desc="Getting merge input file info")
+    # HACK: looks like it just ignored things it couldn't load?
+    file_infos = [x for x in file_infos if x is not None]
 
     return file_infos
 
@@ -456,7 +461,7 @@ def gdal_merge_max(argv=None):
         fi_processed = 0
 
         # gdal.PushErrorHandler("CPLQuietErrorHandler")
-        for fi in tqdm(file_infos):
+        for fi in tqdm(file_infos, desc=f"Merging into {out_file}"):
             if createonly != 0:
                 continue
 

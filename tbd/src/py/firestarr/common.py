@@ -98,14 +98,17 @@ def get_stack(ex):
 
 
 def call_safe(fct, *args, **kwargs):
+    retries = 0
     while True:
         try:
             return fct(*args, **kwargs)
         except OSError as ex:
             # ignore because azure is throwing them all the time
             # OSError: [Errno 5] Input/output
-            if 5 != ex.errno:
+            if retries <= 0 or 5 != ex.errno:
+                logging.error(get_stack(ex))
                 raise ex
+            retries -= 1
         except Exception as ex:
             raise ex
 
