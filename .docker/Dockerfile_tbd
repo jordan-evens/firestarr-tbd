@@ -94,7 +94,7 @@ FROM minideb-with_user AS py_gdal
 RUN apt-get install -y --no-install-recommends \
   cron curl nano procps psmisc tar util-linux unzip wget zip \
   python3-pip libgdal-dev libgeotiff5 python3-numpy python3-gdal \
-  ministat sysstat \
+  ministat sysstat rsync \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
   && apt-get clean \
   && rm -rf \

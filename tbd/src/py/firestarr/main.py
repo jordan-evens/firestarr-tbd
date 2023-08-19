@@ -51,26 +51,37 @@ if __name__ == "__main__":
     do_merge = not no_merge
     do_wait = not no_wait
     if do_wait:
-        # want to make sure that we're going to run this with new weather
-        wx_updated = False
-        with locks_for([FILE_CURRENT, FILE_LATEST]):
-            current = pd.read_csv(FILE_CURRENT)
-            latest = pd.read_csv(FILE_LATEST)
-            wx_updated = not current.equals(latest)
-        while True:
-            dir_model = get_model_dir_uncached(WX_MODEL)
-            modelrun = os.path.basename(dir_model)
-            # HACK: just trying to check if run used this weather
-            prev = make_resume(do_publish=False, do_merge=False)
-            wx_updated = prev._modelrun != modelrun
-            if wx_updated:
-                # HACK: need to set this so cache isn't used
-                set_model_dir(dir_model)
-                break
-            logging.info(
-                f"Previous run already used {modelrun} - waiting {WAIT_WX}s for updated weather"
-            )
-            time.sleep(WAIT_WX)
+
+        def wait_and_check_resume():
+            # want to make sure that we're going to run this with new weather
+            wx_updated = False
+            with locks_for([FILE_CURRENT, FILE_LATEST]):
+                current = pd.read_csv(FILE_CURRENT)
+                latest = pd.read_csv(FILE_LATEST)
+                wx_updated = not current.equals(latest)
+            while True:
+                dir_model = get_model_dir_uncached(WX_MODEL)
+                modelrun = os.path.basename(dir_model)
+                # HACK: just trying to check if run used this weather
+                prev = make_resume(do_publish=False, do_merge=False)
+                wx_updated = prev._modelrun != modelrun
+                if not wx_updated and not prev._published_clean:
+                    logging.info("Found previous run and trying to resume")
+                    # previous run is for same time, but didn't work
+                    return True
+                if wx_updated:
+                    # HACK: need to set this so cache isn't used
+                    set_model_dir(dir_model)
+                    break
+                logging.info(
+                    f"Previous run already used {modelrun} - waiting {WAIT_WX}s for updated weather"
+                )
+                time.sleep(WAIT_WX)
+            # have new weather so don't resume
+            return False
+
+        should_resume = wait_and_check_resume()
+        do_resume = do_resume or should_resume
     if do_resume:
         if 1 < len(args):
             logging.fatal(f"Too many arguments:\n\t {sys.argv}")

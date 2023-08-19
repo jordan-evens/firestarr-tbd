@@ -102,7 +102,7 @@ def get_stack(ex):
 
 
 def call_safe(fct, *args, **kwargs):
-    retries = 0
+    retries = NUM_RETRIES
     while True:
         try:
             return fct(*args, **kwargs)
@@ -549,6 +549,8 @@ def locks_for(paths):
             except FileNotFoundError:
                 # lock is missing, so must have been deleted
                 pass
+            except Exception as ex:
+                logging.error(get_stack(ex))
         yield locks
     finally:
         for lock in locks:

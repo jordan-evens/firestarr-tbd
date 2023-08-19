@@ -168,25 +168,36 @@ class Run(object):
         self._crs = crs
         self._file_fires = os.path.join(self._dir_out, "df_fires_prioritized.shp")
         self._file_rundata = os.path.join(self._dir_out, "run.json")
+        self.load_rundata()
+        if not self._modelrun:
+            self._modelrun = os.path.basename(get_model_dir(WX_MODEL))
+        self.save_rundata()
+        # UTC time
+        self._origin = Origin(self._start_time)
+        self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
+        self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
+
+    def load_rundata(self):
         self._modelrun = None
+        self._published_clean = False
         if os.path.isfile(self._file_rundata):
             try:
                 # FIX: reorganize this or use a dictionary for other values?
                 rundata = read_json_safe(self._file_rundata)
-                self._modelrun = rundata["modelrun"]
+                self._modelrun = rundata.get("modelrun", None)
+                self._published_clean = rundata.get("published_clean", False)
             except Exception as ex:
                 logging.error(
                     f"Couldn't load existing simulation file {self._file_rundata}"
                 )
                 logging.error(get_stack(ex))
-        if not self._modelrun:
-            self._modelrun = os.path.basename(get_model_dir(WX_MODEL))
-        rundata = {"modelrun": self._modelrun}
+
+    def save_rundata(self):
+        rundata = {
+            "modelrun": self._modelrun,
+            "published_clean": self._published_clean,
+        }
         dump_json(rundata, self._file_rundata)
-        # UTC time
-        self._origin = Origin(self._start_time)
-        self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
-        self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
 
     def is_running(self):
         df_fires = self.load_fires()
@@ -331,6 +342,7 @@ class Run(object):
                     logging.error(
                         "Changes found when publishing, but nothing running so retry"
                     )
+        self._published_clean = True
         logging.info("Finished simulation for {self._run_id}")
         return df_final
 
