@@ -2,16 +2,43 @@ import collections
 import contextlib
 import itertools
 
-import multiprocess as mp
+import multiprocess
+import multiprocess.pool
+import multiprocess.queues
 import numpy as np
 import pandas as pd
+from multiprocess.reduction import ForkingPickler
+from redundancy import call_safe
 from tqdm.auto import tqdm
 
-MAX_PROCESSES = mp.cpu_count()
-TQDM_DEPTH = mp.Value("i", 0)
+MAX_PROCESSES = multiprocess.cpu_count()
+TQDM_DEPTH = multiprocess.Value("i", 0)
 DEFAULT_KEEP_ALL = True
 KEEP_LEVELS = 2
 TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
+
+
+def get_safe(self):
+    with self._rlock:
+        res = self._reader.recv_bytes()
+    # unserialize the data after having released the lock
+    return call_safe(ForkingPickler.loads, res)
+
+
+def put_safe(self, obj):
+    # serialize the data before acquiring the lock
+    obj = call_safe(ForkingPickler.dumps, obj)
+    if self._wlock is None:
+        # writes to a message oriented win32 pipe are atomic
+        self._writer.send_bytes(obj)
+    else:
+        with self._wlock:
+            self._writer.send_bytes(obj)
+
+
+# HACK: try overriding methods for Pool pickling to prevent azure i/o errors
+multiprocess.queues.SimpleQueue.get = get_safe
+multiprocess.queues.SimpleQueue.put = put_safe
 
 
 @contextlib.contextmanager
@@ -74,7 +101,11 @@ def init_pool(processes=None, no_limit=False):
         # no point in starting more than the number of cpus?
         processes = min(processes, MAX_PROCESSES)
     # ignore Ctrl+C in workers
-    return mp.Pool(initializer=initializer, processes=processes)
+    return multiprocess.pool.Pool(
+        initializer=initializer,
+        # context=SafeForkContext(),
+        processes=processes,
+    )
 
 
 def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
@@ -86,7 +117,8 @@ def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
         kwargs["total"] = len(values)
         results = apply(
             pool.imap_unordered(
-                lambda p: (p[0], fct(p[1])), [(i, v) for i, v in enumerate(values)]
+                lambda p: (p[0], fct(p[1])),
+                [(i, v) for i, v in enumerate(values)],
             ),
             *args,
             **kwargs,

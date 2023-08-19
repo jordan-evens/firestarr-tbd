@@ -6,7 +6,6 @@ import pandas as pd
 import pytz
 from common import (
     FLAG_DEBUG,
-    NUM_RETRIES,
     SECONDS_PER_HOUR,
     cffdrs,
     ensures,
@@ -25,6 +24,7 @@ from datasources.default import (
     wx_interpolate,
 )
 from gis import read_gpd_file_safe, save_geojson
+from redundancy import NUM_RETRIES
 from timezonefinder import TimezoneFinder
 
 from tbd import get_simulation_file

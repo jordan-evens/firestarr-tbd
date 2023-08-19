@@ -12,14 +12,15 @@ from common import (
     FMT_DATE_YMD,
     FORMAT_OUTPUT,
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
-    call_safe,
     ensure_dir,
+    ensures,
     list_dirs,
     listdir_sorted,
     logging,
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
+from redundancy import NUM_RETRIES, call_safe
 from tqdm_util import tqdm
 
 
@@ -153,29 +154,36 @@ def merge_dirs(
         #     + files_crs)
         # no point in doing this if nothing was added
         if force or changed or not os.path.isfile(file_base):
-            # HACK: seems like currently making empty combined raster so delete first
-            #       in case it's merging into existing and causing problems
             if os.path.isfile(file_tmp):
                 os.remove(file_tmp)
-            if changed_only and os.path.isfile(file_base):
-                files_merge = files_crs_changed + [file_base]
-            else:
-                files_merge = files_crs
-            merge_safe(
-                (
-                    [
-                        "",
-                        # "-n", "0",
-                        "-a_nodata",
-                        "-1",
-                        "-d",
-                        description,
-                    ]
-                    + co
-                    + ["-o", file_tmp]
-                    + files_merge
+
+            @ensures(paths=file_tmp, remove_on_exception=True, retries=NUM_RETRIES)
+            def do_merge(_):
+                # HACK: seems like currently making empty combined raster so delete first
+                #       in case it's merging into existing and causing problems
+                if changed_only and os.path.isfile(file_base):
+                    files_merge = files_crs_changed + [file_base]
+                else:
+                    files_merge = files_crs
+                merge_safe(
+                    (
+                        [
+                            "",
+                            # "-n", "0",
+                            "-a_nodata",
+                            "-1",
+                            "-d",
+                            description,
+                        ]
+                        + co
+                        + ["-o", file_tmp]
+                        + files_merge
+                    )
                 )
-            )
+                return _
+
+            file_tmp = do_merge(file_tmp)
+
             if os.path.isfile(file_base):
                 os.remove(file_base)
             if "GTiff" == FORMAT_OUTPUT:

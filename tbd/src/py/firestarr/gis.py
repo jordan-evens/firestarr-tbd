@@ -13,12 +13,9 @@ from common import (
     DIR_DOWNLOAD,
     DIR_EXTRACTED,
     DIR_RASTER,
-    NUM_RETRIES,
-    call_safe,
     do_nothing,
     ensure_dir,
     ensures,
-    get_stack,
     is_empty,
     logging,
     try_remove,
@@ -26,6 +23,7 @@ from common import (
 )
 from net import try_save_http
 from osgeo import gdal, ogr, osr
+from redundancy import NUM_RETRIES, call_safe, get_stack
 
 KM_TO_M = 1000
 HA_TO_MSQ = 10000
@@ -41,8 +39,8 @@ VALID_GEOMETRY_EXTENSIONS = [
 ]
 
 
-def read_gpd_file_safe(*args, **kwargs):
-    return call_safe(gpd.read_file, *args, **kwargs)
+def read_gpd_file_safe(filename, *args, **kwargs):
+    return call_safe(gpd.read_file, filename, *args, **kwargs)
 
 
 def ensure_geometry_file(path):

@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 import time
-import traceback
 import zipfile
 from contextlib import contextmanager
 from functools import cache, wraps
@@ -24,10 +23,9 @@ from dateutil.tz import tzoffset
 from filelock import FileLock
 from log import logging
 from osgeo import gdal
+from redundancy import call_safe, get_stack
 
 FLAG_DEBUG = True
-
-NUM_RETRIES = 5
 
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE_YMD = "%Y%m%d"
@@ -95,34 +93,6 @@ CONFIG = None
 
 DEFAULT_FILE_LOG_LEVEL = logging.DEBUG
 # DEFAULT_FILE_LOG_LEVEL = logging.INFO
-
-
-def get_stack(ex):
-    return "".join(traceback.format_exception(ex))
-
-from fiona.errors import FionaError
-
-
-def call_safe(fct, *args, **kwargs):
-    retries = NUM_RETRIES
-    while True:
-        try:
-            return fct(*args, **kwargs)
-        except Exception as ex:
-            str_stack = get_stack(ex)
-            ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
-            ignore_ok = ignore_ok or (
-                isinstance(ex, FionaError)
-                and "Input/output error" in str_stack
-            )
-            # ignore because azure is throwing them all the time
-            # OSError: [Errno 5] Input/output
-            if retries <= 0 or not ignore_ok:
-                logging.error(str_stack)
-                raise ex
-            retries -= 1
-        except Exception as ex:
-            raise ex
 
 
 def ensure_dir(dir):
@@ -310,7 +280,7 @@ def filterXY(data):
     return data
 
 
-def try_remove(paths, verbose=False):
+def try_remove(paths, verbose=False, force=False):
     """!
     Delete path but ignore errors if can't while raising old error
     @param path Path to delete
@@ -321,7 +291,7 @@ def try_remove(paths, verbose=False):
         for path in paths:
             # remove locks even if debugging
             # if not FLAG_DEBUG or path.endswith(".lock"):
-            if not FLAG_DEBUG:
+            if force or not FLAG_DEBUG:
                 try:
                     if os.path.isfile(path):
                         if verbose:

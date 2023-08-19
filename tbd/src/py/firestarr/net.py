@@ -13,7 +13,6 @@ import requests
 import tqdm_util
 from common import (
     FLAG_DEBUG,
-    call_safe,
     do_nothing,
     ensure_dir,
     ensures,
@@ -21,6 +20,7 @@ from common import (
     locks_for,
     logging,
 )
+from redundancy import call_safe
 from urllib3.exceptions import InsecureRequestWarning
 
 # So HTTPS transfers work properly

@@ -17,12 +17,10 @@ from common import (
     WANT_DATES,
     WX_MODEL,
     Origin,
-    call_safe,
     do_nothing,
     dump_json,
     ensure_dir,
     ensures,
-    get_stack,
     list_dirs,
     locks_for,
     log_entry_exit,
@@ -46,6 +44,7 @@ from gis import (
 )
 from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
+from redundancy import call_safe, get_stack
 from simulation import Simulation
 from tqdm_util import pmap, tqdm
 
@@ -210,6 +209,11 @@ class Run(object):
     def check_and_publish(self):
         df_fires = self.load_fires()
 
+        def get_df_fire(fire_name):
+            return df_fires.reset_index().loc[
+                df_fires.reset_index()["fire_name"] == fire_name
+            ]
+
         def find_outputs(dir_fire):
             files = [x for x in os.listdir(dir_fire)]
             # FIX: include perimeter file
@@ -233,7 +237,9 @@ class Run(object):
                 files_prob[dir_fire] = probs
             if interim:
                 files_interim[dir_fire] = interim
-            df_fire = read_gpd_file_safe(file_sim)
+            df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
+            if df_fire is None:
+                is_incomplete[dir_fire] = df_fire
             was_running = check_running(dir_fire)
             if was_running:
                 is_running[dir_fire] = df_fire
@@ -244,14 +250,22 @@ class Run(object):
                 max_days = data["max_days"]
                 date_offsets = [x for x in want_dates if x <= max_days]
                 if len(probs) != len(date_offsets):
+                    logging.warning(f"Adding incomplete fire {dir_fire}")
                     is_incomplete[dir_fire] = df_fire
                 else:
                     is_complete[dir_fire] = df_fire
 
         has_temp = {}
 
+        def reset_and_run_fire(dir_fire):
+            fire_name = os.path.basename(dir_fire)
+            df_fire = get_df_fire(fire_name)
+            try_remove(dir_fire, force=True)
+            self._simulation.prepare(df_fire)
+            return self.do_run_fire(dir_fire)
+
         if is_incomplete:
-            pmap(self.do_run_fire, is_complete.keys(), desc="Fixing incomplete")
+            pmap(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
             # for dir_fire, df_fire in tqdm(
             #     is_incomplete.items(),
             #     total=len(is_incomplete),

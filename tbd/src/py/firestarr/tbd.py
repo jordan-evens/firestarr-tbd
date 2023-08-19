@@ -19,7 +19,6 @@ from common import (
     DIR_TBD,
     SECONDS_PER_HOUR,
     WANT_DATES,
-    call_safe,
     ensure_dir,
     listdir_sorted,
     locks_for,
@@ -34,6 +33,7 @@ from gis import (
     save_geojson,
     save_point_shp,
 )
+from redundancy import call_safe
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -220,7 +220,9 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
     ensure_dir(os.path.dirname(file_sim))
     # lock before reading so if sim is running it will update file before lock ends
     with locks_for(file_sim):
-        df_fire = read_gpd_file_safe(file_sim)
+        df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
+        if df_fire is None:
+            raise RuntimeError(f"Couldn't get fire data from {file_sim}")
         if 1 != len(df_fire):
             raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
         data = df_fire.iloc[0]
@@ -232,7 +234,6 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
         fire_name = data["fire_name"]
         # file_log = file_sim.replace(".geojson", ".log")
         file_log = os.path.join(dir_fire, "firestarr.log")
-        df_fire["log_file"] = file_log
         sim_time = data.get("sim_time", None)
         if not sim_time:
             # try parsing log for simulation time
@@ -330,6 +331,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             sim_time = run_firestarr(dir_fire)
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother
+            df_fire["log_file"] = file_log
             df_fire["sim_time"] = sim_time
             if "dates_out" in df_fire.columns:
                 del df_fire["dates_out"]
@@ -339,8 +341,5 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
         changed = copy_fire_outputs(dir_fire, dir_output, changed)
-        save_geojson(df_fire, file_sim)
-        # HACK: for some reason geojson can read a list as a column but not write it
-        df_fire = read_gpd_file_safe(file_sim)
         df_fire["changed"] = changed
         return df_fire

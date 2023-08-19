@@ -35,6 +35,7 @@ import math
 import os
 
 import numpy as np
+from common import logging
 from osgeo import gdal
 from osgeo_utils.auxiliary.util import GetOutputDriverFor
 
@@ -500,6 +501,11 @@ def gdal_merge_max(argv=None):
         # HACK: if exceptions are on then gdal_merge throws one
         gdal.DontUseExceptions()
         do_merge(argv)
+    except Exception as ex:
+        # HACK: logging trace doesn't show substitution, so try making string first
+        str_error = f"Error calling gdal_merge_max with arguments:\n\t{argv}"
+        logging.error(str_error)
+        raise ex
     finally:
         if use_exceptions:
             gdal.UseExceptions()
