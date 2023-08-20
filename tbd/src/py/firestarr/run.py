@@ -49,14 +49,8 @@ from simulation import Simulation
 from tqdm_util import pmap, tqdm
 
 import tbd
-from tbd import (
-    assign_firestarr_batch,
-    check_running,
-    copy_fire_outputs,
-    get_simulation_file,
-)
+from tbd import assign_firestarr_batch, check_running, find_outputs, get_simulation_file
 
-TMP_SUFFIX = "__tmp__"
 LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
 
 
@@ -214,14 +208,6 @@ class Run(object):
                 df_fires.reset_index()["fire_name"] == fire_name
             ]
 
-        def find_outputs(dir_fire):
-            files = [x for x in os.listdir(dir_fire)]
-            # FIX: include perimeter file
-            probs_all = [x for x in files if "probability" in x and x.endswith(".tif")]
-            probs = [x for x in probs_all if x.startswith("probability")]
-            interim = [x for x in probs_all if x.startswith("interim")]
-            return probs, interim
-
         files_prob = {}
         files_interim = {}
         is_incomplete = {}
@@ -255,8 +241,6 @@ class Run(object):
                 else:
                     is_complete[dir_fire] = df_fire
 
-        has_temp = {}
-
         def reset_and_run_fire(dir_fire):
             fire_name = os.path.basename(dir_fire)
             df_fire = get_df_fire(fire_name)
@@ -273,62 +257,7 @@ class Run(object):
             # ):
             #     self.do_run_fire(dir_fire)
 
-        dir_output = self._dir_output
-        dir_tmp = ensure_dir(os.path.join(self._dir_out, "tmp"))
-
-        def find_files_tmp():
-            files_tmp = []
-            for root, dirs, files in os.walk(dir_output):
-                for f in files:
-                    if TMP_SUFFIX in f:
-                        path = os.path.join(root, f)
-                        files_tmp.append(path)
-            return files_tmp
-
-        def remove_files_tmp(check=False):
-            shutil.rmtree(dir_tmp)
-            files_tmp = find_files_tmp()
-            if files_tmp:
-                print(f"Removing {files_tmp}")
-                for f in files_tmp:
-                    os.remove(f)
-            if check:
-                files_tmp = find_files_tmp()
-                if files_tmp:
-                    raise RuntimeError(
-                        f"Expected temporary files to be gone but still have {files_tmp}"
-                    )
-
-        remove_files_tmp(check=True)
-
-        for dir_fire, df_fire in tqdm(
-            is_running.items(), total=len(is_running), desc="Copying interim"
-        ):
-            probs, interim = find_outputs(dir_fire)
-            if probs:
-                # already have final outputs so leave alone
-                continue
-            if not interim:
-                logging.info(f"No interim outputs yet for {dir_fire}")
-                continue
-            dir_tmp_fire = os.path.join(dir_tmp, os.path.basename(dir_fire))
-            shutil.copytree(dir_fire, dir_tmp_fire)
-            # double check that outputs weren't created while copying
-            probs, interim = find_outputs(dir_tmp_fire)
-            if probs:
-                continue
-            for f in tqdm(interim):
-                f_interim = os.path.join(dir_tmp_fire, f)
-                f_tmp = f_interim.replace("interim_", "")
-                shutil.move(f_interim, f_tmp)
-            probs, interim = find_outputs(dir_tmp_fire)
-            if interim:
-                raise RuntimeError("Expected files to be renamed")
-            copy_fire_outputs(dir_tmp_fire, dir_output, changed=True, suffix=TMP_SUFFIX)
-            has_temp[os.path.basename(dir_fire)] = dir_tmp_fire
-
-        publish_all(self._dir_output)
-        remove_files_tmp(check=True)
+        publish_all(self._dir_output, include_interim=is_running.keys())
         return len(is_complete) == len(df_fires)
 
     @log_order()
@@ -618,7 +547,7 @@ class Run(object):
                             n, sim_time, sim_time / n
                         )
                     )
-                    publish_all(self._dir_output, force=changed)
+                    publish_all(self._dir_output, force=changed, include_interim=True)
                     logging.debug(f"Done publishing results for {g}")
                     # no longer changed because we just published
                     changed = False

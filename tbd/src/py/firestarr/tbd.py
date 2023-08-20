@@ -6,7 +6,7 @@ import timeit
 
 import pandas as pd
 import psutil
-from azurebatch.batch_container import add_simulation_task, check_task_running
+from azurebatch.batch_container import add_simulation_task, find_tasks_running
 
 # from azurebatch.batch_container import (
 #     add_job,
@@ -42,9 +42,18 @@ NO_INTENSITY = "--no-intensity"
 TASK_SLEEP = 5
 
 _RUN_FIRESTARR = None
-_CHECK_RUNNING = None
+_FIND_RUNNING = None
 _BATCH_CLIENT = None
 _JOB_ID = None
+
+
+def find_outputs(dir_fire):
+    files = [x for x in os.listdir(dir_fire)]
+    # FIX: include perimeter file
+    probs_all = [x for x in files if "probability" in x and x.endswith(".tif")]
+    probs = [x for x in probs_all if x.startswith("probability")]
+    interim = [x for x in probs_all if x.startswith("interim")]
+    return probs, interim
 
 
 def run_firestarr_local(dir_fire):
@@ -67,32 +76,34 @@ def run_firestarr_local(dir_fire):
         raise ex
 
 
-def check_running_local(dir_fire):
+def find_running_local(dir_fire):
     processes = []
     for p in psutil.process_iter():
         try:
-            if p.name() == "tbd" and p.cwd() == dir_fire:
+            # able to specify either full dir, or just sim run dir
+            if p.name() == "tbd" and dir_fire in p.cwd():
                 processes.append(
-                    p.as_dict(attrs=["cpu_times", "name", "pid", "status"])
+                    # p.as_dict(attrs=["cpu_times", "name", "pid", "status"])
+                    p.cwd()
                 )
         except psutil.NoSuchProcess:
             continue
-    return 0 < len(processes)
+    return processes
 
 
 def run_firestarr_batch(dir_fire):
     task_id = add_simulation_task(_BATCH_CLIENT, _JOB_ID, dir_fire)
-    while check_task_running(_BATCH_CLIENT, _JOB_ID, task_id):
+    while find_tasks_running(_BATCH_CLIENT, _JOB_ID, task_id):
         time.sleep(TASK_SLEEP)
 
 
 def check_running_batch(dir_fire):
-    return check_task_running(_BATCH_CLIENT, _JOB_ID, dir_fire)
+    return find_tasks_running(_BATCH_CLIENT, _JOB_ID, dir_fire)
 
 
 def assign_firestarr_batch(dir_fire):
     global _RUN_FIRESTARR
-    global _CHECK_RUNNING
+    global _FIND_RUNNING
     global _BATCH_CLIENT
     global _JOB_ID
     with locks_for(os.path.join(DIR_DATA, "assign_batch_client")):
@@ -104,10 +115,10 @@ def assign_firestarr_batch(dir_fire):
         #         job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
         #         job_id = job_id[: job_id.index("/")]
         #     _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
-        #     _CHECK_RUNNING = check_running_batch
+        #     _FIND_RUNNING = find_running_batch
         #     return True
         _RUN_FIRESTARR = run_firestarr_local
-        _CHECK_RUNNING = check_running_local
+        _FIND_RUNNING = find_running_local
         return False
 
 
@@ -120,9 +131,9 @@ def check_firestarr_batch(dir_fire):
 
 def check_firestarr_running(dir_fire):
     with locks_for(os.path.join(DIR_DATA, "check_batch_client")):
-        if _CHECK_RUNNING is None:
+        if _FIND_RUNNING is None:
             assign_firestarr_batch(dir_fire)
-    return _CHECK_RUNNING(dir_fire)
+    return _FIND_RUNNING(dir_fire)
 
 
 def run_firestarr(dir_fire):
@@ -135,8 +146,13 @@ def run_firestarr(dir_fire):
     return sim_time
 
 
+def find_running(dir_fire):
+    return (_FIND_RUNNING or check_firestarr_running)(dir_fire)
+
+
 def check_running(dir_fire):
-    return (_CHECK_RUNNING or check_firestarr_running)(dir_fire)
+    processes = find_running(dir_fire)
+    return 0 < len(processes)
 
 
 def get_simulation_file(dir_fire):

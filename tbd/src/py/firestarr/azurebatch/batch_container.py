@@ -1,5 +1,4 @@
 import datetime
-import os
 import time
 
 import azure.batch as batch
@@ -283,18 +282,24 @@ def add_monolithic_task(batch_client, job_id):
 #     return task_id
 
 
-def check_task_running(batch_client, job_id, dir_fire):
-    task_id = f"Task_{os.path.basename(dir_fire)}"
+def get_task_name(dir_fire):
+    return dir_fire.replace("/", "-")
+
+
+def find_tasks_running(batch_client, job_id, dir_fire):
+    task_name = get_task_name(dir_fire)
+    tasks = []
     try:
-        task = batch_client.task.get(job_id, task_id)
-        # return "running" == task.state
-        return "completed" != task.state
+        for task in batch_client.task.list(job_id):
+            if task_name in task.id and "completed" != task.state:
+                tasks.append(task.id.replace("-", "/"))
+        return tasks
     except batchmodels.BatchErrorException:
         return False
 
 
 def add_simulation_task(batch_client, job_id, dir_fire):
-    task_id = f"Task_{os.path.basename(dir_fire)}"
+    task_id = get_task_name(dir_fire)
     tasks = list()
     tasks.append(
         batch.models.TaskAddParameter(

@@ -8,6 +8,8 @@ import gis
 from common import (
     CREATION_OPTIONS,
     DIR_OUTPUT,
+    DIR_SIMS,
+    DIR_TMP,
     DIR_ZIP,
     FMT_DATE_YMD,
     FORMAT_OUTPUT,
@@ -23,25 +25,101 @@ from gdal_merge_max import gdal_merge_max
 from redundancy import NUM_RETRIES, call_safe
 from tqdm_util import tqdm
 
+from tbd import copy_fire_outputs, find_outputs, find_running
+
+TMP_SUFFIX = "__tmp__"
+
 
 def merge_safe(*args, **kwargs):
     return call_safe(gdal_merge_max, *args, **kwargs)
 
 
-def publish_all(dir_current=None, changed_only=True, force=False, force_project=False):
-    dir_current = find_latest_outputs(dir_current)
+def check_copy_interim(dir_output, include_interim):
+    if not include_interim:
+        return
+    if isinstance(include_interim, bool):
+        # find running fires
+        if not dir_output.startwith(DIR_OUTPUT):
+            raise RuntimeError(
+                f"Expected output directory to start with {DIR_OUTPUT} but got {dir_output}"
+            )
+        run_name = os.path.basename(dir_output)
+        dir_sim = os.path.join(DIR_SIMS, run_name)
+        dirs_fire = find_running(dir_sim)
+    else:
+        dirs_fire = include_interim
+    dir_tmp = ensure_dir(os.path.join(DIR_TMP, os.path.basename(dir_output), "interim"))
+
+    def find_files_tmp():
+        files_tmp = []
+        for root, dirs, files in os.walk(dir_output):
+            for f in files:
+                if TMP_SUFFIX in f:
+                    path = os.path.join(root, f)
+                    files_tmp.append(path)
+        return files_tmp
+
+    def remove_files_tmp(check=False):
+        shutil.rmtree(dir_tmp)
+        files_tmp = find_files_tmp()
+        if files_tmp:
+            print(f"Removing {files_tmp}")
+            for f in files_tmp:
+                os.remove(f)
+        if check:
+            files_tmp = find_files_tmp()
+            if files_tmp:
+                raise RuntimeError(
+                    f"Expected temporary files to be gone but still have {files_tmp}"
+                )
+
+    remove_files_tmp(check=True)
+
+    for dir_fire in tqdm(dirs_fire, desc="Copying interim"):
+        probs, interim = find_outputs(dir_fire)
+        if probs:
+            # already have final outputs so leave alone
+            continue
+        if not interim:
+            logging.info(f"No interim outputs yet for {dir_fire}")
+            continue
+        dir_tmp_fire = os.path.join(dir_tmp, os.path.basename(dir_fire))
+        shutil.copytree(dir_fire, dir_tmp_fire)
+        # double check that outputs weren't created while copying
+        probs, interim = find_outputs(dir_tmp_fire)
+        if probs:
+            continue
+        for f in tqdm(interim):
+            f_interim = os.path.join(dir_tmp_fire, f)
+            f_tmp = f_interim.replace("interim_", "")
+            shutil.move(f_interim, f_tmp)
+        probs, interim = find_outputs(dir_tmp_fire)
+        if interim:
+            raise RuntimeError("Expected files to be renamed")
+        copy_fire_outputs(dir_tmp_fire, dir_output, changed=True, suffix=TMP_SUFFIX)
+
+
+def publish_all(
+    dir_output=None,
+    changed_only=True,
+    force=False,
+    force_project=False,
+    include_interim=None,
+):
+    dir_output = find_latest_outputs(dir_output)
+    check_copy_interim(dir_output, include_interim)
     changed = merge_dirs(
-        dir_current, changed_only=changed_only, force=force, force_project=force_project
+        dir_output, changed_only=changed_only, force=force, force_project=force_project
     )
     if changed or force:
         import publish_azure
 
-        publish_azure.upload_dir(dir_current)
+        publish_azure.upload_dir(dir_output)
         # HACK: might be my imagination, but maybe there's a delay so wait a bit
         time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
         import publish_geoserver
 
-        publish_geoserver.publish_folder(dir_current)
+        publish_geoserver.publish_folder(dir_output)
 
 
 def find_latest_outputs(dir_output=None):
