@@ -609,6 +609,5 @@ def make_resume(dir_resume=None, *args, **kwargs):
             raise RuntimeError("No valid runs to resume")
         dir_resume = dirs[-1]
     dir_resume = os.path.join(DIR_SIMS, dir_resume)
-    logging.info(f"Resuming previous run in {dir_resume}")
     kwargs["dir"] = dir_resume
     return Run(*args, **kwargs)

@@ -39,7 +39,7 @@ def check_copy_interim(dir_output, include_interim):
         return
     if isinstance(include_interim, bool):
         # find running fires
-        if not dir_output.startwith(DIR_OUTPUT):
+        if not dir_output.startswith(DIR_OUTPUT):
             raise RuntimeError(
                 f"Expected output directory to start with {DIR_OUTPUT} but got {dir_output}"
             )
