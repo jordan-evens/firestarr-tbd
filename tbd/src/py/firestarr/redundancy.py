@@ -19,7 +19,7 @@ def call_safe(fct, *args, **kwargs):
             ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
             ignore_ok = ignore_ok or (
                 (isinstance(ex, FionaError) or isinstance(ex, RuntimeError))
-                and "Input/output error" in str_stack
+                and ("Input/output error" in str_stack or "I/O error" in str_stack)
             )
             # ignore because azure is throwing them all the time
             # OSError: [Errno 5] Input/output
