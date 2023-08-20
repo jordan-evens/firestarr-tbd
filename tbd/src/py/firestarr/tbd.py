@@ -48,7 +48,7 @@ _JOB_ID = None
 
 
 def find_outputs(dir_fire):
-    files = [x for x in os.listdir(dir_fire)]
+    files = [x for x in listdir_sorted(dir_fire)]
     # FIX: include perimeter file
     probs_all = [x for x in files if "probability" in x and x.endswith(".tif")]
     probs = [x for x in probs_all if x.startswith("probability")]

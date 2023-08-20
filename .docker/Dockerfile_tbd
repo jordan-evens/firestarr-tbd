@@ -27,6 +27,7 @@ RUN apt-get install -y python3-pip libpython3-dev python3-venv sudo \
 
 FROM gcc-cmake-python AS tbd_dev
 ARG USERNAME
+ARG VERSION
 RUN apt-get install -y locales \
   && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
   && locale-gen
@@ -50,6 +51,7 @@ RUN . /appl/.venv/bin/activate \
 
 
 FROM tbd_dev AS tbd_dev_svc
+ARG VERSION
 # run as root so we can redirect to where docker logs will show progress
 RUN sudo echo "*/5 * * * * root sudo -u user bash -c '. /appl/config && [[ \${CRONJOB_RUN} ]] && /usr/bin/flock -n /appl/data/update.lock /appl/tbd/scripts/update.sh' > /proc/1/fd/1 2>/proc/1/fd/2" > /etc/crontab
 USER ${USERNAME}
@@ -78,6 +80,7 @@ RUN groupadd --gid ${USER_ID} ${USERNAME} \
 
 FROM minideb-with_user AS firestarr
 ARG USERNAME
+ARG VERSION
 RUN apt-get install -y libgeotiff5 \
   && apt-get clean \
   && rm -rf \
@@ -106,6 +109,7 @@ RUN apt-get install -y --no-install-recommends \
 
 FROM py_gdal AS tbd_prod
 ARG USERNAME
+ARG VERSION
 RUN echo VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc \
   && echo /appl/tbd/src/py/firestarr > /usr/lib/python3/dist-packages//firestarr.pth
@@ -132,9 +136,11 @@ USER ${USERNAME}
 ENTRYPOINT /bin/bash
 
 FROM tbd_prod AS tbd_prod_stable
+ARG VERSION
 ENTRYPOINT /bin/bash -c "cd /appl/tbd && /appl/tbd/scripts/force_run.sh"
 
 FROM tbd_prod AS tbd_prod_svc
+ARG VERSION
 USER root
 RUN sed -i "s/CRONJOB_RUN=.*/CRONJOB_RUN=1/g" /appl/config
 # for some reason this is only set up for user to output to log

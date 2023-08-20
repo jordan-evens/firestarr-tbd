@@ -26,6 +26,7 @@ services:
       target: tbd_dev_svc
       dockerfile: .docker/Dockerfile_tbd
       args:
+        VERSION: ${VERSION}
         GCC_VERSION: ${GCC_VERSION}
         PERF_VERSION: ${PERF_VERSION}
         USERNAME: ${USERNAME}
@@ -53,6 +54,7 @@ services:
       target: tbd_prod_stable
       dockerfile: .docker/Dockerfile_tbd
       args:
+        VERSION: ${VERSION}
         GCC_VERSION: ${GCC_VERSION}
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
@@ -68,6 +70,7 @@ services:
       target: tbd_prod_svc
       dockerfile: .docker/Dockerfile_tbd
       args:
+        VERSION: ${VERSION}
         GCC_VERSION: ${GCC_VERSION}
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}
@@ -83,6 +86,7 @@ services:
       target: firestarr
       dockerfile: .docker/Dockerfile_tbd
       args:
+        VERSION: ${VERSION}
         GCC_VERSION: ${GCC_VERSION}
         USERNAME: ${USERNAME}
         USER_ID: ${USER_ID}

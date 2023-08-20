@@ -22,7 +22,7 @@ from common import (
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
-from redundancy import NUM_RETRIES, call_safe
+from redundancy import NUM_RETRIES, call_safe, get_stack
 from tqdm_util import tqdm
 
 from tbd import copy_fire_outputs, find_outputs, find_running
@@ -243,6 +243,19 @@ def merge_dirs(
                     files_merge = files_crs_changed + [file_base]
                 else:
                     files_merge = files_crs
+                if 1 == len(files_merge):
+                    f = files_merge[0]
+                    if f == _:
+                        logging.warning(
+                            f"Ignoring trying to merge file into iteslf: {f}"
+                        )
+                    else:
+                        logging.warning(
+                            f"Only have one file so just copying {f} to {_}"
+                        )
+                        shutil.copy(f, _)
+                    return _
+
                 merge_safe(
                     (
                         [
@@ -293,9 +306,16 @@ def merge_dirs(
             logging.info(f"Output already exists for {file_base}")
 
     logging.info("Final results of merge are in %s", dir_out)
-    run_id = os.path.basename(dir_input)
-    file_zip = os.path.join(DIR_ZIP, f"{run_name}.zip")
-    if any_change or not os.path.isfile(file_zip):
-        logging.info("Creating archive %s", file_zip)
-        zip_folder(file_zip, dir_out)
+    try:
+        run_id = os.path.basename(dir_input)
+        file_zip = os.path.join(DIR_ZIP, f"{run_name}.zip")
+        if any_change or not os.path.isfile(file_zip):
+            logging.info("Creating archive %s", file_zip)
+            zip_folder(file_zip, dir_out)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception as ex:
+        logging.error("Ignoring zip error")
+        logging.error(get_stack(ex))
+
     return any_change

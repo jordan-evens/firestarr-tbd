@@ -13,10 +13,14 @@ from common import (
     DIR_DOWNLOAD,
     DIR_EXTRACTED,
     DIR_RASTER,
+    DIR_TMP,
     do_nothing,
     ensure_dir,
+    ensure_string_list,
     ensures,
     is_empty,
+    listdir_sorted,
+    locks_for,
     logging,
     try_remove,
     unzip,
@@ -24,6 +28,7 @@ from common import (
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 from redundancy import NUM_RETRIES, call_safe, get_stack
+from tqdm_util import pmap
 
 KM_TO_M = 1000
 HA_TO_MSQ = 10000
@@ -72,7 +77,7 @@ def ensure_geometry_file(path):
             files = [path]
     # support directories (including results of unzip)
     if os.path.isdir(path):
-        files = sorted([os.path.join(path, x) for x in os.listdir(path)])
+        files = [os.path.join(path, x) for x in listdir_sorted(path)]
     files_features = [
         x for x in files if os.path.splitext(x)[1].lower() in VALID_GEOMETRY_EXTENSIONS
     ]
@@ -329,7 +334,7 @@ def find_raster_meridians(year=None):
         raise RuntimeError(f"Could not find raster directories in {DIR_RASTER}")
     rasters = [
         os.path.join(raster_root, x)
-        for x in os.listdir(raster_root)
+        for x in listdir_sorted(raster_root)
         if x[-4:].lower() == ".tif" and -1 != x.find("fuel")
     ]
     result = {}
@@ -427,15 +432,7 @@ def project_raster(
 
         return call_safe(do_save)
 
-    # logging.info("Running gdal_merge_max()")
-    use_exceptions = gdal.GetUseExceptions()
-    try:
-        # HACK: if exceptions are on then gdal_merge throws one
-        gdal.DontUseExceptions()
-        do_warp(output_raster)
-    finally:
-        if use_exceptions:
-            gdal.UseExceptions()
+    with_gdal_exceptions_off(do_warp, output_raster)
 
     return bounds
 
@@ -537,3 +534,67 @@ def make_empty_gdf(columns):
 def make_gdf_from_series(row, crs):
     """Convert Series into GeoDataFrame"""
     return to_gdf(row.to_frame().transpose(), crs)
+
+
+LOCK_GDAL_EXCEPTIONS = os.path.join(DIR_TMP, "use_gdal_exceptions")
+
+
+def with_gdal_exceptions_off(fct, *args, **kwargs):
+    with locks_for(LOCK_GDAL_EXCEPTIONS):
+        use_exceptions = gdal.GetUseExceptions()
+        try:
+            # HACK: if exceptions are on then gdal_merge throws one
+            gdal.DontUseExceptions()
+            return fct(*args, **kwargs)
+        except Exception as ex:
+            # HACK: logging trace doesn't show substitution, so try making string first
+            str_error = f"Error calling {fct} with arguments:\n\t{args}\n\t{kwargs}"
+            logging.error(str_error)
+            raise ex
+        finally:
+            if use_exceptions:
+                gdal.UseExceptions()
+
+
+def find_invalid_tiffs(paths, bands=[1], test_read=False):
+    paths = ensure_string_list(paths)
+
+    def check_valid(path):
+        src = gdal.Open(path)
+        if src is None:
+            return False
+        for band_number in bands:
+            band = src.GetRasterBand(band_number)
+            if band is None:
+                return False
+            nodata = band.GetNoDataValue()
+            if nodata:
+                # HACK: just avoid not used warning
+                pass
+            if test_read:
+                r_array = np.array(band.ReadAsArray())
+                if not r_array:
+                    return False
+                del r_array
+            del band
+        del src
+        return True
+
+    def check_path(path):
+        # return path if not a valid tiff
+        try:
+            with locks_for(path):
+                if call_safe(check_valid, path):
+                    return None
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            pass
+        return path
+
+    def check_paths():
+        # find list of invalid files
+        results = pmap(check_path, paths, desc="Validating rasters")
+        return [x for x in results if x is not None]
+
+    return with_gdal_exceptions_off(check_paths)

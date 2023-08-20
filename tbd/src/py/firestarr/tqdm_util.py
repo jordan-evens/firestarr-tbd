@@ -1,16 +1,12 @@
 import collections
 import contextlib
 import itertools
-from pickle import UnpicklingError
 
-import dill._dill
 import multiprocess
 import multiprocess.pool
 import multiprocess.queues
 import numpy as np
 import pandas as pd
-from multiprocess.reduction import ForkingPickler
-from redundancy import NUM_RETRIES, call_safe
 from tqdm.auto import tqdm
 
 MAX_PROCESSES = multiprocess.cpu_count()
@@ -18,64 +14,6 @@ TQDM_DEPTH = multiprocess.Value("i", 0)
 DEFAULT_KEEP_ALL = True
 KEEP_LEVELS = 2
 TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
-
-
-# def load_safe(*args, **kwargs):
-#     return call_safe(dill._dill.Unpickler.load, *args, **kwargs)
-
-if not hasattr(dill._dill.Unpickler, "old_init"):
-    dill._dill.Unpickler.old_init = dill._dill.Unpickler.__init__
-
-
-def safe_init(self, *args, **kwds):
-    dill._dill.Unpickler.old_init(self, *args, **kwds)
-    # remove unused argument as per old __init__
-    kwds.pop("ignore", None)
-    self._init_args = args
-    self._init_kwds = kwds
-
-
-# HACK: tweak code to handle OSError
-def load_safe(self):  # NOTE: if settings change, need to update attributes
-    retries = NUM_RETRIES
-    obj = None
-    while True:
-        try:
-            obj = dill._dill.StockUnpickler.load(self)
-            break
-        except OSError as ex:
-            print(str(ex))
-            if retries <= 0 or 5 != ex.errno:
-                raise ex
-        except UnpicklingError as ex:
-            print(str(ex))
-            if retries <= 0 or "[Errno 5] Input/output error" not in str(ex):
-                raise ex
-        except Exception as ex:
-            print(str(ex))
-            raise ex
-        print("Retrying")
-        # need to reinitialize
-        dill._dill.StockUnpickler.__init__(self, *self._init_args, **self._init_kwds)
-        print(f"Reinitialized with:\n\t{self._init_args}\n\t{self._init_kwds}")
-        retries -= 1
-    if type(obj).__module__ == getattr(self._main, "__name__", "__main__"):
-        if not self._ignore:
-            # point obj class to main
-            try:
-                obj.__class__ = getattr(self._main, type(obj).__name__)
-            except (AttributeError, TypeError):
-                pass  # defined in a file
-    # _main_module.__dict__.update(obj.__dict__) #XXX: should update globals ?
-    return obj
-
-
-# def save_safe(*args, **kwargs):
-#     return call_safe(dill._dill.Pickler.save, *args, **kwargs)
-
-dill._dill.Unpickler.__init__ = safe_init
-dill._dill.Unpickler.load = load_safe
-# dill._dill.Pickler.save = save_safe
 
 
 @contextlib.contextmanager

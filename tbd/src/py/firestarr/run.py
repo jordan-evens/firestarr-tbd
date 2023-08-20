@@ -7,41 +7,18 @@ import timeit
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (
-    BOUNDS,
-    CONCURRENT_SIMS,
-    DEFAULT_FILE_LOG_LEVEL,
-    DIR_OUTPUT,
-    DIR_SIMS,
-    MAX_NUM_DAYS,
-    WANT_DATES,
-    WX_MODEL,
-    Origin,
-    do_nothing,
-    dump_json,
-    ensure_dir,
-    ensures,
-    list_dirs,
-    locks_for,
-    log_entry_exit,
-    log_on_entry_exit,
-    logging,
-    read_json_safe,
-    try_remove,
-)
+from common import (BOUNDS, CONCURRENT_SIMS, DEFAULT_FILE_LOG_LEVEL,
+                    DIR_OUTPUT, DIR_SIMS, MAX_NUM_DAYS, WANT_DATES, WX_MODEL,
+                    Origin, do_nothing, dump_json, ensure_dir, ensures,
+                    list_dirs, locks_for, log_entry_exit, log_on_entry_exit,
+                    logging, read_json_safe, try_remove)
 from datasources.datatypes import SourceFire
 from datasources.default import SourceFireActive
 from datasources.spotwx import get_model_dir
 from fires import get_fires_folder, group_fires
-from gis import (
-    CRS_COMPARISON,
-    CRS_SIMINPUT,
-    CRS_WGS84,
-    area_ha,
-    make_gdf_from_series,
-    read_gpd_file_safe,
-    save_shp,
-)
+from gis import (CRS_COMPARISON, CRS_SIMINPUT, CRS_WGS84, area_ha,
+                 find_invalid_tiffs, make_gdf_from_series, read_gpd_file_safe,
+                 save_shp)
 from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
 from redundancy import call_safe, get_stack
@@ -49,7 +26,8 @@ from simulation import Simulation
 from tqdm_util import pmap, tqdm
 
 import tbd
-from tbd import assign_firestarr_batch, check_running, find_outputs, get_simulation_file
+from tbd import (assign_firestarr_batch, check_running, find_outputs,
+                 get_simulation_file)
 
 LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
 
@@ -199,6 +177,20 @@ class Run(object):
             if check_running(dir_fire):
                 return True
         return False
+
+    def check_rasters(self, remove=False):
+        all_tiffs = []
+        # HACK: want some kind of progress bar, so make a list of files
+        for root, dirs, files in os.walk(self._dir_output):
+            for f in files:
+                if f.endswith(".tif"):
+                    all_tiffs.append(os.path.join(root, f))
+        invalid_paths = find_invalid_tiffs(all_tiffs)
+        if invalid_paths:
+            logging.error(f"Found invalid paths:\n\t{invalid_paths}")
+            if remove:
+                try_remove(invalid_paths)
+        return invalid_paths
 
     def check_and_publish(self, ignore_incomplete_okay=True):
         df_fires = self.load_fires()

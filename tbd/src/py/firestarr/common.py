@@ -137,8 +137,11 @@ SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 DEFAULT_BOUNDS = "bounds.geojson"
 
 
-def listdir_sorted(path):
-    return sorted(os.listdir(path))
+def listdir_sorted(path, ignore_locks=True):
+    paths = sorted(os.listdir(path))
+    if ignore_locks:
+        paths = [x for x in paths if not x.endswith(".lock")]
+    return paths
 
 
 def list_dirs(path):
@@ -364,7 +367,7 @@ def run_process(*args, **kwargs):
     return finish_process(start_process(*args, **kwargs))
 
 
-def zip_folder(zip_name, path):
+def zip_folder(zip_name, path, ignore_locks=True):
     with zipfile.ZipFile(zip_name, "w") as zf:
         all_files = []
         logging.info("Finding files")
@@ -377,7 +380,8 @@ def zip_folder(zip_name, path):
         logging.info("Zipping")
         for f in tqdm_util.apply(all_files, desc=os.path.basename(zip_name)):
             f_relative = f.replace(path, "").lstrip("/")
-            zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
+            if not f_relative.endswith(".lock") or not ignore_locks:
+                zf.write(f, f_relative, zipfile.ZIP_DEFLATED)
         return zip_name
 
 
