@@ -1,5 +1,9 @@
 # don't use sections so that we can load this with python or bash
 
+# assign any value to not use azure batch even if configuration is set
+FORCE_LOCAL_TASKS=
+FORCE_BATCH_TASKS=
+
 # assign any value to make cronjob for update work
 CRONJOB_RUN=
 

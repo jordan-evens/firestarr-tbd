@@ -98,6 +98,9 @@ def run_main(args):
             return False
 
         should_resume = wait_and_check_resume()
+        logging.info(
+            f"Based on weather and previes run, should_resume == {should_resume}"
+        )
         do_resume = do_resume or should_resume
     if do_resume:
         if 1 < len(args):

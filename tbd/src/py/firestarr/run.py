@@ -7,18 +7,42 @@ import timeit
 import numpy as np
 import pandas as pd
 import tqdm_util
-from common import (BOUNDS, CONCURRENT_SIMS, DEFAULT_FILE_LOG_LEVEL,
-                    DIR_OUTPUT, DIR_SIMS, MAX_NUM_DAYS, WANT_DATES, WX_MODEL,
-                    Origin, do_nothing, dump_json, ensure_dir, ensures,
-                    list_dirs, locks_for, log_entry_exit, log_on_entry_exit,
-                    logging, read_json_safe, try_remove)
+from common import (
+    BOUNDS,
+    CONCURRENT_SIMS,
+    DEFAULT_FILE_LOG_LEVEL,
+    DIR_OUTPUT,
+    DIR_SIMS,
+    MAX_NUM_DAYS,
+    WANT_DATES,
+    WX_MODEL,
+    Origin,
+    do_nothing,
+    dump_json,
+    ensure_dir,
+    ensures,
+    list_dirs,
+    locks_for,
+    log_entry_exit,
+    log_on_entry_exit,
+    logging,
+    read_json_safe,
+    try_remove,
+)
 from datasources.datatypes import SourceFire
 from datasources.default import SourceFireActive
 from datasources.spotwx import get_model_dir
 from fires import get_fires_folder, group_fires
-from gis import (CRS_COMPARISON, CRS_SIMINPUT, CRS_WGS84, area_ha,
-                 find_invalid_tiffs, make_gdf_from_series, read_gpd_file_safe,
-                 save_shp)
+from gis import (
+    CRS_COMPARISON,
+    CRS_SIMINPUT,
+    CRS_WGS84,
+    area_ha,
+    find_invalid_tiffs,
+    make_gdf_from_series,
+    read_gpd_file_safe,
+    save_shp,
+)
 from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
 from redundancy import call_safe, get_stack
@@ -26,8 +50,13 @@ from simulation import Simulation
 from tqdm_util import pmap, tqdm
 
 import tbd
-from tbd import (assign_firestarr_batch, check_running, find_outputs,
-                 get_simulation_file)
+from tbd import (
+    assign_firestarr_batch,
+    check_running,
+    copy_fire_outputs,
+    find_outputs,
+    get_simulation_file,
+)
 
 LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
 
@@ -243,6 +272,12 @@ class Run(object):
             self._simulation.prepare(df_fire)
             return self.do_run_fire(dir_fire)
 
+        def do_copy(_):
+            return copy_fire_outputs(_, self._dir_output, False)
+
+        if is_complete:
+            pmap(do_copy, is_complete.keys(), desc="Copying completed outputs")
+
         if is_incomplete:
             pmap(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
             # for dir_fire, df_fire in tqdm(
@@ -365,6 +400,7 @@ class Run(object):
             list_rows,
             desc="Preparing groups",
         )
+        logging.info(f"Have {len(files_sim)} groups prepared")
         try:
             df_fires_prepared = pd.concat(
                 [read_gpd_file_safe(get_simulation_file(f)) for f in files_sim]

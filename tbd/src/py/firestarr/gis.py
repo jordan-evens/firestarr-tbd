@@ -560,6 +560,8 @@ def find_invalid_tiffs(paths, bands=[1], test_read=False):
     paths = ensure_string_list(paths)
 
     def check_valid(path):
+        if not os.path.isfile(path):
+            return False
         src = gdal.Open(path)
         if src is None:
             return False

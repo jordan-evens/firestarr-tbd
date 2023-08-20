@@ -1,10 +1,5 @@
 from azure.storage.blob import BlobServiceClient
-
-from tbd.src.py.firestarr.azurebatch.config import (
-    _STORAGE_ACCOUNT_URL,
-    _STORAGE_CONTAINER,
-    _STORAGE_KEY,
-)
+from azurebatch.config import _STORAGE_ACCOUNT_URL, _STORAGE_CONTAINER, _STORAGE_KEY
 
 
 def undelete_all(run_id):

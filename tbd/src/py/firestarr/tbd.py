@@ -6,7 +6,13 @@ import timeit
 
 import pandas as pd
 import psutil
-from azurebatch.batch_container import add_simulation_task, find_tasks_running
+from azurebatch.batch_container import (
+    add_job,
+    add_simulation_task,
+    find_tasks_running,
+    get_batch_client,
+    have_batch_config,
+)
 
 # from azurebatch.batch_container import (
 #     add_job,
@@ -15,7 +21,9 @@ from azurebatch.batch_container import add_simulation_task, find_tasks_running
 # )
 # from common import DIR_SIMS
 from common import (
+    CONFIG,
     DIR_DATA,
+    DIR_SIMS,
     DIR_TBD,
     SECONDS_PER_HOUR,
     WANT_DATES,
@@ -98,26 +106,40 @@ def run_firestarr_batch(dir_fire):
         time.sleep(TASK_SLEEP)
 
 
-def check_running_batch(dir_fire):
+def find_running_batch(dir_fire):
     return find_tasks_running(_BATCH_CLIENT, _JOB_ID, dir_fire)
 
 
-def assign_firestarr_batch(dir_fire):
+def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     global _RUN_FIRESTARR
     global _FIND_RUNNING
     global _BATCH_CLIENT
     global _JOB_ID
+    if force_local is None:
+        force_local = CONFIG.get("FORCE_LOCAL_TASKS", False)
+    if force_batch is None:
+        force_batch = CONFIG.get("FORCE_BATCH_TASKS", False)
+    if force_local:
+        logging.warning("Forcing local tasks")
+    if force_batch:
+        logging.warning("Forcing batch tasks")
+    if force_local and force_batch:
+        raise RuntimeError("Can't set both of FORCE_LOCAL_TASKS and FORCE_BATCH_TASKS")
     with locks_for(os.path.join(DIR_DATA, "assign_batch_client")):
-        # if have_batch_config():
-        #     _RUN_FIRESTARR = run_firestarr_batch
-        #     _BATCH_CLIENT = get_batch_client()
-        #     job_id = None
-        #     if dir_fire.startswith(DIR_SIMS):
-        #         job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
-        #         job_id = job_id[: job_id.index("/")]
-        #     _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
-        #     _FIND_RUNNING = find_running_batch
-        #     return True
+        if not force_local and have_batch_config():
+            logging.info("Running using batch tasks")
+            _RUN_FIRESTARR = run_firestarr_batch
+            _BATCH_CLIENT = get_batch_client()
+            job_id = None
+            if dir_fire.startswith(DIR_SIMS):
+                job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
+                job_id = job_id[: job_id.index("/")]
+            _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
+            _FIND_RUNNING = find_running_batch
+            return True
+        if force_batch:
+            raise RuntimeError("Forcing batch mode but no config set")
+        logging.info("Running using local tasks")
         _RUN_FIRESTARR = run_firestarr_local
         _FIND_RUNNING = find_running_local
         return False

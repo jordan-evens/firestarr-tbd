@@ -4,7 +4,6 @@ import os
 import shutil
 import time
 
-import gis
 from common import (
     CREATION_OPTIONS,
     DIR_OUTPUT,
@@ -22,6 +21,7 @@ from common import (
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
+from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
 from redundancy import NUM_RETRIES, call_safe, get_stack
 from tqdm_util import tqdm
 
@@ -41,7 +41,8 @@ def check_copy_interim(dir_output, include_interim):
         # find running fires
         if not dir_output.startswith(DIR_OUTPUT):
             raise RuntimeError(
-                f"Expected output directory to start with {DIR_OUTPUT} but got {dir_output}"
+                f"Expected output directory to start with {DIR_OUTPUT}"
+                f"but got {dir_output}"
             )
         run_name = os.path.basename(dir_output)
         dir_sim = os.path.join(DIR_SIMS, run_name)
@@ -147,6 +148,7 @@ def merge_dirs(
     force=False,
     force_project=False,
     creation_options=CREATION_OPTIONS,
+    check_valid=True,
 ):
     any_change = False
     dir_input = find_latest_outputs(dir_input)
@@ -200,12 +202,12 @@ def merge_dirs(
             if force_project or not os.path.isfile(f_crs):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full extent of the UTM zone?)
-                b = gis.project_raster(
+                b = project_raster(
                     f,
                     f_crs,
                     resolution=100,
                     nodata=0,
-                    crs=f"EPSG:{gis.CRS_COMPARISON}",
+                    crs=f"EPSG:{CRS_COMPARISON}",
                 )
                 if b is None:
                     return b
@@ -216,7 +218,6 @@ def merge_dirs(
             reproject(f)
             for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}")
         ]
-        # results_crs = pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
         results_crs = [x for x in results_crs if x is not None]
         files_crs = [x[1] for x in results_crs]
         files_crs_changed = [x[1] for x in results_crs if x[0]]
@@ -235,72 +236,86 @@ def merge_dirs(
             if os.path.isfile(file_tmp):
                 os.remove(file_tmp)
 
-            @ensures(paths=file_tmp, remove_on_exception=True, retries=NUM_RETRIES)
-            def do_merge(_):
-                # HACK: seems like currently making empty combined raster so delete first
-                #       in case it's merging into existing and causing problems
+            def do_merge(file_merge):
+                # HACK: seems like currently making empty combined raster so delete
+                #       first in case it's merging into existing and causing problems
                 if changed_only and os.path.isfile(file_base):
                     files_merge = files_crs_changed + [file_base]
                 else:
                     files_merge = files_crs
-                if 1 == len(files_merge):
-                    f = files_merge[0]
-                    if f == _:
-                        logging.warning(
-                            f"Ignoring trying to merge file into iteslf: {f}"
-                        )
-                    else:
-                        logging.warning(
-                            f"Only have one file so just copying {f} to {_}"
-                        )
-                        shutil.copy(f, _)
-                    return _
+                if check_valid:
+                    files_invalid = find_invalid_tiffs(files_merge)
+                    if files_invalid:
+                        logging.error(f"Ignoring invalid files:\n\t{files_invalid}")
+                        files_merge = [x for x in files_merge if x not in files_invalid]
+                if 0 == len(files_merge):
+                    logging.error("No files to merge")
+                    return None
 
-                merge_safe(
-                    (
-                        [
-                            "",
-                            # "-n", "0",
-                            "-a_nodata",
-                            "-1",
-                            "-d",
-                            description,
-                        ]
-                        + co
-                        + ["-o", file_tmp]
-                        + files_merge
-                    )
+                @ensures(
+                    paths=file_merge,
+                    remove_on_exception=True,
+                    retries=NUM_RETRIES,
                 )
-                return _
+                def do_actual_merge(_):
+                    if 1 == len(files_merge):
+                        f = files_merge[0]
+                        if f == _:
+                            logging.warning(
+                                f"Ignoring trying to merge file into iteslf: {f}"
+                            )
+                        else:
+                            logging.warning(
+                                f"Only have one file so just copying {f} to {_}"
+                            )
+                            shutil.copy(f, _)
+                        return _
+                    merge_safe(
+                        (
+                            [
+                                "",
+                                # "-n", "0",
+                                "-a_nodata",
+                                "-1",
+                                "-d",
+                                description,
+                            ]
+                            + co
+                            + ["-o", file_tmp]
+                            + files_merge
+                        )
+                    )
+
+                return do_actual_merge(file_merge)
 
             file_tmp = do_merge(file_tmp)
-
-            if os.path.isfile(file_base):
-                os.remove(file_base)
-            if "GTiff" == FORMAT_OUTPUT:
-                shutil.move(file_tmp, file_base)
-            else:
-                # HACK: reproject should basically just be copy?
-                # convert to COG
-                gis.project_raster(
-                    file_tmp,
-                    file_base,
-                    nodata=-1,
-                    resolution=100,
-                    format=FORMAT_OUTPUT,
-                    crs=f"EPSG:{gis.CRS_COMPARISON}",
-                    options=creation_options
-                    + [
-                        # shouldn't need much precision just for web display
-                        "NBITS=16",
-                        # shouldn't need alpha?
-                        # "ADD_ALPHA=NO",
-                        # "SPARSE_OK=TRUE",
-                        "PREDICTOR=YES",
-                    ],
-                )
-                os.remove(file_tmp)
-            changed = True
+            if not find_invalid_tiffs(file_tmp):
+                if os.path.isfile(file_base):
+                    os.remove(file_base)
+                if "GTiff" == FORMAT_OUTPUT:
+                    shutil.move(file_tmp, file_base)
+                else:
+                    # HACK: reproject should basically just be copy?
+                    # convert to COG
+                    project_raster(
+                        file_tmp,
+                        file_base,
+                        nodata=-1,
+                        resolution=100,
+                        format=FORMAT_OUTPUT,
+                        crs=f"EPSG:{CRS_COMPARISON}",
+                        options=creation_options
+                        + [
+                            # shouldn't need much precision just for web display
+                            "NBITS=16",
+                            # shouldn't need alpha?
+                            # "ADD_ALPHA=NO",
+                            # "SPARSE_OK=TRUE",
+                            "PREDICTOR=YES",
+                        ],
+                    )
+                    os.remove(file_tmp)
+                changed = True
             any_change = any_change or changed
         else:
             logging.info(f"Output already exists for {file_base}")
