@@ -490,8 +490,8 @@ class Run(object):
         results = {}
         sim_time = 0
         sim_times = []
-        # FIX: this is just failing and delaying things over and over right now
-        NUM_TRIES = 5
+        # # FIX: this is just failing and delaying things over and over right now
+        # NUM_TRIES = 5
         file_lock_publish = os.path.join(self._dir_output, "publish")
 
         @log_order()
@@ -508,16 +508,16 @@ class Run(object):
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
                         logging.warning(f"Exception running {dir_fire} was {result}")
-                    tries = NUM_TRIES
+                    # tries = NUM_TRIES
                     # try again if failed
-                    while (
-                        result is None
-                        or isinstance(result, Exception)
-                        # or (not np.all(result.get("postprocessed", False)))
-                    ) and tries > 0:
-                        logging.warning("Retrying running %s", dir_fire)
-                        result = self.do_run_fire(dir_fire)
-                        tries -= 1
+                    # while (
+                    #     result is None
+                    #     or isinstance(result, Exception)
+                    #     # or (not np.all(result.get("postprocessed", False)))
+                    # ) and tries > 0:
+                    #     logging.warning("Retrying running %s", dir_fire)
+                    #     result = self.do_run_fire(dir_fire)
+                    #     tries -= 1
                     if (
                         result is None
                         or isinstance(result, Exception)

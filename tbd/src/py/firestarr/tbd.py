@@ -64,15 +64,16 @@ def run_firestarr_local(dir_fire):
         raise ex
     except Exception as ex:
         # if sim failed we want to keep track of what happened
-        if stdout:
-
-            def save_logs(*args, **kwargs):
+        def save_logs(*args, **kwargs):
+            if stdout:
                 with open(os.path.join(dir_fire, "stdout.log"), "w") as f_log:
                     f_log.write(stdout)
+            if stderr:
                 with open(os.path.join(dir_fire, "stderr.log"), "w") as f_log:
                     f_log.write(stderr)
 
             call_safe(save_logs)
+
         raise ex
 
 
@@ -250,6 +251,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
         fire_name = data["fire_name"]
         # file_log = file_sim.replace(".geojson", ".log")
         file_log = os.path.join(dir_fire, "firestarr.log")
+        df_fire["log_file"] = file_log
         sim_time = data.get("sim_time", None)
         if not sim_time:
             # try parsing log for simulation time
@@ -324,6 +326,7 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
                     f"--dc {data['dc_old']}",
                     f"--apcp_prev {data['apcp_prev']}",
                     "-v",
+                    "-v",
                     f"--output_date_offsets {fmt_offsets}",
                     f"--wx {strip_dir(wx_file)}",
                     # f"--log {strip_dir(file_log)}",
@@ -347,7 +350,6 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             sim_time = run_firestarr(dir_fire)
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother
-            df_fire["log_file"] = file_log
             df_fire["sim_time"] = sim_time
             if "dates_out" in df_fire.columns:
                 del df_fire["dates_out"]
