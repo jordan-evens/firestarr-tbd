@@ -200,7 +200,7 @@ class Run(object):
                 return True
         return False
 
-    def check_and_publish(self):
+    def check_and_publish(self, ignore_incomplete_okay=True):
         df_fires = self.load_fires()
 
         def get_df_fire(fire_name):
@@ -212,6 +212,7 @@ class Run(object):
         files_interim = {}
         is_incomplete = {}
         is_complete = {}
+        is_ignored = {}
         is_running = {}
 
         want_dates = WANT_DATES
@@ -236,8 +237,10 @@ class Run(object):
                 max_days = data["max_days"]
                 date_offsets = [x for x in want_dates if x <= max_days]
                 if len(probs) != len(date_offsets):
-                    logging.warning(f"Adding incomplete fire {dir_fire}")
-                    is_incomplete[dir_fire] = df_fire
+                    # logging.warning(f"Adding incomplete fire {dir_fire}")
+                    # is_incomplete[dir_fire] = df_fire
+                    logging.error(f"Ignoring incomplete fire {dir_fire}")
+                    is_ignored[dir_fire] = df_fire
                 else:
                     is_complete[dir_fire] = df_fire
 
@@ -258,7 +261,12 @@ class Run(object):
             #     self.do_run_fire(dir_fire)
 
         publish_all(self._dir_output, include_interim=is_running.keys())
-        return len(is_complete) == len(df_fires)
+        num_done = len(is_complete)
+        if is_ignored:
+            logging.error("Ignored incomplete fires: {is_ignored}")
+        if ignore_incomplete_okay:
+            num_done += len(is_ignored)
+        return num_done == len(df_fires)
 
     @log_order()
     def process(self):
