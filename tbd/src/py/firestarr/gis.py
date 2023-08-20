@@ -381,7 +381,7 @@ def project_raster(
 ):
     input_raster = None
     try:
-        input_raster = gdal.Open(filename)
+        input_raster = call_safe(gdal.Open, filename)
     except RuntimeError as ex:
         logging.error(f"Removing invalid file {filename}")
         logging.error(get_stack(ex))

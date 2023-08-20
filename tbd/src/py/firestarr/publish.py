@@ -17,7 +17,9 @@ from common import (
     ensures,
     list_dirs,
     listdir_sorted,
+    locks_for,
     logging,
+    try_remove,
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
@@ -28,10 +30,6 @@ from tqdm_util import tqdm
 from tbd import copy_fire_outputs, find_outputs, find_running
 
 TMP_SUFFIX = "__tmp__"
-
-
-def merge_safe(*args, **kwargs):
-    return call_safe(gdal_merge_max, *args, **kwargs)
 
 
 def check_copy_interim(dir_output, include_interim):
@@ -66,7 +64,7 @@ def check_copy_interim(dir_output, include_interim):
         if files_tmp:
             print(f"Removing {files_tmp}")
             for f in files_tmp:
-                os.remove(f)
+                try_remove(f, True)
         if check:
             files_tmp = find_files_tmp()
             if files_tmp:
@@ -148,7 +146,6 @@ def merge_dirs(
     force=False,
     force_project=False,
     creation_options=CREATION_OPTIONS,
-    check_valid=True,
 ):
     any_change = False
     dir_input = find_latest_outputs(dir_input)
@@ -159,9 +156,6 @@ def merge_dirs(
     run_name = os.path.basename(dir_input)
     run_id = run_name[run_name.index("_") + 1 :]
     logging.info("Merging {}".format(dir_base))
-    co = list(
-        itertools.chain.from_iterable(map(lambda x: ["-co", x], creation_options))
-    )
     dir_parent = os.path.dirname(dir_base)
     # want to put probability and perims together
     dir_out = ensure_dir(os.path.join(dir_parent, "combined"))
@@ -233,89 +227,71 @@ def merge_dirs(
         #     + files_crs)
         # no point in doing this if nothing was added
         if force or changed or not os.path.isfile(file_base):
-            if os.path.isfile(file_tmp):
-                os.remove(file_tmp)
+            try_remove(file_tmp, force=True)
+            invalid_files = None
 
-            def do_merge(file_merge):
-                # HACK: seems like currently making empty combined raster so delete
-                #       first in case it's merging into existing and causing problems
-                if changed_only and os.path.isfile(file_base):
-                    files_merge = files_crs_changed + [file_base]
-                else:
-                    files_merge = files_crs
-                if check_valid:
-                    files_invalid = find_invalid_tiffs(files_merge)
-                    if files_invalid:
-                        logging.error(f"Ignoring invalid files:\n\t{files_invalid}")
-                        files_merge = [x for x in files_merge if x not in files_invalid]
-                if 0 == len(files_merge):
-                    logging.error("No files to merge")
-                    return None
-
-                @ensures(
-                    paths=file_merge,
-                    remove_on_exception=True,
-                    retries=NUM_RETRIES,
-                )
-                def do_actual_merge(_):
-                    if 1 == len(files_merge):
-                        f = files_merge[0]
-                        if f == _:
-                            logging.warning(
-                                f"Ignoring trying to merge file into iteslf: {f}"
-                            )
-                        else:
-                            logging.warning(
-                                f"Only have one file so just copying {f} to {_}"
-                            )
-                            shutil.copy(f, _)
-                        return _
-                    merge_safe(
-                        (
-                            [
-                                "",
-                                # "-n", "0",
-                                "-a_nodata",
-                                "-1",
-                                "-d",
-                                description,
-                            ]
-                            + co
-                            + ["-o", file_tmp]
-                            + files_merge
+            # HACK: seems like currently making empty combined raster so delete
+            #       first in case it's merging into existing and causing problems
+            if changed_only and os.path.isfile(file_base):
+                files_merge = files_crs_changed + [file_base]
+            else:
+                files_merge = files_crs
+            if 0 == len(files_merge):
+                logging.error("No files to merge")
+                file_tmp = None
+            else:
+                # HACK: don't get locks because it takes forever
+                # with locks_for(files_merge):
+                if 1 == len(files_merge):
+                    f = files_merge[0]
+                    if f == file_tmp:
+                        logging.warning(
+                            f"Ignoring trying to merge file into iteslf: {f}"
                         )
-                    )
-
-                return do_actual_merge(file_merge)
-
-            file_tmp = do_merge(file_tmp)
-            if not find_invalid_tiffs(file_tmp):
-                if os.path.isfile(file_base):
-                    os.remove(file_base)
-                if "GTiff" == FORMAT_OUTPUT:
-                    shutil.move(file_tmp, file_base)
+                    else:
+                        logging.warning(
+                            f"Only have one file so just copying {f} to {_}"
+                        )
+                        shutil.copy(f, file_tmp)
                 else:
-                    # HACK: reproject should basically just be copy?
-                    # convert to COG
-                    project_raster(
-                        file_tmp,
-                        file_base,
-                        nodata=-1,
-                        resolution=100,
-                        format=FORMAT_OUTPUT,
-                        crs=f"EPSG:{CRS_COMPARISON}",
-                        options=creation_options
-                        + [
-                            # shouldn't need much precision just for web display
-                            "NBITS=16",
-                            # shouldn't need alpha?
-                            # "ADD_ALPHA=NO",
-                            # "SPARSE_OK=TRUE",
-                            "PREDICTOR=YES",
-                        ],
+                    invalid_files = gdal_merge_max(
+                        file_out=file_tmp,
+                        names=files_merge,
+                        creation_options=creation_options,
+                        a_nodata=-1,
+                        description=description,
                     )
-                    os.remove(file_tmp)
-                changed = True
+
+                if invalid_files:
+                    logging.error(f"Removing invalid files {invalid_files}")
+                    try_remove(invalid_files)
+
+                if not find_invalid_tiffs(file_tmp):
+                    try_remove(file_base, force=True)
+                    if "GTiff" == FORMAT_OUTPUT:
+                        call_safe(os.rename, file_tmp, file_base)
+                    else:
+                        # HACK: reproject should basically just be copy?
+                        # convert to COG
+                        project_raster(
+                            file_tmp,
+                            file_base,
+                            nodata=-1,
+                            resolution=100,
+                            format=FORMAT_OUTPUT,
+                            crs=f"EPSG:{CRS_COMPARISON}",
+                            options=creation_options
+                            + [
+                                # shouldn't need much precision just for web display
+                                "NBITS=16",
+                                # shouldn't need alpha?
+                                # "ADD_ALPHA=NO",
+                                # "SPARSE_OK=TRUE",
+                                "PREDICTOR=YES",
+                            ],
+                        )
+                        try_remove(file_tmp, force=True)
+                    changed = True
             any_change = any_change or changed
         else:
             logging.info(f"Output already exists for {file_base}")

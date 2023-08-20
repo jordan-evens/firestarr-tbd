@@ -441,7 +441,7 @@ class Run(object):
         return df
 
     @log_order(show_args=["dir_fire"])
-    def do_run_fire(self, dir_fire):
+    def do_run_fire(self, dir_fire, prepare_only=False, run_only=False):
         try:
             # return tbd.run_fire_from_folder(
             #     dir_fire, self._dir_output, verbose=self._verbose
@@ -450,6 +450,8 @@ class Run(object):
                 tbd.run_fire_from_folder,
                 dir_fire,
                 self._dir_output,
+                prepare_only=prepare_only,
+                run_only=run_only,
                 verbose=self._verbose,
             )
         except KeyboardInterrupt as ex:
@@ -594,8 +596,25 @@ class Run(object):
                     logging.debug(f"Done merging directories for {g}")
 
         callback_publish = check_publish if self._do_merge else do_nothing
+
+        def prepare_fire(dir_fire):
+            if check_running(dir_fire):
+                # already running, so prepared but no outputs
+                return dir_fire
+            return self.do_run_fire(dir_fire, prepare_only=True)
+
+        # schedule everything first
         tqdm_util.pmap_by_group(
-            self.do_run_fire,
+            prepare_fire,
+            dirs_sim,
+            desc="Preparing simulations",
+        )
+
+        def run_fire(dir_fire):
+            return self.do_run_fire(dir_fire, run_only=True)
+
+        tqdm_util.pmap_by_group(
+            run_fire,
             dirs_sim,
             max_processes=len(df_fires) if is_batch else CONCURRENT_SIMS,
             no_limit=is_batch,

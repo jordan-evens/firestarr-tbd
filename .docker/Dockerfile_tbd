@@ -91,6 +91,7 @@ RUN echo VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
 COPY ./tbd/fuel.lut /appl/tbd/
+COPY ./tbd/settings.ini /appl/tbd/
 RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
 USER ${USERNAME}
 

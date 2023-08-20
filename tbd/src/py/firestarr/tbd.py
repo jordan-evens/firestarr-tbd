@@ -237,13 +237,17 @@ def copy_fire_outputs(dir_fire, dir_output, changed, suffix=""):
     return changed
 
 
-def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False):
+def run_fire_from_folder(
+    dir_fire, dir_output, verbose=False, prepare_only=False, run_only=False
+):
     def nolog(*args, **kwargs):
         pass
 
     def dolog(msg, *args, **kwargs):
         logging.info(f"{dir_fire}: {msg}", *args, **kwargs)
 
+    if prepare_only and run_only:
+        raise RuntimeError("Can't prepare_only and run_only at the same time")
     log_info = dolog if verbose else nolog
 
     was_running = check_running(dir_fire)
@@ -296,79 +300,83 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
             x for x in outputs if x.endswith("tif") and x.startswith("probability")
         ]
         if not sim_time or len(probs) != len(date_offsets):
-            lat = float(data["lat"])
-            lon = float(data["lon"])
-            start_time = pd.to_datetime(data["start_time"])
-            log_info(f"Scenario start time is: {start_time}")
-            if "Point" != data.geometry.geom_type:
-                year = start_time.year
-                reference = find_best_raster(lon, year)
-                raster = os.path.join(dir_fire, "{}.tif".format(fire_name))
-                with locks_for(raster):
-                    # FIX: if we never use points then the sims don't guarantee
-                    # running from non-fuel for the points like normally
-                    perim = call_safe(Rasterize, file_sim, raster, reference)
-            else:
-                # think this should be fine for using individual points
-                save_point_shp(lat, lon, dir_fire, fire_name)
-                perim = None
-            log_info("Startup coordinates are {}, {}".format(lat, lon))
-            hour = start_time.hour
-            minute = start_time.minute
-            tz = start_time.tz.utcoffset(start_time).total_seconds() / SECONDS_PER_HOUR
-            # HACK: I think there might be issues with forecasts being at the half hour?
-            if math.floor(tz) != tz:
-                # logging.warning("Rounding down to deal with partial hour timezone")
-                tz = math.floor(tz)
-            tz = int(tz)
-            log_info("Timezone offset is {}".format(tz))
-            start_date = start_time.date()
-            cmd = os.path.join(DIR_TBD, "tbd")
-            wx_file = os.path.join(dir_fire, data["wx"])
-            # want format like a list with no spaces
-            fmt_offsets = "[" + ",".join([str(x) for x in date_offsets]) + "]"
+            if not run_only:
+                lat = float(data["lat"])
+                lon = float(data["lon"])
+                start_time = pd.to_datetime(data["start_time"])
+                log_info(f"Scenario start time is: {start_time}")
+                if "Point" != data.geometry.geom_type:
+                    year = start_time.year
+                    reference = find_best_raster(lon, year)
+                    raster = os.path.join(dir_fire, "{}.tif".format(fire_name))
+                    with locks_for(raster):
+                        # FIX: if we never use points then the sims don't guarantee
+                        # running from non-fuel for the points like normally
+                        perim = call_safe(Rasterize, file_sim, raster, reference)
+                else:
+                    # think this should be fine for using individual points
+                    save_point_shp(lat, lon, dir_fire, fire_name)
+                    perim = None
+                log_info("Startup coordinates are {}, {}".format(lat, lon))
+                hour = start_time.hour
+                minute = start_time.minute
+                tz = (
+                    start_time.tz.utcoffset(start_time).total_seconds()
+                    / SECONDS_PER_HOUR
+                )
+                # HACK: I think there might be issues with forecasts being at the half hour?
+                if math.floor(tz) != tz:
+                    # logging.warning("Rounding down to deal with partial hour timezone")
+                    tz = math.floor(tz)
+                tz = int(tz)
+                log_info("Timezone offset is {}".format(tz))
+                start_date = start_time.date()
+                cmd = os.path.join(DIR_TBD, "tbd")
+                wx_file = os.path.join(dir_fire, data["wx"])
+                # want format like a list with no spaces
+                fmt_offsets = "[" + ",".join([str(x) for x in date_offsets]) + "]"
 
-            def strip_dir(path):
-                p = os.path.abspath(path)
-                d = os.path.abspath(dir_fire)
-                if p.startswith(d):
-                    p = p[len(d) + 1 :]
-                if 0 == len(p):
-                    p = "."
-                return p
+                def strip_dir(path):
+                    p = os.path.abspath(path)
+                    d = os.path.abspath(dir_fire)
+                    if p.startswith(d):
+                        p = p[len(d) + 1 :]
+                    if 0 == len(p):
+                        p = "."
+                    return p
 
-            # FIX: --log doesn't work right now
-            args = " ".join(
-                [
-                    f'"{strip_dir(dir_fire)}" {start_date} {lat} {lon}',
-                    f"{hour:02d}:{minute:02d}",
-                    NO_INTENSITY,
-                    f"--ffmc {data['ffmc_old']}",
-                    f"--dmc {data['dmc_old']}",
-                    f"--dc {data['dc_old']}",
-                    f"--apcp_prev {data['apcp_prev']}",
-                    "-v",
-                    "-v",
-                    f"--output_date_offsets {fmt_offsets}",
-                    f"--wx {strip_dir(wx_file)}",
-                    # f"--log {strip_dir(file_log)}",
-                ]
-            )
-            if perim is not None:
-                args = args + f" --perim {strip_dir(perim)}"
-            args = args.replace("\\", "/")
-            file_sh = os.path.join(dir_fire, "sim.sh")
+                # FIX: --log doesn't work right now
+                args = " ".join(
+                    [
+                        f'"{strip_dir(dir_fire)}" {start_date} {lat} {lon}',
+                        f"{hour:02d}:{minute:02d}",
+                        NO_INTENSITY,
+                        f"--ffmc {data['ffmc_old']}",
+                        f"--dmc {data['dmc_old']}",
+                        f"--dc {data['dc_old']}",
+                        f"--apcp_prev {data['apcp_prev']}",
+                        "-v",
+                        "-v",
+                        f"--output_date_offsets {fmt_offsets}",
+                        f"--wx {strip_dir(wx_file)}",
+                        # f"--log {strip_dir(file_log)}",
+                    ]
+                )
+                if perim is not None:
+                    args = args + f" --perim {strip_dir(perim)}"
+                args = args.replace("\\", "/")
+                file_sh = os.path.join(dir_fire, "sim.sh")
 
-            def mk_sim_sh(*a, **k):
-                with open(file_sh, "w") as f_out:
-                    f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
+                def mk_sim_sh(*a, **k):
+                    with open(file_sh, "w") as f_out:
+                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
 
-            call_safe(mk_sim_sh)
-            # NOTE: needs to be octal base
-            os.chmod(file_sh, 0o775)
-            if prepare_only:
-                return None
-            log_info(f"Running: {cmd} {args}")
+                call_safe(mk_sim_sh)
+                # NOTE: needs to be octal base
+                os.chmod(file_sh, 0o775)
+                if prepare_only:
+                    # is prepared but not run, so return dir_fire
+                    return dir_fire
             sim_time = run_firestarr(dir_fire)
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother
@@ -377,6 +385,9 @@ def run_fire_from_folder(dir_fire, dir_output, verbose=False, prepare_only=False
                 del df_fire["dates_out"]
             save_geojson(df_fire, file_sim)
             changed = True
+        elif prepare_only:
+            # still need to run with run_only to copy outputs
+            return dir_fire
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")

@@ -199,8 +199,13 @@ def add_job(batch_client, pool_id=config._POOL_ID_BOTH, job_id=None):
         run_id = datetime.datetime.now().strftime("%Y%m%d%H%S")
         job_id = f"job_container_{run_id}"
     try:
-        batch_client.job.get(job_id)
-        return job_id
+        job = batch_client.job.get(job_id)
+        # delete if exists and completed
+        if "completed" == job.state:
+            print(f"Deleting completed job {job_id}")
+            batch_client.job.delete(job_id)
+        else:
+            return job_id
     except batchmodels.BatchErrorException:
         pass
     print("Creating job [{}]...".format(job_id))
