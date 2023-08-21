@@ -127,7 +127,9 @@ DIR_LOG = ensure_dir(os.path.join(DIR_DATA, "logs"))
 DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, "output"))
 DIR_RASTER = ensure_dir(os.path.join(DIR_GENERATED, "grid", f"{CELL_SIZE}m"))
 DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
-DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
+# DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
+# should be better to not use container for temporary files?
+DIR_TMP = ensure_dir(os.path.join("/tmp/firestarr"))
 DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
 
 MINUTES_PER_HOUR = 60

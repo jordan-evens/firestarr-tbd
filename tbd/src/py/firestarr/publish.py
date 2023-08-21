@@ -219,10 +219,10 @@ def merge_dirs(
         files_crs_changed = [x[1] for x in results_crs if x[0]]
         changed = 0 < len(files_crs_changed)
         file_root = os.path.join(
-            dir_out, f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
+            f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
         )
-        file_tmp = f"{file_root}_tmp.tif"
-        file_base = f"{file_root}.tif"
+        file_tmp = f"/tmp/{file_root}_tmp.tif"
+        file_base = f"{dir_out}/{file_root}.tif"
         # no point in doing this if nothing was added
         if force or changed or not os.path.isfile(file_base):
             try_remove(file_tmp, force=True)
@@ -267,7 +267,7 @@ def merge_dirs(
                 if not find_invalid_tiffs(file_tmp):
                     try_remove(file_base, force=True)
                     if "GTiff" == FORMAT_OUTPUT:
-                        call_safe(os.rename, file_tmp, file_base)
+                        call_safe(shutil.move, file_tmp, file_base)
                     else:
                         # HACK: reproject should basically just be copy?
                         # convert to COG

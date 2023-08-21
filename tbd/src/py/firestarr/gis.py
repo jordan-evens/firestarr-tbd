@@ -13,7 +13,6 @@ from common import (
     DIR_DOWNLOAD,
     DIR_EXTRACTED,
     DIR_RASTER,
-    DIR_TMP,
     do_nothing,
     ensure_dir,
     ensure_string_list,
@@ -25,6 +24,7 @@ from common import (
     try_remove,
     unzip,
 )
+from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 from redundancy import NUM_RETRIES, call_safe, get_stack
@@ -533,11 +533,12 @@ def make_gdf_from_series(row, crs):
     return to_gdf(row.to_frame().transpose(), crs)
 
 
-LOCK_GDAL_EXCEPTIONS = os.path.join(DIR_TMP, "use_gdal_exceptions")
+# don't need a file lock because only this process will be affected
+LOCK_GDAL_EXCEPTIONS = Lock()
 
 
 def with_gdal_exceptions_off(fct, *args, **kwargs):
-    with locks_for(LOCK_GDAL_EXCEPTIONS):
+    with LOCK_GDAL_EXCEPTIONS:
         use_exceptions = gdal.GetUseExceptions()
         try:
             # HACK: if exceptions are on then gdal_merge throws one
@@ -557,33 +558,44 @@ def find_invalid_tiffs(paths, bands=[1], test_read=False):
     paths = ensure_string_list(paths)
 
     def check_valid(path):
-        if not os.path.isfile(path):
-            return False
-        src = gdal.Open(path)
-        if src is None:
-            return False
-        for band_number in bands:
-            band = src.GetRasterBand(band_number)
-            if band is None:
-                return False
-            nodata = band.GetNoDataValue()
-            if nodata:
-                # HACK: just avoid not used warning
-                pass
-            if test_read:
-                r_array = np.array(band.ReadAsArray())
-                if not r_array:
+        try:
+
+            def do_check():
+                # HACK: all these checks for None only apply when not using exceptions?
+                if not os.path.isfile(path):
                     return False
-                del r_array
-            del band
-        del src
-        return True
+                src = gdal.Open(path)
+                if src is None:
+                    return False
+                for band_number in bands:
+                    band = src.GetRasterBand(band_number)
+                    if band is None:
+                        return False
+                    nodata = band.GetNoDataValue()
+                    if nodata:
+                        # HACK: just avoid not used warning
+                        pass
+                    if test_read:
+                        r_array = np.array(band.ReadAsArray())
+                        if not r_array:
+                            return False
+                        del r_array
+                    del band
+                del src
+                return True
+
+            # HACK: do this so we can catch other i/o errors
+            return call_safe(do_check)
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            return False
 
     def check_path(path):
         # return path if not a valid tiff
         try:
             with locks_for(path):
-                if call_safe(check_valid, path):
+                if check_valid(path):
                     return None
         except KeyboardInterrupt as ex:
             raise ex
@@ -591,9 +603,6 @@ def find_invalid_tiffs(paths, bands=[1], test_read=False):
             pass
         return path
 
-    def check_paths():
-        # find list of invalid files
-        results = pmap(check_path, paths, desc="Validating rasters")
-        return [x for x in results if x is not None]
-
-    return with_gdal_exceptions_off(check_paths)
+    # find list of invalid files
+    results = pmap(check_path, paths, desc="Validating rasters")
+    return [x for x in results if x is not None]
