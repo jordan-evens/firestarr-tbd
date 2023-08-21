@@ -25,7 +25,7 @@ from common import (
 from gdal_merge_max import gdal_merge_max
 from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
 from redundancy import NUM_RETRIES, call_safe, get_stack
-from tqdm_util import tqdm
+from tqdm_util import pmap, tqdm
 
 from tbd import copy_fire_outputs, find_outputs, find_running
 
@@ -208,10 +208,12 @@ def merge_dirs(
                 changed = True
             return changed, f_crs
 
-        results_crs = [
-            reproject(f)
-            for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}")
-        ]
+        # results_crs = [
+        #     reproject(f)
+        #     for f in tqdm(files, desc=f"Reprojecting for {dir_in_for_what}")
+        # ]
+
+        results_crs = pmap(reproject, files, desc=f"Reprojecting for {dir_in_for_what}")
         results_crs = [x for x in results_crs if x is not None]
         files_crs = [x[1] for x in results_crs]
         files_crs_changed = [x[1] for x in results_crs if x[0]]
@@ -221,10 +223,6 @@ def merge_dirs(
         )
         file_tmp = f"{file_root}_tmp.tif"
         file_base = f"{file_root}.tif"
-        # argv = (["", "-a_nodata", "-1"]
-        #     + co
-        #     + ["-o", file_tmp]
-        #     + files_crs)
         # no point in doing this if nothing was added
         if force or changed or not os.path.isfile(file_base):
             try_remove(file_tmp, force=True)

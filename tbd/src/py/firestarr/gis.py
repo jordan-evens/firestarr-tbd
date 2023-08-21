@@ -399,40 +399,37 @@ def project_raster(
     @ensures(
         paths=output_raster, remove_on_exception=True, replace=True, retries=NUM_RETRIES
     )
-    def do_warp(_):
-        def do_save(*args, **kwargs):
-            nonlocal bounds
-            warp = gdal.Warp(
-                _,
-                input_raster,
-                dstNodata=nodata,
-                options=gdal.WarpOptions(
-                    dstSRS=crs,
-                    format=format,
-                    xRes=resolution,
-                    yRes=resolution,
-                    outputBounds=outputBounds,
-                    creationOptions=options,
-                ),
-            )
-            geoTransform = warp.GetGeoTransform()
-            minx = geoTransform[0]
-            maxy = geoTransform[3]
-            maxx = minx + geoTransform[1] * warp.RasterXSize
-            miny = maxy + geoTransform[5] * warp.RasterYSize
-            bounds = [minx, miny, maxx, maxy]
+    def do_save(_):
+        nonlocal bounds
+        warp = gdal.Warp(
+            _,
+            input_raster,
+            dstNodata=nodata,
+            options=gdal.WarpOptions(
+                dstSRS=crs,
+                format=format,
+                xRes=resolution,
+                yRes=resolution,
+                outputBounds=outputBounds,
+                creationOptions=options,
+            ),
+        )
+        geoTransform = warp.GetGeoTransform()
+        minx = geoTransform[0]
+        maxy = geoTransform[3]
+        maxx = minx + geoTransform[1] * warp.RasterXSize
+        miny = maxy + geoTransform[5] * warp.RasterYSize
+        bounds = [minx, miny, maxx, maxy]
 
-            warp = None
-            # HACK: make sure this exists and is correct
-            test_open = gdal.Open(_)
-            # HACK: avoid warning about unused variable
-            if test_open is not None:
-                test_open = None
-            return _
+        warp = None
+        # HACK: make sure this exists and is correct
+        test_open = gdal.Open(_)
+        # HACK: avoid warning about unused variable
+        if test_open is not None:
+            test_open = None
+        return _
 
-        return call_safe(do_save)
-
-    with_gdal_exceptions_off(do_warp, output_raster)
+    call_safe(do_save, output_raster)
 
     return bounds
 
