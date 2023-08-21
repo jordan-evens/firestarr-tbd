@@ -16,18 +16,17 @@ from common import (
     do_nothing,
     ensure_dir,
     ensure_string_list,
-    ensures,
+    force_remove,
     is_empty,
     listdir_sorted,
     locks_for,
     logging,
-    try_remove,
     unzip,
 )
 from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
-from redundancy import NUM_RETRIES, call_safe, get_stack
+from redundancy import call_safe, get_stack
 from tqdm_util import pmap
 
 KM_TO_M = 1000
@@ -383,14 +382,17 @@ def project_raster(
     resolution=None,
     format=None,
 ):
-    input_raster = None
+    if is_invalid_tiff(filename, test_read=True):
+        force_remove(filename)
+        return None
+
     try:
         input_raster = call_safe(gdal.Open, filename)
     except RuntimeError as ex:
         logging.error(f"Removing invalid file {filename}")
         logging.error(get_stack(ex))
         # delete invalid input and return None
-        try_remove(filename)
+        force_remove(filename)
         return None
 
     if output_raster is None:
@@ -398,44 +400,38 @@ def project_raster(
     ensure_dir(os.path.dirname(output_raster))
     logging.debug(f"Projecting {filename} to {output_raster}")
 
-    bounds = None
+    with locks_for(output_raster):
 
-    @ensures(
-        paths=output_raster, remove_on_exception=True, replace=True, retries=NUM_RETRIES
-    )
-    def do_save(_):
-        nonlocal bounds
-        warp = gdal.Warp(
-            _,
-            input_raster,
-            dstNodata=nodata,
-            options=gdal.WarpOptions(
-                dstSRS=crs,
-                format=format,
-                xRes=resolution,
-                yRes=resolution,
-                outputBounds=outputBounds,
-                creationOptions=options,
-            ),
-        )
-        geoTransform = warp.GetGeoTransform()
-        minx = geoTransform[0]
-        maxy = geoTransform[3]
-        maxx = minx + geoTransform[1] * warp.RasterXSize
-        miny = maxy + geoTransform[5] * warp.RasterYSize
-        bounds = [minx, miny, maxx, maxy]
+        def do_save(_):
+            force_remove(_)
+            warp = gdal.Warp(
+                _,
+                input_raster,
+                dstNodata=nodata,
+                options=gdal.WarpOptions(
+                    dstSRS=crs,
+                    format=format,
+                    xRes=resolution,
+                    yRes=resolution,
+                    outputBounds=outputBounds,
+                    creationOptions=options,
+                ),
+            )
+            geoTransform = warp.GetGeoTransform()
+            minx = geoTransform[0]
+            maxy = geoTransform[3]
+            maxx = minx + geoTransform[1] * warp.RasterXSize
+            miny = maxy + geoTransform[5] * warp.RasterYSize
+            bounds = [minx, miny, maxx, maxy]
+            warp = None
+            # # HACK: make sure this exists and is correct
+            # test_open = gdal.Open(_)
+            # # HACK: avoid warning about unused variable
+            # if test_open is not None:
+            #     test_open = None
+            return bounds
 
-        warp = None
-        # HACK: make sure this exists and is correct
-        test_open = gdal.Open(_)
-        # HACK: avoid warning about unused variable
-        if test_open is not None:
-            test_open = None
-        return _
-
-    call_safe(do_save, output_raster)
-
-    return bounds
+        return call_safe(do_save, output_raster)
 
 
 def save_geojson(df, path):
@@ -444,8 +440,7 @@ def save_geojson(df, path):
     file = os.path.join(dir, f"{base}.geojson")
     try:
         # HACK: avoid "The GeoJSON driver does not overwrite existing files."
-        if os.path.isfile(file):
-            try_remove(file)
+        force_remove(file)
         # HACK: geojson must be WGS84
         df_crs = df.to_crs("WGS84")
         call_safe(df_crs.to_file, file)
@@ -558,48 +553,48 @@ def with_gdal_exceptions_off(fct, *args, **kwargs):
                 gdal.UseExceptions()
 
 
+def is_invalid_tiff(path, bands=[1], test_read=False):
+    def do_check():
+        # HACK: all these checks for None only apply when not using exceptions?
+        if not os.path.isfile(path):
+            return False
+        src = gdal.Open(path)
+        if src is None:
+            return False
+        for band_number in bands:
+            band = src.GetRasterBand(band_number)
+            if band is None:
+                return False
+            nodata = band.GetNoDataValue()
+            if nodata:
+                # HACK: just avoid not used warning
+                pass
+            if test_read:
+                r_array = np.array(band.ReadAsArray())
+                if r_array is not None:
+                    return False
+                del r_array
+            del band
+        del src
+        return True
+
+    try:
+        # HACK: do this so we can catch other i/o errors
+        return call_safe(do_check)
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception:
+        return False
+
+
 def find_invalid_tiffs(paths, bands=[1], test_read=False):
     paths = ensure_string_list(paths)
-
-    def check_valid(path):
-        try:
-
-            def do_check():
-                # HACK: all these checks for None only apply when not using exceptions?
-                if not os.path.isfile(path):
-                    return False
-                src = gdal.Open(path)
-                if src is None:
-                    return False
-                for band_number in bands:
-                    band = src.GetRasterBand(band_number)
-                    if band is None:
-                        return False
-                    nodata = band.GetNoDataValue()
-                    if nodata:
-                        # HACK: just avoid not used warning
-                        pass
-                    if test_read:
-                        r_array = np.array(band.ReadAsArray())
-                        if not r_array:
-                            return False
-                        del r_array
-                    del band
-                del src
-                return True
-
-            # HACK: do this so we can catch other i/o errors
-            return call_safe(do_check)
-        except KeyboardInterrupt as ex:
-            raise ex
-        except Exception:
-            return False
 
     def check_path(path):
         # return path if not a valid tiff
         try:
             with locks_for(path):
-                if check_valid(path):
+                if is_invalid_tiff(path, bands=bands, test_read=False):
                     return None
         except KeyboardInterrupt as ex:
             raise ex

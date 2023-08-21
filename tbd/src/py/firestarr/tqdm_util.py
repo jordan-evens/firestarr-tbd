@@ -13,6 +13,7 @@ MAX_PROCESSES = multiprocess.cpu_count()
 TQDM_DEPTH = multiprocess.Value("i", 0)
 DEFAULT_KEEP_ALL = True
 KEEP_LEVELS = 2
+MINITERS = 2
 TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
 
 
@@ -28,10 +29,30 @@ def tqdm_depth(keep_all=DEFAULT_KEEP_ALL):
         TQDM_DEPTH.value -= 1
 
 
+def apply_direct(fct, values, try_only=False, *args, **kwargs):
+    total = kwargs.get("total", None) or (
+        len(values) if hasattr(values, "__len__") else None
+    )
+    if 0 == total:
+        # nothing to do
+        return []
+    if 1 == total:
+        # don't loop if just one thing
+        return [fct(values[0])]
+    if try_only:
+        return None
+    return (
+        [fct(x) for x in tqdm(values, *args, **kwargs)]
+        if fct is not None
+        else tqdm(values, *args, **kwargs)
+    )
+
+
 def apply(onto, fct=None, *args, **kwargs):
     with tqdm_depth() as tq:
         kwargs["position"] = tq.position
         kwargs["leave"] = tq.leave
+        kwargs["miniters"] = MINITERS
         if isinstance(onto, pd.DataFrame) or isinstance(onto, pd.Series):
             if fct is None:
                 raise RuntimeError("Must specify function if using Series or DataFrame")
@@ -43,18 +64,14 @@ def apply(onto, fct=None, *args, **kwargs):
                 if isinstance(onto, pd.Series)
                 else onto.progress_apply(fct, axis=1)
             )
-        return (
-            [fct(x) for x in tqdm(onto, *args, **kwargs)]
-            if fct is not None
-            else tqdm(onto, *args, **kwargs)
-        )
+        return apply_direct(fct, onto, *args, **kwargs)
 
 
 def wrap_write(chunks, save_as, mode, *args, **kwargs):
     with tqdm_depth() as tq:
         kwargs["position"] = tq.position
         kwargs["leave"] = tq.leave
-        kwargs["miniters"] = 1
+        kwargs["miniters"] = MINITERS
         with tqdm.wrapattr(open(save_as, mode), "write", *args, **kwargs) as fout:
             for chunk in chunks:
                 fout.write(chunk)
@@ -84,12 +101,18 @@ def init_pool(processes=None, no_limit=False):
 
 
 def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
-    if 1 == max_processes or (not no_limit and 1 == MAX_PROCESSES):
+    # check if there's no point in looping
+    result_direct = apply_direct(fct, values, try_only=True, *args, **kwargs)
+    if result_direct is not None:
+        return result_direct
+    is_single = (1 == max_processes) or (not no_limit and 1 == MAX_PROCESSES)
+    if is_single:
         # don't bother with pool if only one process
         return [fct(x) for x in apply(values, *args, **kwargs)]
     pool = init_pool(max_processes, no_limit)
     try:
-        kwargs["total"] = len(values)
+        kwargs["total"] = kwargs.get("total", len(values))
+        kwargs["miniters"] = MINITERS
         results = apply(
             pool.imap_unordered(
                 lambda p: (p[0], fct(p[1])),
@@ -141,6 +164,7 @@ def pmap_by_group(
 
     try:
         kwargs["total"] = len(all_values)
+        kwargs["miniters"] = MINITERS
         result = {}
         results = [None] * len(all_values)
         for i, v in (

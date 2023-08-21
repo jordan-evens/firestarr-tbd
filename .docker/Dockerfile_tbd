@@ -42,7 +42,7 @@ RUN groupadd --gid ${USER_ID} ${USERNAME} \
 RUN chown -R ${USERNAME}:${USERNAME} /appl/.venv \
   && echo /appl/tbd/src/py/firestarr > /appl/.venv/lib/python3.11/site-packages/firestarr.pth \
   && echo source /appl/.venv/bin/activate >> /home/${USERNAME}/.bashrc \
-  && echo VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
+  && echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 WORKDIR /appl/tbd/
 COPY .docker/requirements_tbd.txt /appl/requirements_tbd.txt
@@ -87,7 +87,7 @@ RUN apt-get install -y libgeotiff5 \
   /var/lib/apt/lists/* \
   /usr/share/man/*
 WORKDIR /appl/tbd
-RUN echo VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
+RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
 COPY ./tbd/fuel.lut /appl/tbd/
@@ -111,7 +111,7 @@ RUN apt-get install -y --no-install-recommends \
 FROM py_gdal AS tbd_prod
 ARG USERNAME
 ARG VERSION
-RUN echo VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
+RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
   && echo cd /appl/tbd >> /home/${USERNAME}/.bashrc \
   && echo /appl/tbd/src/py/firestarr > /usr/lib/python3/dist-packages//firestarr.pth
 WORKDIR /appl/

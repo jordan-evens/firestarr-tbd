@@ -1,9 +1,7 @@
 import traceback
 from io import BytesIO
-from pickle import UnpicklingError
 
 import dill._dill
-from fiona.errors import FionaError
 
 # from multiprocess.reduction import ForkingPickler
 
@@ -14,26 +12,32 @@ def get_stack(ex):
     return "".join(traceback.format_exception(ex))
 
 
+def should_ignore(ex):
+    str_stack = get_stack(ex)
+    # HACK: can't reset logs so ignore them
+    if ".log" in str_stack:
+        return False
+    ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
+    ignore_ok = ignore_ok or (
+        (
+            "Input/output error" in str_stack
+            or "I/O error" in str_stack
+            or "Resource temporarily unavailable" in str_stack
+        )
+    )
+    return ignore_ok
+
+
 def call_safe(fct, *args, **kwargs):
     retries = NUM_RETRIES
     while True:
         try:
             return fct(*args, **kwargs)
         except Exception as ex:
-            str_stack = get_stack(ex)
-            ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
-            ignore_ok = ignore_ok or (
-                (isinstance(ex, FionaError) or isinstance(ex, RuntimeError))
-                and (
-                    "Input/output error" in str_stack
-                    or "I/O error" in str_stack
-                    or "Resource temporarily unavailable" in str_stack
-                )
-            )
             # ignore because azure is throwing them all the time
             # OSError: [Errno 5] Input/output
-            if retries <= 0 or not ignore_ok:
-                print(str_stack)
+            if retries <= 0 or not should_ignore(ex):
+                print(get_stack(ex))
                 raise ex
             retries -= 1
 
@@ -71,21 +75,18 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
     retries = NUM_RETRIES
     obj = None
     while True:
+        ex_current = None
         try:
             obj = dill._dill.StockUnpickler.load(self)
             break
-        except OSError as ex:
-            print(str(ex))
-            if retries <= 0 or 5 != ex.errno:
-                raise ex
-        except UnpicklingError as ex:
-            print(str(ex))
-            if retries <= 0 or "[Errno 5] Input/output error" not in str(ex):
-                raise ex
         except Exception as ex:
-            print(str(ex))
-            raise ex
-        print("Retrying")
+            ex_current = ex
+            if retries <= 0 or not should_ignore(ex):
+                raise ex
+        print(
+            f"Reinitializing after:\n\t{ex_current}\n\t"
+            "{self._init_args}\n\t{self._init_kwds}"
+        )
         # need to reinitialize
         args = list(self._init_args) + list(self._init_kwds.values())
         for arg in args:
@@ -99,7 +100,6 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
         #         print(f"seek 0 for arg {i}")
         #         arg.seek(0)
         dill._dill.StockUnpickler.__init__(self, *self._init_args, **self._init_kwds)
-        print(f"Reinitialized with:\n\t{self._init_args}\n\t{self._init_kwds}")
         retries -= 1
     if type(obj).__module__ == getattr(self._main, "__name__", "__main__"):
         if not self._ignore:

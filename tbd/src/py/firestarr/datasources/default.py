@@ -5,15 +5,34 @@ from functools import cache
 import datasources.spotwx
 import numpy as np
 import pandas as pd
-from common import (DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
-                    DIR_SRC_PY_FIRSTARR, listdir_sorted, logging, pick_max,
-                    pick_max_by_column, to_utc, tqdm_util)
+from common import (
+    DEFAULT_M3_UNMATCHED_LAST_ACTIVE_IN_DAYS,
+    DIR_SRC_PY_FIRSTARR,
+    listdir_sorted,
+    logging,
+    pick_max,
+    pick_max_by_column,
+    to_utc,
+    tqdm_util,
+)
 from datasources.cwfis import SourceFeatureM3, SourceFireCiffc, SourceFwiCwfis
-from datasources.datatypes import (SourceFeature, SourceFire, SourceFwi,
-                                   SourceHourly, SourceModel,
-                                   make_template_empty)
-from gis import (CRS_COMPARISON, CRS_WGS84, KM_TO_M, area_ha,
-                 area_ha_to_radius_m, save_shp, to_gdf)
+from datasources.datatypes import (
+    SourceFeature,
+    SourceFire,
+    SourceFwi,
+    SourceHourly,
+    SourceModel,
+    make_template_empty,
+)
+from gis import (
+    CRS_COMPARISON,
+    CRS_WGS84,
+    KM_TO_M,
+    area_ha,
+    area_ha_to_radius_m,
+    save_shp,
+    to_gdf,
+)
 
 STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
 

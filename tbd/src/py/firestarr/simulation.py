@@ -92,10 +92,6 @@ class Simulation(object):
         )
         def do_create(_):
             logging.debug("Saving %s to %s", fire_name, dir_fire)
-            # this isn't going to work with locks but do we need to do it?
-            # # remove directory if file doesn't exist
-            # try_remove(dir_fire, verbose=False)
-            # ensure_dir(dir_fire)
             max_days = row_fire["DURATION"]
             lat = row_fire["lat"]
             lon = row_fire["lon"]

@@ -25,7 +25,9 @@ from log import logging
 from osgeo import gdal
 from redundancy import call_safe, get_stack
 
+FLAG_IGNORE_PERIM_OUTPUTS = True
 FLAG_DEBUG = True
+FLAG_SAVE_PREPARED = False
 
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE_YMD = "%Y%m%d"
@@ -223,7 +225,8 @@ def read_config(force=False):
         if not os.path.isfile(file_bounds):
             if DEFAULT_BOUNDS != file_bounds:
                 logging.warning(
-                    f"Bounds specified as {file_bounds} but not found - reverting to {DEFAULT_BOUNDS}"
+                    f"Bounds specified as {file_bounds} but not found - "
+                    f"reverting to {DEFAULT_BOUNDS}"
                 )
                 file_bounds = DEFAULT_BOUNDS
         if not os.path.isfile(file_bounds):
@@ -310,6 +313,10 @@ def try_remove(paths, verbose=False, force=False):
                     raise ex
                 except Exception:
                     pass
+
+
+def force_remove(paths, verbose=True):
+    return try_remove(paths, verbose=verbose, force=True)
 
 
 def split_line(line):
@@ -691,7 +698,7 @@ def ensures(
                             logging.error(
                                 f"Failed parsing {paths} so removing and retrying"
                             )
-                            try_remove(paths)
+                            force_remove(paths)
                 except KeyboardInterrupt as ex:
                     raise ex
                 except Exception as ex:

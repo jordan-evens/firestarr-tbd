@@ -1,34 +1,32 @@
 import math
 import os
 import re
+import shutil
 import time
 import timeit
 
 import pandas as pd
 import psutil
-from azurebatch.batch_container import (
+from azurebatch import (
     add_job,
     add_simulation_task,
     check_successful,
     find_tasks_running,
     get_batch_client,
     have_batch_config,
+    is_running_on_azure,
 )
-
-# from azurebatch.batch_container import (
-#     add_job,
-#     get_batch_client,
-#     have_batch_config,
-# )
-# from common import DIR_SIMS
 from common import (
     CONFIG,
     DIR_DATA,
     DIR_SIMS,
     DIR_TBD,
+    DIR_TMP,
+    FLAG_IGNORE_PERIM_OUTPUTS,
     SECONDS_PER_HOUR,
     WANT_DATES,
     ensure_dir,
+    force_remove,
     listdir_sorted,
     locks_for,
     logging,
@@ -48,19 +46,12 @@ from redundancy import call_safe
 NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
 
+TMP_SUFFIX = "__tmp__"
+
 _RUN_FIRESTARR = None
 _FIND_RUNNING = None
 _BATCH_CLIENT = None
 _JOB_ID = None
-
-
-def find_outputs(dir_fire):
-    files = [x for x in listdir_sorted(dir_fire)]
-    # FIX: include perimeter file
-    probs_all = [x for x in files if "probability" in x and x.endswith(".tif")]
-    probs = [x for x in probs_all if x.startswith("probability")]
-    interim = [x for x in probs_all if x.startswith("interim")]
-    return probs, interim
 
 
 def run_firestarr_local(dir_fire):
@@ -124,16 +115,19 @@ def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
         raise RuntimeError("Can't set both of FORCE_LOCAL_TASKS and FORCE_BATCH_TASKS")
     with locks_for(os.path.join(DIR_DATA, "assign_batch_client")):
         if not force_local and have_batch_config():
-            logging.info("Running using batch tasks")
-            _RUN_FIRESTARR = run_firestarr_batch
-            _BATCH_CLIENT = get_batch_client()
-            job_id = None
-            if dir_fire.startswith(DIR_SIMS):
-                job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
-                job_id = job_id[: job_id.index("/")]
-            _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
-            _FIND_RUNNING = find_running_batch
-            return True
+            if not is_running_on_azure():
+                logging.warning("Not running on azure so not using batch")
+            else:
+                logging.info("Running using batch tasks")
+                _RUN_FIRESTARR = run_firestarr_batch
+                _BATCH_CLIENT = get_batch_client()
+                job_id = None
+                if dir_fire.startswith(DIR_SIMS):
+                    job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
+                    job_id = job_id[: job_id.index("/")]
+                _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
+                _FIND_RUNNING = find_running_batch
+                return True
         if force_batch:
             raise RuntimeError("Forcing batch mode but no config set")
         logging.info("Running using local tasks")
@@ -177,7 +171,7 @@ def check_running(dir_fire):
 
 def finish_job():
     if _BATCH_CLIENT is None:
-        logging.error(f"Didn't use batch, but trying to finish job")
+        logging.error("Didn't use batch, but trying to finish job")
     else:
         if check_successful(_BATCH_CLIENT, _JOB_ID):
             _BATCH_CLIENT.job.terminate(_JOB_ID)
@@ -190,58 +184,91 @@ def get_simulation_file(dir_fire):
     return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
 
 
-def copy_fire_outputs(dir_fire, dir_output, changed, suffix=""):
+def find_outputs(dir_fire):
+    files = [x for x in listdir_sorted(dir_fire)]
+    # FIX: include perimeter file
+    files_tiff = [x for x in files if x.endswith(".tif")]
+    probs_all = [x for x in files_tiff if "probability" in x]
+    files_prob = [
+        os.path.join(dir_fire, x) for x in probs_all if x.startswith("probability")
+    ]
+    files_interim = [
+        os.path.join(dir_fire, x) for x in probs_all if x.startswith("interim")
+    ]
+    files_perim = [
+        os.path.join(dir_fire, x) for x in files_tiff if os.path.basename(dir_fire) in x
+    ]
+    return files_prob, files_interim, files_perim
+
+
+def copy_fire_outputs(dir_fire, dir_output, changed):
     # simulation was done or is now, but outputs don't exist
     logging.debug(f"Collecting outputs from {dir_fire}")
     fire_name = os.path.basename(dir_fire)
-    outputs = listdir_sorted(dir_fire)
+    files_prob, files_interim, files_perim = find_outputs(dir_fire)
     extent = None
-    probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
     dir_region = ensure_dir(os.path.join(dir_output, "initial"))
-    for prob in probs:
-        logging.debug(f"Adding raster to final outputs: {prob}")
-        # want to put each probability raster into right date so we can combine them
-        d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
-        # FIX: want all of these to be output at the size of the largest?
-        # FIX: still doesn't show whole area that was simulated
-        file_out = os.path.join(dir_region, d, f"{fire_name}{suffix}.tif")
-        if changed or not os.path.isfile(file_out):
-            extent = project_raster(os.path.join(dir_fire, prob), file_out, nodata=None)
-            if extent is None:
-                raise RuntimeError(f"Fire {dir_fire} has invalid output file {prob}")
-            # if file didn't exist then it's changed now
-            changed = True
-    perims = [
-        x
-        for x in outputs
-        if (
-            x.endswith("tif")
-            and not (
-                x.startswith("probability")
-                or x.startswith("interim")
-                or x.startswith("intensity")
-                or "dem.tif" == x
-                or "fuel.tif" == x
-            )
+    suffix = ""
+    is_interim = False
+    if files_interim and not files_prob:
+        logging.debug(f"Using interim rasters for {dir_fire}")
+        dir_tmp_fire = ensure_dir(
+            os.path.join(DIR_TMP, os.path.basename(dir_output), "interim", fire_name)
         )
-    ]
-    if len(perims) > 0:
-        file_out = os.path.join(dir_region, "perim", f"{fire_name}{suffix}.tif")
-        if changed or not os.path.isfile(file_out):
-            perim = perims[0]
-            logging.debug(f"Adding raster to final outputs: {perim}")
-            extent = project_raster(
-                os.path.join(dir_fire, perim),
-                file_out,
-                outputBounds=extent,
-                # HACK: if nodata is none then 0's should just show up as 0?
-                nodata=None,
-            )
-            if extent is None:
-                raise RuntimeError(f"Fire {dir_fire} has invalid output file {perim}")
-            # if file didn't exist then it's changed now
+        force_remove(dir_tmp_fire)
+        call_safe(shutil.copytree, dir_fire, dir_tmp_fire, dirs_exist_ok=True)
+        # double check that outputs weren't created while copying
+        probs_tmp, interim_tmp, files_perim = find_outputs(dir_fire)
+        if not probs_tmp:
+            for f_interim in files_interim:
+                f_tmp = f_interim.replace("interim_", "")
+                shutil.move(f_interim, f_tmp)
+            probs_tmp, interim_tmp, files_perim = find_outputs(dir_fire)
+            if interim_tmp:
+                raise RuntimeError("Expected files to be renamed")
+            files_prob = probs_tmp
+            # force copying because not sure when interim is from
             changed = True
-    return changed
+            suffix = TMP_SUFFIX
+            is_interim = False
+    files_project = {}
+    if files_prob:
+        for prob in files_prob:
+            logging.debug(f"Adding raster to final outputs: {prob}")
+            # want to put each probability raster into right date so we can combine them
+            d = prob[(prob.rindex("_") + 1) : prob.rindex(".tif")].replace("-", "")
+            # FIX: want all of these to be output at the size of the largest?
+            # FIX: still doesn't show whole area that was simulated
+            file_out = os.path.join(dir_region, d, f"{fire_name}{suffix}.tif")
+            files_project[prob] = file_out
+    if not FLAG_IGNORE_PERIM_OUTPUTS:
+        if len(files_perim) > 0:
+            file_out = os.path.join(dir_region, "perim", f"{fire_name}{suffix}.tif")
+            files_project[files_perim[0]] = file_out
+    extent = None
+    for file_src, file_out in files_project.items():
+        if changed or not os.path.isfile(file_out):
+            if changed or not os.path.isfile(file_out):
+                logging.debug(f"Adding raster to final outputs: {file_src}")
+                # if writing over file then get rid of it
+                force_remove(file_out)
+                # using previous extent is limiting later days
+                if "perim" not in file_src:
+                    extent = None
+                extent = project_raster(
+                    file_src,
+                    file_out,
+                    outputBounds=extent,
+                    # HACK: if nodata is none then 0's should just show up as 0?
+                    nodata=None,
+                )
+                if extent is None:
+                    raise RuntimeError(
+                        f"Fire {dir_fire} has invalid output file {file_src}"
+                    )
+                # if file didn't exist then it's changed now
+                changed = True
+    return changed, is_interim, files_project
 
 
 def run_fire_from_folder(
@@ -331,9 +358,10 @@ def run_fire_from_folder(
                     start_time.tz.utcoffset(start_time).total_seconds()
                     / SECONDS_PER_HOUR
                 )
-                # HACK: I think there might be issues with forecasts being at the half hour?
+                # HACK: I think there might be issues with forecasts being at
+                #           the half hour?
                 if math.floor(tz) != tz:
-                    # logging.warning("Rounding down to deal with partial hour timezone")
+                    logging.warning("Rounding down to deal with partial hour timezone")
                     tz = math.floor(tz)
                 tz = int(tz)
                 log_info("Timezone offset is {}".format(tz))
@@ -362,7 +390,6 @@ def run_fire_from_folder(
                         f"--dmc {data['dmc_old']}",
                         f"--dc {data['dc_old']}",
                         f"--apcp_prev {data['apcp_prev']}",
-                        "-v",
                         "-v",
                         f"--output_date_offsets {fmt_offsets}",
                         f"--wx {strip_dir(wx_file)}",
@@ -398,6 +425,8 @@ def run_fire_from_folder(
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
-        changed = copy_fire_outputs(dir_fire, dir_output, changed)
+        changed, is_interim, files_project = copy_fire_outputs(
+            dir_fire, dir_output, changed
+        )
         df_fire["changed"] = changed
         return df_fire

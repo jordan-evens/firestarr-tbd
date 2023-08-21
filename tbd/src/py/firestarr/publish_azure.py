@@ -10,6 +10,7 @@ from common import (
     DIR_OUTPUT,
     DIR_SIMS,
     DIR_ZIP,
+    FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_DATE_YMD,
     is_empty,
     listdir_sorted,
@@ -105,6 +106,8 @@ def upload_static():
 
 
 def upload_dir(dir_run=None):
+    if not FLAG_IGNORE_PERIM_OUTPUTS:
+        raise NotImplementedError("Need to deal with perimeters properly")
     if not read_config():
         logging.info(f"Azure not configured so not publishing {dir_run}")
         return False

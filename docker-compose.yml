@@ -18,6 +18,8 @@ services:
       - type: bind
         source: ./gis
         target: /appl/gis
+    env_file:
+      - .env
 
   tbd_dev_svc:
     image: tbd_dev_svc
@@ -46,6 +48,8 @@ services:
     restart: on-failure
     cap_add:
       - SYS_PTRACE
+    env_file:
+      - .env
 
   tbd_prod_stable:
     image: tbd_prod_stable
@@ -62,6 +66,8 @@ services:
         - tbd_prod_stable:${VERSION}
     volumes:
       - data:/appl/data
+    env_file:
+      - .env
 
   tbd_prod_svc:
     image: tbd_prod_svc
@@ -78,6 +84,8 @@ services:
         - tbd_prod_svc:${VERSION}
     volumes:
       - data:/appl/data
+    env_file:
+      - .env
 
   firestarr:
     image: firestarr
@@ -97,6 +105,8 @@ services:
         source: ./tbd/settings.ini
         target: /appl/tbd/settings.ini
       - data:/appl/data
+    env_file:
+      - .env
 
 volumes:
   data:

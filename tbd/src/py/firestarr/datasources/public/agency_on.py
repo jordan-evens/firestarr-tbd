@@ -16,12 +16,12 @@ from common import (
     SECONDS_PER_HOUR,
     do_nothing,
     ensure_dir,
+    force_remove,
     is_empty,
     locks_for,
     logging,
     read_json_safe,
     remove_timezone_utc,
-    try_remove,
 )
 from datasources.datatypes import (
     COLUMN_TIME,
@@ -260,7 +260,7 @@ def get_hourly_date(dir_out, layer, date):
             c = Counter(df["datetime"])
             if expected > len(times) or 1 != len(np.unique(list(c.values()))):
                 # need to get again because old file isn't complete
-                try_remove(file_wx_date)
+                force_remove(file_wx_date)
             else:
                 # same amount of data for all hours so should be okay
                 return df
