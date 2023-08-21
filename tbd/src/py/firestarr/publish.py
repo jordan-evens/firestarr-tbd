@@ -1,5 +1,4 @@
 import datetime
-import itertools
 import os
 import shutil
 import time
@@ -14,17 +13,15 @@ from common import (
     FORMAT_OUTPUT,
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
     ensure_dir,
-    ensures,
     list_dirs,
     listdir_sorted,
-    locks_for,
     logging,
     try_remove,
     zip_folder,
 )
 from gdal_merge_max import gdal_merge_max
 from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
-from redundancy import NUM_RETRIES, call_safe, get_stack
+from redundancy import call_safe, get_stack
 from tqdm_util import pmap, tqdm
 
 from tbd import copy_fire_outputs, find_outputs, find_running
@@ -248,7 +245,7 @@ def merge_dirs(
                         )
                     else:
                         logging.warning(
-                            f"Only have one file so just copying {f} to {_}"
+                            f"Only have one file so just copying {f} to {file_tmp}"
                         )
                         shutil.copy(f, file_tmp)
                 else:

@@ -87,7 +87,7 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
             raise ex
         print("Retrying")
         # need to reinitialize
-        args = self._init_args + self._init_kwds.values()
+        args = list(self._init_args) + list(self._init_kwds.values())
         for arg in args:
             if isinstance(arg, BytesIO):
                 # reset to start of BytesIO

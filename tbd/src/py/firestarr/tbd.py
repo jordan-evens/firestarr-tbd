@@ -9,6 +9,7 @@ import psutil
 from azurebatch.batch_container import (
     add_job,
     add_simulation_task,
+    check_successful,
     find_tasks_running,
     get_batch_client,
     have_batch_config,
@@ -46,8 +47,6 @@ from redundancy import call_safe
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
-
-TASK_SLEEP = 5
 
 _RUN_FIRESTARR = None
 _FIND_RUNNING = None
@@ -100,10 +99,8 @@ def find_running_local(dir_fire):
     return processes
 
 
-def run_firestarr_batch(dir_fire):
-    task_id = add_simulation_task(_BATCH_CLIENT, _JOB_ID, dir_fire)
-    while find_tasks_running(_BATCH_CLIENT, _JOB_ID, task_id):
-        time.sleep(TASK_SLEEP)
+def run_firestarr_batch(dir_fire, wait=True):
+    add_simulation_task(_BATCH_CLIENT, _JOB_ID, dir_fire, wait=wait)
 
 
 def find_running_batch(dir_fire):
@@ -176,6 +173,16 @@ def find_running(dir_fire):
 def check_running(dir_fire):
     processes = find_running(dir_fire)
     return 0 < len(processes)
+
+
+def finish_job():
+    if _BATCH_CLIENT is None:
+        logging.error(f"Didn't use batch, but trying to finish job")
+    else:
+        if check_successful(_BATCH_CLIENT, _JOB_ID):
+            _BATCH_CLIENT.job.terminate(_JOB_ID)
+        else:
+            logging.error(f"Finishing incomplete job {_JOB_ID}")
 
 
 def get_simulation_file(dir_fire):
@@ -312,7 +319,7 @@ def run_fire_from_folder(
                     with locks_for(raster):
                         # FIX: if we never use points then the sims don't guarantee
                         # running from non-fuel for the points like normally
-                        perim = call_safe(Rasterize, file_sim, raster, reference)
+                        perim = Rasterize(file_sim, raster, reference)
                 else:
                     # think this should be fine for using individual points
                     save_point_shp(lat, lon, dir_fire, fire_name)

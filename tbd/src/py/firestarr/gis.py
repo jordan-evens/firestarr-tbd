@@ -223,54 +223,58 @@ def Rasterize(file_lyr, raster, reference):
     @param reference Reference raster to use for extents and alignment
     @return None
     """
-    # Get projection info from reference image
-    ref_raster = gdal.Open(reference, gdal.GA_ReadOnly)
-    gt = ref_raster.GetGeoTransform()
-    pixelSizeX = gt[1]
-    pixelSizeY = -gt[5]
-    if pixelSizeX != pixelSizeY:
-        print("Raster must have square pixels")
-        sys.exit(-2)
 
-    gdalformat = "GTiff"
-    datatype = gdal.GDT_Byte
-    # datatype = gdal.GDT_UInt16
-    burnVal = 1  # value for the output image pixels
+    def do_rasterize():
+        # Get projection info from reference image
+        ref_raster = call_safe(gdal.Open, reference, gdal.GA_ReadOnly)
+        gt = ref_raster.GetGeoTransform()
+        pixelSizeX = gt[1]
+        pixelSizeY = -gt[5]
+        if pixelSizeX != pixelSizeY:
+            print("Raster must have square pixels")
+            sys.exit(-2)
 
-    # Open Shapefile
-    feature = ogr.Open(file_lyr)
-    lyr = feature.GetLayer()
+        gdalformat = "GTiff"
+        datatype = gdal.GDT_Byte
+        # datatype = gdal.GDT_UInt16
+        burnVal = 1  # value for the output image pixels
 
-    # Rasterise
-    # ~ print("Rasterising shapefile...")
-    # crs = osr.SpatialReference(wkt=ref_raster.GetProjectionRef())
-    crs = ref_raster.GetProjectionRef()
-    output = gdal.GetDriverByName(gdalformat).Create(
-        raster,
-        ref_raster.RasterXSize,
-        ref_raster.RasterYSize,
-        1,
-        datatype,
-        options=["TFW=YES", "COMPRESS=LZW", "TILED=YES"],
-    )
-    output.SetProjection(crs)
-    output.SetGeoTransform(ref_raster.GetGeoTransform())
-    # Write data to band 1
-    band = output.GetRasterBand(1)
-    band.SetNoDataValue(0)
-    gdal.RasterizeLayer(output, [1], lyr, burn_values=[burnVal])
-    # Close datasets
-    del band
-    del output
-    del ref_raster
-    del lyr
-    del feature
-    # del src_ds
-    # create projection file for output
-    # prj = os.path.splitext(raster)[0] + ".prj"
-    # with open (prj, 'w') as file:
-    #     file.write(lyr.crs.ExportToWkt())
-    return raster
+        # Open Shapefile
+        feature = ogr.Open(file_lyr)
+        lyr = feature.GetLayer()
+
+        # Rasterise
+        # ~ print("Rasterising shapefile...")
+        # crs = osr.SpatialReference(wkt=ref_raster.GetProjectionRef())
+        crs = ref_raster.GetProjectionRef()
+        output = gdal.GetDriverByName(gdalformat).Create(
+            raster,
+            ref_raster.RasterXSize,
+            ref_raster.RasterYSize,
+            1,
+            datatype,
+            options=["TFW=YES", "COMPRESS=LZW", "TILED=YES"],
+        )
+        output.SetProjection(crs)
+        output.SetGeoTransform(ref_raster.GetGeoTransform())
+        # Write data to band 1
+        band = output.GetRasterBand(1)
+        band.SetNoDataValue(0)
+        gdal.RasterizeLayer(output, [1], lyr, burn_values=[burnVal])
+        # Close datasets
+        del band
+        del output
+        del ref_raster
+        del lyr
+        del feature
+        # del src_ds
+        # create projection file for output
+        # prj = os.path.splitext(raster)[0] + ".prj"
+        # with open (prj, 'w') as file:
+        #     file.write(lyr.crs.ExportToWkt())
+        return raster
+
+    return call_safe(do_rasterize)
 
 
 def save_point_shp(latitude, longitude, out_dir, name):

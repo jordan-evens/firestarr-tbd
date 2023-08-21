@@ -56,6 +56,7 @@ from tbd import (
     check_running,
     copy_fire_outputs,
     find_outputs,
+    finish_job,
     get_simulation_file,
 )
 
@@ -177,6 +178,7 @@ class Run(object):
         self._origin = Origin(self._start_time)
         self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
         self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
+        self._is_batch = assign_firestarr_batch(self._dir_sims)
 
     def load_rundata(self):
         self._modelrun = None
@@ -316,6 +318,9 @@ class Run(object):
             while True:
                 is_current = self.check_and_publish()
                 if is_current:
+                    # HACK: abstract this later
+                    if self._is_batch:
+                        finish_job()
                     break
                 was_running = False
                 while self.is_running():
@@ -535,7 +540,6 @@ class Run(object):
         if check_missing:
             if self.find_unprepared(df_fires):
                 self.prep_folders()
-        is_batch = assign_firestarr_batch(self._dir_sims)
         # HACK: order by PRIORITY so it doesn't make it alphabetical by ID
         dirs_sim = {
             id[1]: [os.path.join(self._dir_sims, x) for x in g.index]
@@ -635,8 +639,8 @@ class Run(object):
         tqdm_util.pmap_by_group(
             run_fire,
             dirs_sim,
-            max_processes=len(df_fires) if is_batch else CONCURRENT_SIMS,
-            no_limit=is_batch,
+            max_processes=len(df_fires) if self._is_batch else CONCURRENT_SIMS,
+            no_limit=self._is_batch,
             desc="Running simulations",
             callback_group=callback_publish,
         )

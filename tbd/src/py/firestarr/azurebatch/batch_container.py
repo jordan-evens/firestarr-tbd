@@ -5,9 +5,44 @@ import azure.batch as batch
 import azure.batch.batch_auth as batchauth
 import azure.batch.models as batchmodels
 import azurebatch.config as config
+from common import SECONDS_PER_MINUTE
+from multiprocess import Lock, Process
 from tqdm import tqdm
 
 RELATIVE_MOUNT_PATH = "firestarr_data"
+ABSOLUTE_MOUNT_PATH = f"/mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}"
+TASK_SLEEP = 5
+
+POOL_MONITOR_THREADS = {}
+POOL_MONITOR_LOCK = Lock()
+POOL_MONITOR_SLEEP = SECONDS_PER_MINUTE // 2
+
+
+def monitor_pool_nodes(batch_client, pool_id):
+    while True:
+        pool = batch_client.pool.get(pool_id)
+        if "active" == pool.state:
+            for node in batch_client.compute_node.list(pool_id):
+                node_id = node.id
+                if "unusable" == node.state:
+                    batch_client.compute_node.reboot(
+                        pool_id, node_id, node_reboot_option="terminate"
+                    )
+        time.sleep(POOL_MONITOR_SLEEP)
+
+
+def monitor_pool(batch_client, pool_id=config._POOL_ID_BOTH):
+    with POOL_MONITOR_LOCK:
+        thread = POOL_MONITOR_THREADS.get(pool_id, None)
+        if thread is not None:
+            print("Terminating existing monitor")
+            thread.terminate()
+        POOL_MONITOR_THREADS[pool_id] = Process(
+            target=monitor_pool_nodes, args=[batch_client, pool_id]
+        )
+        print(f"Starting to monitor pool {pool_id}")
+        POOL_MONITOR_THREADS[pool_id].start()
+        print("Done starting pool monitor")
 
 
 def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=False):
@@ -16,7 +51,7 @@ def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=Fals
             print("Deleting existing pool [{}]...".format(pool_id))
             batch_client.pool.delete(pool_id)
         else:
-            return
+            return pool_id
     print("Creating pool [{}]...".format(pool_id))
     new_pool = batch.models.PoolAddParameter(
         id=pool_id,
@@ -53,7 +88,17 @@ def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=Fals
                         container_name=config._STORAGE_CONTAINER,
                         relative_mount_path=RELATIVE_MOUNT_PATH,
                         account_key=config._STORAGE_KEY,
-                        blobfuse_options="-o attr_timeout=240 -o entry_timeout=240 -o negative_timeout=120 -o allow_other",
+                        blobfuse_options=" ".join(
+                            [
+                                f"-o {arg}"
+                                for arg in [
+                                    "attr_timeout=240",
+                                    "entry_timeout=240",
+                                    "negative_timeout=120",
+                                    "allow_other",
+                                ]
+                            ]
+                        ),
                     )
                 )
                 # azure_blob_file_system_configuration=(
@@ -72,129 +117,9 @@ def create_container_pool(batch_client, pool_id=config._POOL_ID_BOTH, force=Fals
     return pool_id
 
 
-# def create_container_pool(batch_client, pool_id=config._POOL_ID_PY, force=False):
-#     if batch_client.pool.exists(pool_id):
-#         if force:
-#             print("Deleting existing pool [{}]...".format(pool_id))
-#             batch_client.pool.delete(pool_id)
-#         else:
-#             return
-#     print("Creating pool [{}]...".format(pool_id))
-#     new_pool = batch.models.PoolAddParameter(
-#         id=pool_id,
-#         virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
-#             image_reference=batchmodels.ImageReference(
-#                 publisher="microsoft-azure-batch",
-#                 offer="ubuntu-server-container",
-#                 sku="20-04-lts",
-#                 version="latest",
-#             ),
-#             node_agent_sku_id="batch.node.ubuntu 20.04",
-#             container_configuration=batchmodels.ContainerConfiguration(
-#                 type="dockerCompatible",
-#                 container_image_names=[config._CONTAINER],
-#                 container_registries=[
-#                     batchmodels.ContainerRegistry(
-#                         user_name=config._REGISTRY_USER_NAME,
-#                         password=config._REGISTRY_PASSWORD,
-#                         registry_server=config._REGISTRY_SERVER,
-#                     )
-#                 ],
-#             ),
-#         ),
-#         vm_size=config._POOL_VM_SIZE,
-#         # target_dedicated_nodes=1,
-#         enable_auto_scale=True,
-#         auto_scale_formula=config._AUTO_SCALE_FORMULA,
-#         auto_scale_evaluation_interval=config._AUTO_SCALE_EVALUATION_INTERVAL,
-#         mount_configuration=[
-#             batchmodels.MountConfiguration(
-#                 azure_blob_file_system_configuration=(
-#                     batchmodels.AzureBlobFileSystemConfiguration(
-#                         account_name=config._STORAGE_ACCOUNT_NAME,
-#                         container_name=config._STORAGE_CONTAINER,
-#                         relative_mount_path=_RELATIVE_MOUNT_PATH,
-#                         account_key=config._STORAGE_KEY,
-#                         blobfuse_options="-o attr_timeout=240 -o entry_timeout=240 -o negative_timeout=120 -o allow_other",
-#                     )
-#                 )
-#                 # azure_blob_file_system_configuration=(
-#                 #     batchmodels.AzureBlobFileSystemConfiguration(
-#                 #         account_name=config._STORAGE_ACCOUNT_NAME,
-#                 #         container_name=config._STORAGE_CONTAINER,
-#                 #         relative_mount_path=_RELATIVE_MOUNT_PATH,
-#                 #         account_key=config._STORAGE_KEY,
-#                 #         blobfuse_options="-o allow_other",
-#                 #     )
-#                 # )
-#             ),
-#         ],
-#     )
-#     batch_client.pool.add(new_pool)
-#     return pool_id
-
-
-# def create_firestarr_pool(batch_client, pool_id=config._POOL_ID_BIN, force=False):
-#     if batch_client.pool.exists(pool_id):
-#         if force:
-#             print("Deleting existing pool [{}]...".format(pool_id))
-#             batch_client.pool.delete(pool_id)
-#         else:
-#             return
-#     print("Creating pool [{}]...".format(pool_id))
-#     new_pool = batch.models.PoolAddParameter(
-#         id=pool_id,
-#         virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
-#             image_reference=batchmodels.ImageReference(
-#                 publisher="microsoft-azure-batch",
-#                 offer="ubuntu-server-container",
-#                 sku="20-04-lts",
-#                 version="latest",
-#             ),
-#             node_agent_sku_id="batch.node.ubuntu 20.04",
-#             container_configuration=batchmodels.ContainerConfiguration(
-#                 type="dockerCompatible",
-#                 container_image_names=[config._CONTAINER],
-#                 container_registries=[
-#                     batchmodels.ContainerRegistry(
-#                         user_name=config._REGISTRY_USER_NAME,
-#                         password=config._REGISTRY_PASSWORD,
-#                         registry_server=config._REGISTRY_SERVER,
-#                     )
-#                 ],
-#             ),
-#         ),
-#         vm_size=config._POOL_VM_SIZE,
-#         # target_dedicated_nodes=1,
-#         enable_auto_scale=True,
-#         auto_scale_formula=config._AUTO_SCALE_FORMULA,
-#         auto_scale_evaluation_interval=config._AUTO_SCALE_EVALUATION_INTERVAL,
-#         mount_configuration=[
-#             batchmodels.MountConfiguration(
-#                     batchmodels.AzureBlobFileSystemConfiguration(
-#                         account_name=config._STORAGE_ACCOUNT_NAME,
-#                         container_name=config._STORAGE_CONTAINER,
-#                         relative_mount_path=_RELATIVE_MOUNT_PATH,
-#                         account_key=config._STORAGE_KEY,
-#                         blobfuse_options="-o attr_timeout=240 -o entry_timeout=240 -o negative_timeout=120 -o allow_other",
-#                     )
-#                 )
-#                 # azure_blob_file_system_configuration=(
-#                 #     batchmodels.AzureBlobFileSystemConfiguration(
-#                 #         account_name=config._STORAGE_ACCOUNT_NAME,
-#                 #         container_name=config._STORAGE_CONTAINER,
-#                 #         relative_mount_path=_RELATIVE_MOUNT_PATH,
-#                 #         account_key=config._STORAGE_KEY,
-#                 #         blobfuse_options="-o allow_other",
-#                 #     )
-#                 # )
-#             ),
-#         ],
-#     )
-#     batch_client.pool.add(new_pool)
-
-
 def add_job(batch_client, pool_id=config._POOL_ID_BOTH, job_id=None):
+    # start monitoring pool for unusable nodes
+    monitor_pool(batch_client, pool_id)
     if job_id is None:
         run_id = datetime.datetime.now().strftime("%Y%m%d%H%S")
         job_id = f"job_container_{run_id}"
@@ -230,14 +155,9 @@ def add_monolithic_task(batch_client, job_id):
                         # "--rm",
                         # "--name=tbd_prod_stable",
                         "--workdir /appl/tbd",
-                        f"-v /mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}:/appl/data",
+                        f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
                     ]
                 ),
-            ),
-            registry=batchmodels.ContainerRegistry(
-                user_name=config._REGISTRY_USER_NAME,
-                password=config._REGISTRY_PASSWORD,
-                registry_server=config._REGISTRY_SERVER,
             ),
             user_identity=batchmodels.UserIdentity(
                 auto_user=batchmodels.AutoUserSpecification(
@@ -249,42 +169,6 @@ def add_monolithic_task(batch_client, job_id):
     )
     task_count += 1
     batch_client.task.add_collection(job_id, tasks)
-
-
-# def add_simulation_task(batch_client, job_id, dir_fire):
-#     task_id = f"Task_{os.path.basename(dir_fire)}"
-#     tasks = list()
-#     tasks.append(
-#         batch.models.TaskAddParameter(
-#             id=task_id,
-#             # command_line=f"/bin/bash -c 'cd {dir_fire} && ./sim.sh'",
-#             # command_line=f"{dir_fire}/sim.sh",
-#             command_line=f"./sim.sh",
-#             # command_line=f"""-c 'cd {dir_fire} && ./sim.sh' """,
-#             container_settings=batchmodels.TaskContainerSettings(
-#                 image_name=config._CONTAINER,
-#                 container_run_options=" ".join(
-#                     [
-#                         # f"--entrypoint=\"/bin/bash -c 'cd {dir_fire} && ./sim.sh'\"",
-#                         # "--entrypoint /bin/bash",
-#                         "--entrypoint /bin/sh",
-#                         f"--workdir {dir_fire}",
-#                         # "--entrypoint ./sim.sh",
-#                         # f"--workdir /appl/tbd",
-#                         f"-v /mnt/batch/tasks/fsmounts/{_RELATIVE_MOUNT_PATH}:/appl/data",
-#                     ]
-#                 ),
-#             ),
-#             user_identity=batchmodels.UserIdentity(
-#                 auto_user=batchmodels.AutoUserSpecification(
-#                     scope=batchmodels.AutoUserScope.pool,
-#                     elevation_level=batchmodels.ElevationLevel.admin,
-#                 )
-#             ),
-#         )
-#     )
-#     batch_client.task.add_collection(job_id, tasks)
-#     return task_id
 
 
 def get_task_name(dir_fire):
@@ -303,11 +187,32 @@ def find_tasks_running(batch_client, job_id, dir_fire):
         return False
 
 
-def add_simulation_task(batch_client, job_id, dir_fire):
+def is_successful(obj):
+    return "active" != obj.state and "success" == obj.execution_info.result
+
+
+def check_successful(batch_client, job_id, task_id=None):
+    if task_id is not None:
+        return is_successful(batch_client.task.get(job_id, task_id))
+    else:
+        # check if all tasks in job are done
+        for task in batch_client.task.list(job_id):
+            if not is_successful(task):
+                print(f"Task {task.id} not successful")
+                return False
+        return True
+
+
+def add_simulation_task(batch_client, job_id, dir_fire, wait=True):
     task_id = get_task_name(dir_fire)
-    tasks = list()
-    tasks.append(
-        batch.models.TaskAddParameter(
+    task = None
+    try:
+        task = batch_client.task.get(job_id, task_id)
+    except batchmodels.BatchErrorException as ex:
+        if "TaskNotFound" != ex.error.code:
+            raise ex
+    if task is None:
+        task_params = batch.models.TaskAddParameter(
             id=task_id,
             # command_line=f"/bin/bash -c 'cd {dir_fire} && ./sim.sh'",
             # command_line=f"{dir_fire}/sim.sh",
@@ -325,13 +230,8 @@ def add_simulation_task(batch_client, job_id, dir_fire):
                         f"--workdir {dir_fire}",
                         # "--entrypoint ./sim.sh",
                         # f"--workdir /appl/tbd",
-                        f"-v /mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}:/appl/data",
+                        f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
                     ]
-                ),
-                registry=batchmodels.ContainerRegistry(
-                    user_name=config._REGISTRY_USER_NAME,
-                    password=config._REGISTRY_PASSWORD,
-                    registry_server=config._REGISTRY_SERVER,
                 ),
             ),
             user_identity=batchmodels.UserIdentity(
@@ -341,8 +241,21 @@ def add_simulation_task(batch_client, job_id, dir_fire):
                 )
             ),
         )
-    )
-    batch_client.task.add_collection(job_id, tasks)
+        batch_client.task.add(job_id, task_params)
+    if not check_successful(batch_client, job_id, task_id):
+        # wait if requested and task isn't done
+        if wait:
+            while True:
+                while True:
+                    task = batch_client.task.get(job_id, task_id)
+                    if "active" == task.state:
+                        time.sleep(TASK_SLEEP)
+                    else:
+                        break
+                if "failure" == task.execution_info.result:
+                    batch_client.task.reactivate(job_id, task_id)
+                else:
+                    break
     return task_id
 
 

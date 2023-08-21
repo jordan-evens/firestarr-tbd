@@ -18,7 +18,7 @@ _POOL_ID_BOTH = "pool_firestarr_both"
 _POOL_ID_PY = "pool_firestarr_py"
 _POOL_ID_BIN = "pool_firestarr_bin"
 _MIN_NODES = 0
-_MAX_NODES = 25
+_MAX_NODES = 50
 _AUTO_SCALE_FORMULA = "\n".join(
     [
         f"$min_nodes = {_MIN_NODES};",
