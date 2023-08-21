@@ -142,3 +142,4 @@ if __name__ == "__main__":
         if not ran_outdated:
             break
         logging.info("Trying again because used old weather")
+    logging.info("Finished successfully")

@@ -1,4 +1,5 @@
 import datetime
+import itertools
 import os
 import shutil
 import time
@@ -328,6 +329,24 @@ class Run(object):
                     )
         self._published_clean = True
         logging.info("Finished simulation for {self._run_id}")
+
+        # if this is done then shouldn't need any locks for it
+        def find_locks(dir_find):
+            files_lock = []
+            if dir_find:
+                for root, dirs, files in os.walk(dir_find):
+                    for f in files:
+                        if f.endswith(".lock"):
+                            files_lock.append(os.path.join(root, f))
+            return files_lock
+
+        logging.info(f"Removing file locks for {self._id}")
+        try_remove(
+            itertools.chain.from_iterable(
+                [find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]]
+            ),
+            force=True,
+        )
         return df_final
 
     @log_order()
