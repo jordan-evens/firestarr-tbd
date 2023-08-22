@@ -9,24 +9,13 @@ import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import (
-    DIR_DOWNLOAD,
-    DIR_EXTRACTED,
-    DIR_RASTER,
-    do_nothing,
-    ensure_dir,
-    ensure_string_list,
-    force_remove,
-    is_empty,
-    listdir_sorted,
-    locks_for,
-    logging,
-    unzip,
-)
+from common import (DIR_DOWNLOAD, DIR_EXTRACTED, DIR_RASTER, do_nothing,
+                    ensure_dir, ensure_string_list, force_remove, is_empty,
+                    listdir_sorted, locks_for, logging, unzip)
 from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
-from redundancy import call_safe, get_stack
+from redundancy import call_safe, get_stack, should_ignore
 from tqdm_util import pmap
 
 KM_TO_M = 1000
@@ -423,7 +412,18 @@ def project_raster(
             maxx = minx + geoTransform[1] * warp.RasterXSize
             miny = maxy + geoTransform[5] * warp.RasterYSize
             bounds = [minx, miny, maxx, maxy]
-            warp = None
+            try:
+                warp = None
+            except RuntimeError as ex:
+                # HACK: keep getting:
+                #     Exception ignored in: <built-in function delete_Dataset>
+                #     Traceback (most recent call last):
+                #     File "/appl/tbd/src/py/firestarr/gis.py", line 426, in do_save
+                #         warp = None
+                #         ^^^^
+                if not should_ignore(ex):
+                    raise ex
+
             # # HACK: make sure this exists and is correct
             # test_open = gdal.Open(_)
             # # HACK: avoid warning about unused variable

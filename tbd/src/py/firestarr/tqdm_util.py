@@ -29,23 +29,23 @@ def tqdm_depth(keep_all=DEFAULT_KEEP_ALL):
         TQDM_DEPTH.value -= 1
 
 
-def apply_direct(fct, values, try_only=False, *args, **kwargs):
-    total = kwargs.get("total", None) or (
-        len(values) if hasattr(values, "__len__") else None
-    )
-    if 0 == total:
-        # nothing to do
-        return []
-    if 1 == total:
-        # don't loop if just one thing
-        return [fct(values[0])]
-    if try_only:
-        return None
-    return (
-        [fct(x) for x in tqdm(values, *args, **kwargs)]
-        if fct is not None
-        else tqdm(values, *args, **kwargs)
-    )
+# def apply_direct(fct, values, try_only=False, *args, **kwargs):
+#     total = kwargs.get("total", None) or (
+#         len(values) if hasattr(values, "__len__") else None
+#     )
+#     if 0 == total:
+#         # nothing to do
+#         return []
+#     if 1 == total:
+#         # don't loop if just one thing
+#         return [fct(values[0])]
+#     if try_only:
+#         return None
+#     return (
+#         [fct(x) for x in tqdm(values, *args, **kwargs)]
+#         if fct is not None
+#         else tqdm(values, *args, **kwargs)
+#     )
 
 
 def apply(onto, fct=None, *args, **kwargs):
@@ -64,7 +64,12 @@ def apply(onto, fct=None, *args, **kwargs):
                 if isinstance(onto, pd.Series)
                 else onto.progress_apply(fct, axis=1)
             )
-        return apply_direct(fct, onto, *args, **kwargs)
+        # return apply_direct(fct, onto, *args, **kwargs)
+        return (
+            [fct(x) for x in tqdm(onto, *args, **kwargs)]
+            if fct is not None
+            else tqdm(onto, *args, **kwargs)
+        )
 
 
 def wrap_write(chunks, save_as, mode, *args, **kwargs):
@@ -101,10 +106,10 @@ def init_pool(processes=None, no_limit=False):
 
 
 def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
-    # check if there's no point in looping
-    result_direct = apply_direct(fct, values, try_only=True, *args, **kwargs)
-    if result_direct is not None:
-        return result_direct
+    # # check if there's no point in looping
+    # result_direct = apply_direct(fct, values, try_only=True, *args, **kwargs)
+    # if result_direct is not None:
+    #     return result_direct
     is_single = (1 == max_processes) or (not no_limit and 1 == MAX_PROCESSES)
     if is_single:
         # don't bother with pool if only one process

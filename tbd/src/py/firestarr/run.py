@@ -650,9 +650,6 @@ class Run(object):
                     # just updated so not changed anymore
                     changed = False
 
-        # use callback if at least merging
-        callback_publish = check_publish if self.check_do_merge() else do_nothing
-
         def prepare_fire(dir_fire):
             if check_running(dir_fire):
                 # already running, so prepared but no outputs
@@ -668,6 +665,9 @@ class Run(object):
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True)
+
+        # use callback if at least merging
+        callback_publish = check_publish if self.check_do_merge() else do_nothing
 
         tqdm_util.pmap_by_group(
             run_fire,

@@ -5,8 +5,9 @@ import time
 import azure.batch as batch
 import azure.batch.batch_auth as batchauth
 import azure.batch.models as batchmodels
-from common import CONFIG, logging
-
+from common import CONFIG, SECONDS_PER_MINUTE, logging
+from multiprocess import Lock, Process
+from redundancy import get_stack
 # from common import SECONDS_PER_MINUTE
 # from multiprocess import Lock, Process
 from tqdm import tqdm
@@ -52,29 +53,39 @@ ABSOLUTE_MOUNT_PATH = f"/mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}"
 TASK_SLEEP = 5
 
 
-def restart_unusable_nodes(batch_client, pool_id):
-    all_ok = True
-    pool = batch_client.pool.get(pool_id)
-    if "active" == pool.state:
-        for node in batch_client.compute_node.list(pool_id):
-            node_id = node.id
-            if "unusable" == node.state:
-                batch_client.compute_node.reboot(
-                    pool_id, node_id, node_reboot_option="terminate"
-                )
-                all_ok = False
-    return all_ok
+def restart_unusable_nodes(batch_client=None, pool_id=_POOL_ID_BOTH):
+    try:
+        if batch_client is None:
+            batch_client = get_batch_client()
+        pool = batch_client.pool.get(pool_id)
+        if "active" == pool.state:
+            for node in batch_client.compute_node.list(pool_id):
+                node_id = node.id
+                if "unusable" == node.state:
+                    try:
+                        # HACK: update in case changed during loop
+                        node = batch_client.compute_node.get(pool_id, node_id)
+                        if "unusable" == node.state:
+                            batch_client.compute_node.reboot(
+                                pool_id, node_id, node_reboot_option="terminate"
+                            )
+                    except batchmodels.BatchErrorException:
+                        # HACK: just ignore because probably another
+                        #       thread is trying to do the same thing?
+                        pass
+    except batchmodels.BatchErrorException:
+        pass
 
 
-# FIX: really not having a good time with broken pipes
+# # FIX: really not having a good time with broken pipes
 # def monitor_pool_nodes(batch_client, pool_id):
 #     try:
 #         while True:
-#             restart_unusable_nodes(batch_client, pool_id)
+#             restart_unusable_nodes(batch_client)
 #             time.sleep(POOL_MONITOR_SLEEP)
 #     except KeyboardInterrupt as ex:
 #         raise ex
-#     except Exception as ex:
+#     except batchmodels.BatchErrorException as ex:
 #         logging.warning(f"Ignoring {ex}")
 #         logging.warning(get_stack(ex))
 
@@ -220,7 +231,7 @@ def get_task_name(dir_fire):
 
 def find_tasks_running(batch_client, job_id, dir_fire):
     # HACK: want to check somewhere and this seems good enough for now
-    restart_unusable_nodes(batch_client, job_id)
+    restart_unusable_nodes(batch_client)
     task_name = get_task_name(dir_fire)
     tasks = []
     try:
@@ -297,8 +308,8 @@ def add_simulation_task(batch_client, job_id, dir_fire, wait=True):
                     batch_client.task.reactivate(job_id, task_id)
                 else:
                     break
-    # HACK: want to check somewhere and this seems good enough for now
-    restart_unusable_nodes(batch_client, job_id)
+    # # HACK: want to check somewhere and this seems good enough for now
+    # restart_unusable_nodes(batch_client)
     return task_id
 
 
