@@ -10,7 +10,6 @@ import pandas as pd
 import tqdm_util
 from common import (
     BOUNDS,
-    CONCURRENT_SIMS,
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
@@ -48,11 +47,10 @@ from gis import (
     save_shp,
 )
 from log import LOGGER_NAME, add_log_file
-from multiprocess import Process
 from publish import merge_dirs, publish_all
 from redundancy import call_safe, get_stack
 from simulation import Simulation
-from tqdm_util import pmap, tqdm
+from tqdm_util import apply, pmap, pmap_by_group, tqdm
 
 import tbd
 from tbd import (
@@ -61,6 +59,8 @@ from tbd import (
     copy_fire_outputs,
     finish_job,
     get_simulation_file,
+    get_simulation_task,
+    schedule_tasks,
 )
 
 LOGGER_FIRE_ORDER = logging.getLogger(f"{LOGGER_NAME}_order.log")
@@ -239,6 +239,7 @@ class Run(object):
         is_changed = {}
         is_incomplete = {}
         is_complete = {}
+        is_prepared = {}
         is_ignored = {}
         is_running = {}
 
@@ -273,13 +274,28 @@ class Run(object):
                 if not FLAG_IGNORE_PERIM_OUTPUTS:
                     len_target += 1
                 # +1 for perimeter
-                if len(files_project) != len_target:
+                if 0 == len(files_project):
+                    is_prepared[dir_fire] = df_fire
+                elif len(files_project) != len_target:
                     # logging.warning(f"Adding incomplete fire {dir_fire}")
                     # is_incomplete[dir_fire] = df_fire
                     logging.error(f"Ignoring incomplete fire {dir_fire}")
                     is_ignored[dir_fire] = df_fire
                 else:
                     is_complete[dir_fire] = df_fire
+
+        def run_fire(dir_fire):
+            return self.do_run_fire(dir_fire, run_only=True, no_wait=True)
+
+        if is_prepared:
+            # start but don't wait
+            pmap(
+                run_fire,
+                is_prepared.keys(),
+                max_processes=len(df_fires),
+                no_limit=self._is_batch,
+                desc="Running prepared fires",
+            )
 
         def reset_and_run_fire(dir_fire):
             fire_name = os.path.basename(dir_fire)
@@ -395,7 +411,7 @@ class Run(object):
             df_fires["area"] = area_ha(df_fires)
             # HACK: make into list to get rid of index so multi-column assignment works
             df_fires[["lat", "lon"]] = list(
-                tqdm_util.apply(
+                apply(
                     df_fires.centroid.to_crs(CRS_WGS84),
                     lambda pt: [pt.y, pt.x],
                     desc="Finding centroids",
@@ -440,7 +456,7 @@ class Run(object):
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
         # for row_fire in tqdm(list_rows):
         #     do_fire(row_fire)
-        files_sim = tqdm_util.pmap(
+        files_sim = pmap(
             do_fire,
             list_rows,
             desc="Preparing groups",
@@ -495,7 +511,7 @@ class Run(object):
         return df
 
     @log_order(show_args=["dir_fire"])
-    def do_run_fire(self, dir_fire, prepare_only=False, run_only=False):
+    def do_run_fire(self, dir_fire, prepare_only=False, run_only=False, no_wait=False):
         try:
             # return tbd.run_fire_from_folder(
             #     dir_fire, self._dir_output, verbose=self._verbose
@@ -506,6 +522,7 @@ class Run(object):
                 self._dir_output,
                 prepare_only=prepare_only,
                 run_only=run_only,
+                no_wait=no_wait,
                 verbose=self._verbose,
             )
         except KeyboardInterrupt as ex:
@@ -553,7 +570,7 @@ class Run(object):
                 logging.info(f"Need to make directories for {len(missing)} simulations")
                 dirs_missing = [os.path.join(self._dir_sims, x) for x in missing]
                 dirs_missing_existing = [p for p in dirs_missing if os.path.isdir(p)]
-                tqdm_util.apply(
+                apply(
                     dirs_missing_existing,
                     try_remove,
                     desc="Removing invalid fire directories",
@@ -650,33 +667,54 @@ class Run(object):
                     # just updated so not changed anymore
                     changed = False
 
+        # use callback if at least merging
+        callback_publish = check_publish if self.check_do_merge() else do_nothing
+
         def prepare_fire(dir_fire):
+            # print(dir_fire)
             if check_running(dir_fire):
                 # already running, so prepared but no outputs
+                return dir_fire
+            if os.path.isfile(os.path.join(dir_fire, "sim.sh")):
                 return dir_fire
             return self.do_run_fire(dir_fire, prepare_only=True)
 
         # schedule everything first
-        tqdm_util.pmap_by_group(
+        pmap_by_group(
             prepare_fire,
             dirs_sim,
             desc="Preparing simulations",
         )
 
         def run_fire(dir_fire):
-            return self.do_run_fire(dir_fire, run_only=True)
+            return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
 
-        # use callback if at least merging
-        callback_publish = check_publish if self.check_do_merge() else do_nothing
-
-        tqdm_util.pmap_by_group(
-            run_fire,
-            dirs_sim,
-            max_processes=len(df_fires) if self._is_batch else CONCURRENT_SIMS,
-            no_limit=self._is_batch,
-            desc="Running simulations",
-            callback_group=callback_publish,
-        )
+        if self._is_batch:
+            dirs_fire = [
+                os.path.join(self._dir_sims, x)
+                for x in itertools.chain.from_iterable(dirs_sim.values())
+            ]
+            # make one list of tasks and submit it
+            tasks_existed = apply(
+                dirs_fire,
+                get_simulation_task,
+                desc="Creating simulation taks",
+            )
+            tasks_new = [x[0] for x in tasks_existed if not x[1]]
+            schedule_tasks(tasks_new)
+            pmap_by_group(
+                run_fire,
+                dirs_sim,
+                desc="Running simulations via azurebatch",
+                callback_group=callback_publish,
+            )
+        else:
+            pmap_by_group(
+                run_fire,
+                dirs_sim,
+                desc="Running simulations",
+                callback_group=callback_publish,
+            )
         force_remove(file_lock_publish)
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()

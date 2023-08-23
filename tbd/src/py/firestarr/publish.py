@@ -101,6 +101,8 @@ def merge_dirs(
     for_dates = [
         datetime.datetime.strptime(_, FMT_DATE_YMD) for _ in dirs_what if "perim" != _
     ]
+    if not for_dates:
+        raise RuntimeError("No dates to merge")
     date_origin = min(for_dates)
     reprojected = {}
     for for_what, files in tqdm(

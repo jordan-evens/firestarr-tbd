@@ -48,6 +48,7 @@ WORKDIR /appl/tbd/
 COPY .docker/requirements_tbd.txt /appl/requirements_tbd.txt
 RUN . /appl/.venv/bin/activate \
   && python -m pip install -r /appl/requirements_tbd.txt
+RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
 
 
 FROM tbd_dev AS tbd_dev_svc

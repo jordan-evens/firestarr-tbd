@@ -8,13 +8,15 @@ import timeit
 import pandas as pd
 import psutil
 from azurebatch import (
-    add_job,
+    make_or_get_job,
     add_simulation_task,
     check_successful,
     find_tasks_running,
     get_batch_client,
     have_batch_config,
     is_running_on_azure,
+    list_nodes,
+    make_or_get_simulation_task,
 )
 from common import (
     CONFIG,
@@ -50,8 +52,8 @@ TMP_SUFFIX = "__tmp__"
 
 _RUN_FIRESTARR = None
 _FIND_RUNNING = None
-_BATCH_CLIENT = None
-_JOB_ID = None
+BATCH_CLIENT = None
+JOB_ID = None
 
 
 def run_firestarr_local(dir_fire):
@@ -91,18 +93,26 @@ def find_running_local(dir_fire):
 
 
 def run_firestarr_batch(dir_fire, wait=True):
-    add_simulation_task(_BATCH_CLIENT, _JOB_ID, dir_fire, wait=wait)
+    add_simulation_task(BATCH_CLIENT, JOB_ID, dir_fire, wait=wait)
 
 
 def find_running_batch(dir_fire):
-    return find_tasks_running(_BATCH_CLIENT, _JOB_ID, dir_fire)
+    return find_tasks_running(BATCH_CLIENT, JOB_ID, dir_fire)
 
+def get_simulation_task(dir_fire):
+    return make_or_get_simulation_task(BATCH_CLIENT, JOB_ID, dir_fire)
+
+def schedule_tasks(tasks):
+    BATCH_CLIENT.task.add_collection(JOB_ID, tasks)
+
+def get_nodes():
+    return list_nodes(BATCH_CLIENT)
 
 def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     global _RUN_FIRESTARR
     global _FIND_RUNNING
-    global _BATCH_CLIENT
-    global _JOB_ID
+    global BATCH_CLIENT
+    global JOB_ID
     if force_local is None:
         force_local = CONFIG.get("FORCE_LOCAL_TASKS", False)
     if force_batch is None:
@@ -116,18 +126,17 @@ def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     with locks_for(os.path.join(DIR_DATA, "assign_batch_client")):
         if not force_local and have_batch_config():
             if not is_running_on_azure():
-                logging.warning("Not running on azure so not using batch")
-            else:
-                logging.info("Running using batch tasks")
-                _RUN_FIRESTARR = run_firestarr_batch
-                _BATCH_CLIENT = get_batch_client()
-                job_id = None
-                if dir_fire.startswith(DIR_SIMS):
-                    job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
-                    job_id = job_id[: job_id.index("/")]
-                _JOB_ID = add_job(_BATCH_CLIENT, job_id=job_id)
-                _FIND_RUNNING = find_running_batch
-                return True
+                logging.warning("Not running on azure but using batch")
+            logging.info("Running using batch tasks")
+            _RUN_FIRESTARR = run_firestarr_batch
+            BATCH_CLIENT = get_batch_client()
+            job_id = None
+            if dir_fire.startswith(DIR_SIMS):
+                job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
+                job_id = job_id[: job_id.index("/")]
+            JOB_ID = make_or_get_job(BATCH_CLIENT, job_id=job_id)
+            _FIND_RUNNING = find_running_batch
+            return True
         if force_batch:
             raise RuntimeError("Forcing batch mode but no config set")
         logging.info("Running using local tasks")
@@ -170,13 +179,13 @@ def check_running(dir_fire):
 
 
 def finish_job():
-    if _BATCH_CLIENT is None:
+    if BATCH_CLIENT is None:
         logging.error("Didn't use batch, but trying to finish job")
     else:
-        if check_successful(_BATCH_CLIENT, _JOB_ID):
-            _BATCH_CLIENT.job.terminate(_JOB_ID)
+        if check_successful(BATCH_CLIENT, JOB_ID):
+            BATCH_CLIENT.job.terminate(JOB_ID)
         else:
-            logging.error(f"Finishing incomplete job {_JOB_ID}")
+            logging.error(f"Finishing incomplete job {JOB_ID}")
 
 
 def get_simulation_file(dir_fire):
@@ -272,7 +281,7 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
 
 
 def run_fire_from_folder(
-    dir_fire, dir_output, verbose=False, prepare_only=False, run_only=False
+    dir_fire, dir_output, verbose=False, prepare_only=False, run_only=False, no_wait=False,
 ):
     def nolog(*args, **kwargs):
         pass
@@ -334,6 +343,9 @@ def run_fire_from_folder(
             x for x in outputs if x.endswith("tif") and x.startswith("probability")
         ]
         if not sim_time or len(probs) != len(date_offsets):
+            file_sh = os.path.join(dir_fire, "sim.sh")
+            if prepare_only and os.path.isfile(file_sh):
+                return dir_fire
             if not run_only:
                 lat = float(data["lat"])
                 lon = float(data["lon"])
@@ -399,7 +411,6 @@ def run_fire_from_folder(
                 if perim is not None:
                     args = args + f" --perim {strip_dir(perim)}"
                 args = args.replace("\\", "/")
-                file_sh = os.path.join(dir_fire, "sim.sh")
 
                 def mk_sim_sh(*a, **k):
                     with open(file_sh, "w") as f_out:

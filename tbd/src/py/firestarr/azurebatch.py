@@ -8,6 +8,7 @@ import azure.batch.models as batchmodels
 from common import CONFIG, SECONDS_PER_MINUTE, logging
 from multiprocess import Lock, Process
 from redundancy import get_stack
+
 # from common import SECONDS_PER_MINUTE
 # from multiprocess import Lock, Process
 from tqdm import tqdm
@@ -18,14 +19,19 @@ _BATCH_ACCOUNT_KEY = CONFIG.get("BATCH_ACCOUNT_KEY")
 _STORAGE_ACCOUNT_NAME = CONFIG.get("STORAGE_ACCOUNT_NAME")
 _STORAGE_CONTAINER = CONFIG.get("STORAGE_CONTAINER")
 _STORAGE_KEY = CONFIG.get("STORAGE_KEY")
+_REGISTRY_SERVER = CONFIG.get("REGISTRY_SERVER")
 _REGISTRY_USER_NAME = CONFIG.get("REGISTRY_USER_NAME")
 _REGISTRY_PASSWORD = CONFIG.get("REGISTRY_PASSWORD")
+_REGISTRY_URL = CONFIG.get("REGISTRY_URL")
+_CONTAINER_PY = f"{_REGISTRY_URL}/tbd_prod_stable:latest"
+_CONTAINER_BIN = f"{_REGISTRY_URL}/firestarr:latest"
 
-# _POOL_VM_SIZE = "STANDARD_F72S_V2"
-_POOL_VM_SIZE = "STANDARD_F32S_V2"
-_POOL_ID_BOTH = "pool_firestarr"
-_MIN_NODES = 0
-_MAX_NODES = 100
+_POOL_VM_SIZE = "STANDARD_F72S_V2"
+# _POOL_VM_SIZE = "STANDARD_F32S_V2"
+POOL_ID = "pool_firestarr_dev"
+_MIN_NODES = 1
+_MAX_NODES = 1
+# _MAX_NODES = 1
 # if any tasks pending but not running then want enough nodes to start
 # those and keep the current ones running, but if nothing in queue then
 # want to deallocate everything on completion
@@ -44,16 +50,13 @@ _AUTO_SCALE_FORMULA = "\n".join(
 _AUTO_SCALE_EVALUATION_INTERVAL = datetime.timedelta(minutes=5)
 _BATCH_ACCOUNT_URL = f"https://{_BATCH_ACCOUNT_NAME}.canadacentral.batch.azure.com"
 _STORAGE_ACCOUNT_URL = f"https://{_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
-_REGISTRY_SERVER = f"{_REGISTRY_USER_NAME}.azurecr.io"
-_CONTAINER_PY = f"{_REGISTRY_SERVER}/firestarr/tbd_prod_stable:latest"
-_CONTAINER_BIN = f"{_REGISTRY_SERVER}/firestarr/firestarr:latest"
 
 RELATIVE_MOUNT_PATH = "firestarr_data"
 ABSOLUTE_MOUNT_PATH = f"/mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}"
 TASK_SLEEP = 5
 
 
-def restart_unusable_nodes(batch_client=None, pool_id=_POOL_ID_BOTH):
+def restart_unusable_nodes(batch_client=None, pool_id=POOL_ID):
     try:
         if batch_client is None:
             batch_client = get_batch_client()
@@ -110,11 +113,13 @@ def restart_unusable_nodes(batch_client=None, pool_id=_POOL_ID_BOTH):
 #     logging.debug("Done creating pool monitor")
 
 
-def create_container_pool(batch_client, pool_id=_POOL_ID_BOTH, force=False):
+def create_container_pool(batch_client, pool_id=POOL_ID, force=False):
     if batch_client.pool.exists(pool_id):
         if force:
             logging.warning("Deleting existing pool [{}]...".format(pool_id))
             batch_client.pool.delete(pool_id)
+            while batch_client.pool.exists(pool_id):
+                time.sleep(10)
         else:
             return pool_id
     logging.debug("Creating pool [{}]...".format(pool_id))
@@ -131,13 +136,7 @@ def create_container_pool(batch_client, pool_id=_POOL_ID_BOTH, force=False):
             container_configuration=batchmodels.ContainerConfiguration(
                 type="dockerCompatible",
                 container_image_names=[_CONTAINER_PY, _CONTAINER_BIN],
-                container_registries=[
-                    batchmodels.ContainerRegistry(
-                        user_name=_REGISTRY_USER_NAME,
-                        password=_REGISTRY_PASSWORD,
-                        registry_server=_REGISTRY_SERVER,
-                    )
-                ],
+                container_registries=get_container_registries(),
             ),
         ),
         vm_size=_POOL_VM_SIZE,
@@ -173,7 +172,7 @@ def create_container_pool(batch_client, pool_id=_POOL_ID_BOTH, force=False):
     return pool_id
 
 
-def add_job(batch_client, pool_id=_POOL_ID_BOTH, job_id=None):
+def make_or_get_job(batch_client, pool_id=POOL_ID, job_id=None, *args, **kwargs):
     # # start monitoring pool for unusable nodes
     # monitor_pool(batch_client, pool_id)
     if job_id is None:
@@ -191,10 +190,24 @@ def add_job(batch_client, pool_id=_POOL_ID_BOTH, job_id=None):
         pass
     logging.info("Creating job [{}]...".format(job_id))
     job = batch.models.JobAddParameter(
-        id=job_id, pool_info=batch.models.PoolInformation(pool_id=pool_id)
+        id=job_id,
+        pool_info=batch.models.PoolInformation(pool_id=pool_id),
+        *args,
+        **kwargs,
     )
     batch_client.job.add(job)
     return job_id
+
+
+def get_user_identity():
+    return (
+        batchmodels.UserIdentity(
+            auto_user=batchmodels.AutoUserSpecification(
+                scope=batchmodels.AutoUserScope.pool,
+                elevation_level=batchmodels.ElevationLevel.admin,
+            )
+        ),
+    )
 
 
 def add_monolithic_task(batch_client, job_id):
@@ -204,21 +217,8 @@ def add_monolithic_task(batch_client, job_id):
         batch.models.TaskAddParameter(
             id="Task{}".format(task_count),
             command_line="",
-            container_settings=batchmodels.TaskContainerSettings(
-                image_name=_CONTAINER_PY,
-                container_run_options=" ".join(
-                    [
-                        "--workdir /appl/tbd",
-                        f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
-                    ]
-                ),
-            ),
-            user_identity=batchmodels.UserIdentity(
-                auto_user=batchmodels.AutoUserSpecification(
-                    scope=batchmodels.AutoUserScope.pool,
-                    elevation_level=batchmodels.ElevationLevel.admin,
-                )
-            ),
+            container_settings=get_container_settings(batch_client, _CONTAINER_PY),
+            user_identity=get_user_identity(),
         )
     )
     task_count += 1
@@ -234,13 +234,13 @@ def find_tasks_running(batch_client, job_id, dir_fire):
     restart_unusable_nodes(batch_client)
     task_name = get_task_name(dir_fire)
     tasks = []
-    try:
-        for task in batch_client.task.list(job_id):
-            if task_name in task.id and "completed" != task.state:
-                tasks.append(task.id.replace("-", "/"))
-        return tasks
-    except batchmodels.BatchErrorException:
-        return False
+    # try:
+    for task in batch_client.task.list(job_id):
+        if task_name in task.id and "completed" != task.state:
+            tasks.append(task.id.replace("-", "/"))
+    return tasks
+    # except batchmodels.BatchErrorException:
+    #     return False
 
 
 def is_successful(obj):
@@ -263,54 +263,99 @@ def check_successful(batch_client, job_id, task_id=None):
         return True
 
 
-def add_simulation_task(batch_client, job_id, dir_fire, wait=True):
+def make_or_get_simulation_task(batch_client, job_id, dir_fire):
     task_id = get_task_name(dir_fire)
+    existed = False
     task = None
     try:
         task = batch_client.task.get(job_id, task_id)
+        existed = True
     except batchmodels.BatchErrorException as ex:
         if "TaskNotFound" != ex.error.code:
             raise ex
     if task is None:
-        task_params = batch.models.TaskAddParameter(
+        task = batch.models.TaskAddParameter(
             id=task_id,
             command_line="./sim.sh",
-            container_settings=batchmodels.TaskContainerSettings(
-                image_name=_CONTAINER_BIN,
-                container_run_options=" ".join(
-                    [
-                        "--rm",
-                        "--entrypoint /bin/sh",
-                        f"--workdir {dir_fire}",
-                        f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
-                    ]
-                ),
+            container_settings=get_container_settings(
+                batch_client, _CONTAINER_BIN, workdir=dir_fire
             ),
-            user_identity=batchmodels.UserIdentity(
-                auto_user=batchmodels.AutoUserSpecification(
-                    scope=batchmodels.AutoUserScope.pool,
-                    elevation_level=batchmodels.ElevationLevel.admin,
-                )
-            ),
+            user_identity=get_user_identity(),
         )
-        batch_client.task.add(job_id, task_params)
-    if not check_successful(batch_client, job_id, task_id):
+    return task, existed
+
+
+def add_simulation_task(batch_client, job_id, dir_fire, wait=True):
+    task, existed = make_or_get_simulation_task(batch_client, job_id, dir_fire)
+    if not existed:
+        batch_client.task.add(job_id, task)
+    if not check_successful(batch_client, job_id, task.id):
         # wait if requested and task isn't done
         if wait:
             while True:
                 while True:
-                    task = batch_client.task.get(job_id, task_id)
+                    task = batch_client.task.get(job_id, task.id)
                     if "active" == task.state:
                         time.sleep(TASK_SLEEP)
                     else:
                         break
                 if "failure" == task.execution_info.result:
-                    batch_client.task.reactivate(job_id, task_id)
+                    batch_client.task.reactivate(job_id, task.id)
                 else:
                     break
     # # HACK: want to check somewhere and this seems good enough for now
     # restart_unusable_nodes(batch_client)
-    return task_id
+    return task.id
+
+
+def get_container_registries():
+    return [
+        batchmodels.ContainerRegistry(
+            user_name=_REGISTRY_USER_NAME,
+            password=_REGISTRY_PASSWORD,
+            registry_server=_REGISTRY_SERVER,
+        )
+    ]
+
+
+def get_container_settings(batch_client, container, workdir=None):
+    if workdir is None:
+        workdir = "/appl/tbd"
+    return (
+        batchmodels.TaskContainerSettings(
+            image_name=_CONTAINER_BIN,
+            container_run_options=" ".join(
+                [
+                    "--rm",
+                    "--entrypoint /bin/sh",
+                    f"--workdir {workdir}",
+                    f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
+                ]
+            ),
+            container_registries=get_container_registries(),
+        ),
+    )
+
+
+def run_oneoff_task(batch_client, cmd, pool_id=POOL_ID):
+    job_id = "tasks_oneoff"
+    job = make_or_get_job(batch_client, pool_id, job_id, priority=500)
+    task_id = f"task_oneoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    task = batch.models.TaskAddParameter(
+        id=task_id,
+        command_line=cmd,
+        container_settings=get_container_settings(batch_client, _CONTAINER_BIN),
+        user_identity=get_user_identity(),
+    )
+    batch_client.task.add(job_id, task)
+    logging.info("Running {task.id}:\n\t{cmd}")
+    if not check_successful(batch_client, job_id, task.id):
+        # wait if requested and task isn't done
+        while True:
+            task = batch_client.task.get(job_id, task.id)
+            if "active" == task.state:
+                time.sleep(TASK_SLEEP)
+    return task.id
 
 
 def wait_for_tasks_to_complete(batch_client, job_id):
@@ -345,11 +390,63 @@ def get_batch_client():
 
 def is_running_on_azure():
     # HACK: shell isn't set when ssh into node, but AZ_BATCH_POOL_ID is only in tasks?
-    return os.environ.get(
-        "AZ_BATCH_POOL_ID", None
-    ) == _POOL_ID_BOTH or not os.environ.get("SHELL", False)
+    return (
+        not CONFIG.get("FORCE_LOCAL_TASKS", False)
+        and os.environ.get("AZ_BATCH_POOL_ID", None) == POOL_ID
+        or not os.environ.get("SHELL", False)
+    )
+
+
+def cancel_active_jobs(batch_client):
+    active = [x for x in batch_client.job.list() if x.state == "active"]
+    for j in active:
+        print(j.id)
+        batch_client.job.terminate(j.id)
+
+
+def get_job_schedules(batch_client):
+    return [x for x in batch_client.job_schedule.list()]
+
+
+def deactivate_job_schedules(batch_client):
+    active = [x for x in batch_client.job_schedule.list() if x.state == "active"]
+    for s in active:
+        print(s.id)
+        batch_client.job_schedule.disable(s.id)
+
+
+def list_nodes(batch_client, pool_id=POOL_ID):
+    return [x for x in batch_client.compute_node.list(pool_id)]
+
+
+def make_schedule(batch_client, pool_id=POOL_ID):
+    batch_client.job_schedule.add(
+        batchmodels.JobScheduleAddParameter(
+            id=f"schedule_check_{pool_id}",
+            schedule=batchmodels.Schedule(recurrence_interval="PT1H"),
+            job_specification=batchmodels.JobSpecification(
+                pool_info=batchmodels.PoolInformation(pool_id=pool_id),
+                job_manager_task=batchmodels.JobManagerTask(
+                    id=f"{job_schedule_id}_manager",
+                    required_slots=1,
+                    kill_job_on_completion=True,
+                    user_identity=get_user_identity(),
+                    allow_low_priority_node=False,
+                    command_line="/appl/tbd/scripts/force_run.sh",
+                    container_settings=get_container_settings(
+                        batch_client, _CONTAINER_PY
+                    ),
+                ),
+                constraints=batchmodels.TaskConstraints(
+                    retention_time="P7D", max_task_retry_count=-1
+                ),
+            ),
+        )
+    )
 
 
 if __name__ == "__main__":
     batch_client = get_batch_client()
+    job_schedule_id = make_schedule(batch_client, POOL_ID)
     pool_id = create_container_pool(batch_client)
+    # pool_id = create_container_pool(batch_client, force=True)
