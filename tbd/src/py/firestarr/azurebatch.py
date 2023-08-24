@@ -55,21 +55,23 @@ RELATIVE_MOUNT_PATH = "firestarr_data"
 ABSOLUTE_MOUNT_PATH = f"/mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}"
 TASK_SLEEP = 5
 
+CLIENT = None
 
-def restart_unusable_nodes(batch_client=None, pool_id=POOL_ID):
+
+def restart_unusable_nodes(pool_id=POOL_ID, client=None):
     try:
-        if batch_client is None:
-            batch_client = get_batch_client()
-        pool = batch_client.pool.get(pool_id)
+        if client is None:
+            client = get_batch_client()
+        pool = client.pool.get(pool_id)
         if "active" == pool.state:
-            for node in batch_client.compute_node.list(pool_id):
+            for node in client.compute_node.list(pool_id):
                 node_id = node.id
                 if "unusable" == node.state:
                     try:
                         # HACK: update in case changed during loop
-                        node = batch_client.compute_node.get(pool_id, node_id)
+                        node = client.compute_node.get(pool_id, node_id)
                         if "unusable" == node.state:
-                            batch_client.compute_node.reboot(
+                            client.compute_node.reboot(
                                 pool_id, node_id, node_reboot_option="terminate"
                             )
                     except batchmodels.BatchErrorException:
@@ -81,10 +83,12 @@ def restart_unusable_nodes(batch_client=None, pool_id=POOL_ID):
 
 
 # # FIX: really not having a good time with broken pipes
-# def monitor_pool_nodes(batch_client, pool_id):
+# def monitor_pool_nodes(pool_id, client=None):
+# if client is None:
+#     client = get_batch_client()
 #     try:
 #         while True:
-#             restart_unusable_nodes(batch_client)
+#             restart_unusable_nodes(client=client)
 #             time.sleep(POOL_MONITOR_SLEEP)
 #     except KeyboardInterrupt as ex:
 #         raise ex
@@ -98,14 +102,14 @@ def restart_unusable_nodes(batch_client=None, pool_id=POOL_ID):
 # POOL_MONITOR_SLEEP = SECONDS_PER_MINUTE // 2
 
 
-# def monitor_pool(batch_client, pool_id=_POOL_ID_BOTH):
+# def monitor_pool(pool_id=_POOL_ID_BOTH):
 #     with POOL_MONITOR_LOCK:
 #         thread = POOL_MONITOR_THREADS.get(pool_id, None)
 #         if thread is not None:
 #             logging.warning("Terminating existing monitor")
 #             thread.terminate()
 #         POOL_MONITOR_THREADS[pool_id] = Process(
-#             target=monitor_pool_nodes, args=[batch_client, pool_id], daemon=True
+#             target=monitor_pool_nodes, args=[pool_id], daemon=True
 #         )
 #         logging.debug(f"Starting to monitor pool {pool_id}")
 #         POOL_MONITOR_THREADS[pool_id].start()
@@ -113,13 +117,17 @@ def restart_unusable_nodes(batch_client=None, pool_id=POOL_ID):
 #     logging.debug("Done creating pool monitor")
 
 
-def create_container_pool(batch_client, pool_id=POOL_ID, force=False):
-    if batch_client.pool.exists(pool_id):
+def create_container_pool(pool_id=POOL_ID, force=False, client=None):
+    if client is None:
+        client = get_batch_client()
+    if client.pool.exists(pool_id):
         if force:
             logging.warning("Deleting existing pool [{}]...".format(pool_id))
-            batch_client.pool.delete(pool_id)
-            while batch_client.pool.exists(pool_id):
-                time.sleep(10)
+            client.pool.delete(pool_id)
+            while client.pool.exists(pool_id):
+                print(".", end="", flush=True)
+                time.sleep(1)
+            print("", flush=True)
         else:
             return pool_id
     logging.debug("Creating pool [{}]...".format(pool_id))
@@ -168,22 +176,24 @@ def create_container_pool(batch_client, pool_id=POOL_ID, force=False):
             ),
         ],
     )
-    batch_client.pool.add(new_pool)
+    client.pool.add(new_pool)
     return pool_id
 
 
-def make_or_get_job(batch_client, pool_id=POOL_ID, job_id=None, *args, **kwargs):
+def make_or_get_job(pool_id=POOL_ID, job_id=None, client=None, *args, **kwargs):
+    if client is None:
+        client = get_batch_client()
     # # start monitoring pool for unusable nodes
-    # monitor_pool(batch_client, pool_id)
+    # monitor_pool(pool_id, client=client)
     if job_id is None:
         run_id = datetime.datetime.now().strftime("%Y%m%d%H%S")
         job_id = f"job_container_{run_id}"
     try:
-        job = batch_client.job.get(job_id)
+        job = client.job.get(job_id)
         # delete if exists and completed
         if "completed" == job.state:
             logging.info(f"Deleting completed job {job_id}")
-            batch_client.job.delete(job_id)
+            client.job.delete(job_id)
         else:
             return job_id
     except batchmodels.BatchErrorException:
@@ -195,47 +205,54 @@ def make_or_get_job(batch_client, pool_id=POOL_ID, job_id=None, *args, **kwargs)
         *args,
         **kwargs,
     )
-    batch_client.job.add(job)
+    client.job.add(job)
     return job_id
 
 
 def get_user_identity():
-    return (
-        batchmodels.UserIdentity(
-            auto_user=batchmodels.AutoUserSpecification(
-                scope=batchmodels.AutoUserScope.pool,
-                elevation_level=batchmodels.ElevationLevel.admin,
-            )
-        ),
+    return batchmodels.UserIdentity(
+        auto_user=batchmodels.AutoUserSpecification(
+            scope=batchmodels.AutoUserScope.pool,
+            elevation_level=batchmodels.ElevationLevel.admin,
+        )
     )
 
 
-def add_monolithic_task(batch_client, job_id):
+def add_monolithic_task(job_id, client=None):
+    if client is None:
+        client = get_batch_client()
     task_count = 0
-    tasks = list()
-    tasks.append(
+    tasks = [
         batch.models.TaskAddParameter(
             id="Task{}".format(task_count),
             command_line="",
-            container_settings=get_container_settings(batch_client, _CONTAINER_PY),
+            container_settings=get_container_settings(_CONTAINER_PY, client=client),
             user_identity=get_user_identity(),
         )
-    )
+    ]
     task_count += 1
-    batch_client.task.add_collection(job_id, tasks)
+    client.task.add_collection(job_id, tasks)
+
+
+def schedule_tasks(job_id, tasks, client=None):
+    if client is None:
+        client = get_batch_client()
+    client.task.add_collection(job_id, tasks)
 
 
 def get_task_name(dir_fire):
     return dir_fire.replace("/", "-")
 
 
-def find_tasks_running(batch_client, job_id, dir_fire):
+def find_tasks_running(job_id, dir_fire, client=None):
+    if client is None:
+        client = get_batch_client()
     # HACK: want to check somewhere and this seems good enough for now
-    restart_unusable_nodes(batch_client)
+    restart_unusable_nodes(client=client)
     task_name = get_task_name(dir_fire)
     tasks = []
     # try:
-    for task in batch_client.task.list(job_id):
+    for task in client.task.list(job_id):
         if task_name in task.id and "completed" != task.state:
             tasks.append(task.id.replace("-", "/"))
     return tasks
@@ -251,24 +268,28 @@ def is_failed(obj):
     return "completed" == obj.state and "success" != obj.execution_info.result
 
 
-def check_successful(batch_client, job_id, task_id=None):
+def check_successful(job_id, task_id=None, client=None):
+    if client is None:
+        client = get_batch_client()
     if task_id is not None:
-        return is_successful(batch_client.task.get(job_id, task_id))
+        return is_successful(client.task.get(job_id, task_id))
     else:
         # check if all tasks in job are done
-        for task in batch_client.task.list(job_id):
+        for task in client.task.list(job_id):
             if not is_successful(task):
                 logging.error(f"Task {task.id} not successful")
                 return False
         return True
 
 
-def make_or_get_simulation_task(batch_client, job_id, dir_fire):
+def make_or_get_simulation_task(job_id, dir_fire, client=None):
+    if client is None:
+        client = get_batch_client()
     task_id = get_task_name(dir_fire)
     existed = False
     task = None
     try:
-        task = batch_client.task.get(job_id, task_id)
+        task = client.task.get(job_id, task_id)
         existed = True
     except batchmodels.BatchErrorException as ex:
         if "TaskNotFound" != ex.error.code:
@@ -278,33 +299,35 @@ def make_or_get_simulation_task(batch_client, job_id, dir_fire):
             id=task_id,
             command_line="./sim.sh",
             container_settings=get_container_settings(
-                batch_client, _CONTAINER_BIN, workdir=dir_fire
+                client, _CONTAINER_BIN, workdir=dir_fire
             ),
             user_identity=get_user_identity(),
         )
     return task, existed
 
 
-def add_simulation_task(batch_client, job_id, dir_fire, wait=True):
-    task, existed = make_or_get_simulation_task(batch_client, job_id, dir_fire)
+def add_simulation_task(job_id, dir_fire, wait=True, client=None):
+    if client is None:
+        client = get_batch_client()
+    task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
     if not existed:
-        batch_client.task.add(job_id, task)
-    if not check_successful(batch_client, job_id, task.id):
+        client.task.add(job_id, task)
+    if not check_successful(job_id, task.id, client=client):
         # wait if requested and task isn't done
         if wait:
             while True:
                 while True:
-                    task = batch_client.task.get(job_id, task.id)
+                    task = client.task.get(job_id, task.id)
                     if "active" == task.state:
                         time.sleep(TASK_SLEEP)
                     else:
                         break
                 if "failure" == task.execution_info.result:
-                    batch_client.task.reactivate(job_id, task.id)
+                    client.task.reactivate(job_id, task.id)
                 else:
                     break
     # # HACK: want to check somewhere and this seems good enough for now
-    # restart_unusable_nodes(batch_client)
+    # restart_unusable_nodes(client=client)
     return task.id
 
 
@@ -313,53 +336,108 @@ def get_container_registries():
         batchmodels.ContainerRegistry(
             user_name=_REGISTRY_USER_NAME,
             password=_REGISTRY_PASSWORD,
+            # registry_server=_REGISTRY_URL,
             registry_server=_REGISTRY_SERVER,
         )
     ]
 
 
-def get_container_settings(batch_client, container, workdir=None):
+def get_container_settings(container, workdir=None, client=None):
+    if client is None:
+        client = get_batch_client()
     if workdir is None:
         workdir = "/appl/tbd"
-    return (
-        batchmodels.TaskContainerSettings(
-            image_name=_CONTAINER_BIN,
-            container_run_options=" ".join(
-                [
-                    "--rm",
-                    "--entrypoint /bin/sh",
-                    f"--workdir {workdir}",
-                    f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
-                ]
-            ),
-            container_registries=get_container_registries(),
+    return batchmodels.TaskContainerSettings(
+        image_name=_CONTAINER_BIN,
+        container_run_options=" ".join(
+            [
+                "--rm",
+                "--entrypoint /bin/sh",
+                f"--workdir {workdir}",
+                f"-v {ABSOLUTE_MOUNT_PATH}:/appl/data",
+            ]
         ),
+        registry=get_container_registries()[0],
     )
 
 
-def run_oneoff_task(batch_client, cmd, pool_id=POOL_ID):
-    job_id = "tasks_oneoff"
-    job = make_or_get_job(batch_client, pool_id, job_id, priority=500)
+def get_active(client=None):
+    if client is None:
+        client = get_batch_client()
+    jobs = {j.id: j for j in client.job.list() if j.state == "active"}
+    tasks = {
+        job.id: {t.id: t for t in client.task.list(job.id) if t.state == "active"}
+        for job in jobs.values()
+    }
+    pools = {p.id: p for p in client.pool.list() if p.state == "active"}
+    nodes = {
+        pool.id: {n.id: n for n in list_nodes(pool.id, client=None)}
+        for pool in pools.values()
+    }
+    return jobs, tasks, pools, nodes
+
+
+def show_active(client=None):
+    if client is None:
+        client = get_batch_client()
+    jobs, tasks, pools, nodes = get_active(client=client)
+
+
+def run_oneoff_task(cmd, pool_id=POOL_ID, client=None):
+    if client is None:
+        client = get_batch_client()
+    job_id = "job_oneoff"
+    # try:
+    #     job = client.job.get(job_id)
+    #     # logging.warning("Deleting existing job")
+    #     # job = client.job.delete(job_id)
+    #     # try:
+    #     #     while True:
+    #     #         job = client.job.get(job_id)
+    #     #         if job.state == "deleting":
+    #     #             print(".", end="", flush=True)
+    #     #             time.sleep(1)
+    #     #     print("", flush=True)
+    #     # except batchmodels.BatchErrorException:
+    #     #     pass
+    # except batchmodels.BatchErrorException:
+    #     pass
+    job = make_or_get_job(pool_id, job_id, priority=500, client=client)
     task_id = f"task_oneoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     task = batch.models.TaskAddParameter(
         id=task_id,
         command_line=cmd,
-        container_settings=get_container_settings(batch_client, _CONTAINER_BIN),
+        container_settings=get_container_settings(_CONTAINER_PY, client=None),
         user_identity=get_user_identity(),
     )
-    batch_client.task.add(job_id, task)
-    logging.info("Running {task.id}:\n\t{cmd}")
-    if not check_successful(batch_client, job_id, task.id):
+    client.task.add(job_id, task)
+    logging.info(f"Running {task.id}:\n\t{cmd}")
+    if not check_successful(job_id, task_id, client=client):
         # wait if requested and task isn't done
         while True:
-            task = batch_client.task.get(job_id, task.id)
-            if "active" == task.state:
-                time.sleep(TASK_SLEEP)
+            task = client.task.get(job_id, task_id)
+            if "active" != task.state:
+                break
+            print(".", end="", flush=True)
+            time.sleep(1)
+        print("", flush=True)
     return task.id
 
 
-def wait_for_tasks_to_complete(batch_client, job_id):
-    tasks = [x for x in batch_client.task.list(job_id)]
+def show_result(job_id=None, task_id=None):
+    if job_id is None or task_id is None:
+        t = list_nodes()[0].as_dict()["recent_tasks"][-1]
+        job_id = t["job_id"]
+        task_id = t["task_id"]
+    for f in ["stdout.txt", "stderr.txt"]:
+        file = client.file.get_from_task(job_id, task_id, f)
+        print("".join([str(x) for x in file]))
+
+
+def wait_for_tasks_to_complete(job_id, client=None):
+    if client is None:
+        client = get_batch_client()
+    tasks = [x for x in client.task.list(job_id)]
     left = len(tasks)
     prev = left
     with tqdm(desc="Waiting for tasks", total=len(tasks)) as tq:
@@ -371,8 +449,10 @@ def wait_for_tasks_to_complete(batch_client, job_id):
             left = len(incomplete_tasks)
             tq.update(prev - left)
             prev = left
+            print(".", end="", flush=True)
             time.sleep(1)
-            tasks = batch_client.task.list(job_id)
+            tasks = client.task.list(job_id)
+        print("", flush=True)
 
 
 def have_batch_config():
@@ -380,12 +460,15 @@ def have_batch_config():
 
 
 def get_batch_client():
+    global CLIENT
     if not have_batch_config():
         return None
-    return batch.BatchServiceClient(
-        batchauth.SharedKeyCredentials(_BATCH_ACCOUNT_NAME, _BATCH_ACCOUNT_KEY),
-        batch_url=_BATCH_ACCOUNT_URL,
-    )
+    if CLIENT is None:
+        CLIENT = batch.BatchServiceClient(
+            batchauth.SharedKeyCredentials(_BATCH_ACCOUNT_NAME, _BATCH_ACCOUNT_KEY),
+            batch_url=_BATCH_ACCOUNT_URL,
+        )
+    return CLIENT
 
 
 def is_running_on_azure():
@@ -397,56 +480,141 @@ def is_running_on_azure():
     )
 
 
-def cancel_active_jobs(batch_client):
-    active = [x for x in batch_client.job.list() if x.state == "active"]
+def cancel_active_jobs(client=None):
+    if client is None:
+        client = get_batch_client()
+    active = [x for x in client.job.list() if x.state == "active"]
     for j in active:
         print(j.id)
-        batch_client.job.terminate(j.id)
+        client.job.terminate(j.id)
 
 
-def get_job_schedules(batch_client):
-    return [x for x in batch_client.job_schedule.list()]
+def get_job_schedules(client=None):
+    if client is None:
+        client = get_batch_client()
+    return [x for x in client.job_schedule.list()]
 
 
-def deactivate_job_schedules(batch_client):
-    active = [x for x in batch_client.job_schedule.list() if x.state == "active"]
+def deactivate_job_schedules(client=None):
+    if client is None:
+        client = get_batch_client()
+    active = [x for x in client.job_schedule.list() if x.state == "active"]
     for s in active:
         print(s.id)
-        batch_client.job_schedule.disable(s.id)
+        client.job_schedule.disable(s.id)
 
 
-def list_nodes(batch_client, pool_id=POOL_ID):
-    return [x for x in batch_client.compute_node.list(pool_id)]
+def list_nodes(pool_id=POOL_ID, client=None):
+    if client is None:
+        client = get_batch_client()
+    return [x for x in client.compute_node.list(pool_id)]
 
 
-def make_schedule(batch_client, pool_id=POOL_ID):
-    batch_client.job_schedule.add(
-        batchmodels.JobScheduleAddParameter(
-            id=f"schedule_check_{pool_id}",
-            schedule=batchmodels.Schedule(recurrence_interval="PT1H"),
-            job_specification=batchmodels.JobSpecification(
-                pool_info=batchmodels.PoolInformation(pool_id=pool_id),
-                job_manager_task=batchmodels.JobManagerTask(
-                    id=f"{job_schedule_id}_manager",
-                    required_slots=1,
-                    kill_job_on_completion=True,
-                    user_identity=get_user_identity(),
-                    allow_low_priority_node=False,
-                    command_line="/appl/tbd/scripts/force_run.sh",
-                    container_settings=get_container_settings(
-                        batch_client, _CONTAINER_PY
-                    ),
+def make_schedule(pool_id=POOL_ID, client=None):
+    if client is None:
+        client = get_batch_client()
+    job_schedule_id = f"schedule_check_{pool_id}"
+    if client.job_schedule.exists(job_schedule_id):
+        logging.warning(f"Deleting existing {job_schedule_id}")
+        client.job_schedule.delete(job_schedule_id)
+        while client.job_schedule.exists(job_schedule_id):
+            print(".", end="", flush=True)
+            time.sleep(1)
+        print("", flush=True)
+    schedule = batchmodels.JobScheduleAddParameter(
+        id=job_schedule_id,
+        schedule=batchmodels.Schedule(recurrence_interval="PT1H"),
+        job_specification=batchmodels.JobSpecification(
+            pool_info=batchmodels.PoolInformation(pool_id=pool_id),
+            job_manager_task=batchmodels.JobManagerTask(
+                id=f"{job_schedule_id}_manager",
+                required_slots=1,
+                kill_job_on_completion=True,
+                user_identity=get_user_identity(),
+                allow_low_priority_node=False,
+                command_line="/appl/tbd/scripts/force_run.sh",
+                container_settings=get_container_settings(_CONTAINER_PY, client=client),
+            ),
+            constraints=batchmodels.JobConstraints(max_task_retry_count=0),
+        ),
+    )
+    client.job_schedule.add(schedule)
+    return job_schedule_id
+
+
+def update_registry(pool_id, client=None):
+    if client is None:
+        client = get_batch_client()
+    pool = client.pool.get(pool_id)
+    client.pool.patch(
+        pool_id,
+        batchmodels.PoolPatchParameter(
+            virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
+                image_reference=batchmodels.ImageReference(
+                    publisher="microsoft-azure-batch",
+                    offer="ubuntu-server-container",
+                    sku="20-04-lts",
+                    version="latest",
                 ),
-                constraints=batchmodels.TaskConstraints(
-                    retention_time="P7D", max_task_retry_count=-1
+                node_agent_sku_id="batch.node.ubuntu 20.04",
+                container_configuration=batchmodels.ContainerConfiguration(
+                    type="dockerCompatible",
+                    container_image_names=[_CONTAINER_PY, _CONTAINER_BIN],
+                    container_registries=get_container_registries(),
                 ),
             ),
-        )
+        ),
     )
 
 
+def last_task(client=CLIENT):
+    if client is None:
+        client = get_batch_client()
+    t = list_nodes()[0].as_dict()["recent_tasks"][-1]
+    return client.task.get(t["job_id"], t["task_id"])
+
+
+def last_failure(client=None):
+    if client is None:
+        client = get_batch_client()
+    t = last_task(client)
+    return t.as_dict()["execution_info"]["failure_info"]
+
+
+def get_login(pool_id=POOL_ID, client=None):
+    if client is None:
+        client = get_batch_client()
+    node_id = list_nodes()[0].as_dict()["id"]
+    try:
+        client.compute_node.delete_user(
+            pool_id,
+            node_id,
+            "user")
+    except batchmodels.BatchErrorException:
+        pass
+    try:
+        client.compute_node.add_user(
+            pool_id,
+            node_id,
+            batchmodels.ComputeNodeUser(
+                name="user", is_admin=True, ssh_public_key=SSH_KEY
+            ),
+        )
+    except batchmodels.BatchErrorException:
+        pass
+    s = client.compute_node.get_remote_login_settings(
+        pool_id,
+        node_id,
+    )
+    cmd = "sudo /mnt/batch/tasks/fsmounts/firestarr_data/container/run_docker_bash.sh"
+    print(f"ssh -ti ~/.ssh/id_rsa -p {s.remote_login_port} user@{s.remote_login_ip_address} {cmd}")
+
+
 if __name__ == "__main__":
-    batch_client = get_batch_client()
-    job_schedule_id = make_schedule(batch_client, POOL_ID)
-    pool_id = create_container_pool(batch_client)
-    # pool_id = create_container_pool(batch_client, force=True)
+    client = get_batch_client()
+    # pool_id = create_container_pool()
+    # pool_id = create_container_pool(force=True)
+    # run_oneoff_task("echo test >> /appl/data/testoneoff")
+    # run_oneoff_task("/appl/tbd/scripts/force_run.sh")
+    # job_schedule_id = make_schedule(POOL_ID)
+    # jobs, tasks, pools, nodes = get_active()

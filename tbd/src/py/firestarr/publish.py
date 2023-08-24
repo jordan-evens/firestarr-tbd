@@ -2,6 +2,7 @@ import datetime
 import os
 import shutil
 import time
+import numpy as np
 
 from common import (
     CREATION_OPTIONS,
@@ -248,6 +249,14 @@ def merge_dirs(
             file_base = os.path.basename(f)
             zone = file_base[: file_base.index("_")]
             by_zone[zone] = by_zone.get(zone, []) + [r]
+        def merge_zone(for_what):
+            zone, results_crs_zone = for_what
+            dir_merge = f"{dir_parent}/zones/{zone}"
+            changed, file_base = merge_files(results_crs_zone, dir_merge)
+            return (changed, file_base)
+        # # do this just to get something right now
+        # zone_rasters_results = apply(by_zone.items(), merge_zone, desc="Merging zones")
+        # # zone_rasters_results = pmap(merge_zone, by_zone.items(), desc="Merging zones")
         zone_rasters = {}
         for zone, results_crs_zone in tqdm(
             by_zone.items(), total=len(by_zone), desc="Merging zones"

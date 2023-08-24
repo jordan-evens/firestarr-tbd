@@ -52,9 +52,8 @@ TMP_SUFFIX = "__tmp__"
 
 _RUN_FIRESTARR = None
 _FIND_RUNNING = None
-BATCH_CLIENT = None
 JOB_ID = None
-
+IS_USING_BATCH = None
 
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
@@ -93,25 +92,24 @@ def find_running_local(dir_fire):
 
 
 def run_firestarr_batch(dir_fire, wait=True):
-    add_simulation_task(BATCH_CLIENT, JOB_ID, dir_fire, wait=wait)
+    add_simulation_task(JOB_ID, dir_fire, wait=wait)
 
 
 def find_running_batch(dir_fire):
-    return find_tasks_running(BATCH_CLIENT, JOB_ID, dir_fire)
+    return find_tasks_running(JOB_ID, dir_fire)
 
 def get_simulation_task(dir_fire):
-    return make_or_get_simulation_task(BATCH_CLIENT, JOB_ID, dir_fire)
+    return make_or_get_simulation_task(JOB_ID, dir_fire)
 
 def schedule_tasks(tasks):
-    BATCH_CLIENT.task.add_collection(JOB_ID, tasks)
+    schedule_tasks(JOB_ID, tasks)
 
 def get_nodes():
-    return list_nodes(BATCH_CLIENT)
+    return list_nodes()
 
 def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     global _RUN_FIRESTARR
     global _FIND_RUNNING
-    global BATCH_CLIENT
     global JOB_ID
     if force_local is None:
         force_local = CONFIG.get("FORCE_LOCAL_TASKS", False)
@@ -129,12 +127,11 @@ def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
                 logging.warning("Not running on azure but using batch")
             logging.info("Running using batch tasks")
             _RUN_FIRESTARR = run_firestarr_batch
-            BATCH_CLIENT = get_batch_client()
             job_id = None
             if dir_fire.startswith(DIR_SIMS):
                 job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
                 job_id = job_id[: job_id.index("/")]
-            JOB_ID = make_or_get_job(BATCH_CLIENT, job_id=job_id)
+            JOB_ID = make_or_get_job(job_id=job_id)
             _FIND_RUNNING = find_running_batch
             return True
         if force_batch:
@@ -179,11 +176,11 @@ def check_running(dir_fire):
 
 
 def finish_job():
-    if BATCH_CLIENT is None:
+    if IS_USING_BATCH is None:
         logging.error("Didn't use batch, but trying to finish job")
     else:
-        if check_successful(BATCH_CLIENT, JOB_ID):
-            BATCH_CLIENT.job.terminate(JOB_ID)
+        if check_successful(JOB_ID):
+            get_batch_client().job.terminate(JOB_ID)
         else:
             logging.error(f"Finishing incomplete job {JOB_ID}")
 
