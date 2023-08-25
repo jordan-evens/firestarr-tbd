@@ -103,6 +103,9 @@ def ensure_dir(dir):
     @param dir Directory to ensure existence of
     @return None
     """
+    # HACK: azure container is somehow making files instead of directories
+    if os.path.isfile(dir):
+        try_remove(dir, force=True)
     call_safe(os.makedirs, dir, exist_ok=True)
     if not os.path.isdir(dir):
         logging.fatal("Could not create directory {}".format(dir))
@@ -139,6 +142,8 @@ SECONDS_PER_MINUTE = 60
 SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 
 DEFAULT_BOUNDS = "bounds.geojson"
+
+FILE_LOCK_PUBLISH = os.path.join(DIR_OUTPUT, "publish")
 
 
 def listdir_sorted(path, ignore_locks=True):
@@ -194,9 +199,7 @@ def read_config(force=False):
         try:
             with open(SETTINGS_FILE) as configfile:
                 # fake a config section so it works with parser
-                config.read_file(
-                    itertools.chain(["[GLOBAL]"], configfile), source=SETTINGS_FILE
-                )
+                config.read_file(itertools.chain(["[GLOBAL]"], configfile), source=SETTINGS_FILE)
         except KeyboardInterrupt as ex:
             raise ex
         except Exception:
@@ -224,10 +227,7 @@ def read_config(force=False):
         file_bounds = CONFIG["BOUNDS_FILE"]
         if not os.path.isfile(file_bounds):
             if DEFAULT_BOUNDS != file_bounds:
-                logging.warning(
-                    f"Bounds specified as {file_bounds} but not found - "
-                    f"reverting to {DEFAULT_BOUNDS}"
-                )
+                logging.warning(f"Bounds specified as {file_bounds} but not found - " f"reverting to {DEFAULT_BOUNDS}")
                 file_bounds = DEFAULT_BOUNDS
         if not os.path.isfile(file_bounds):
             if DEFAULT_BOUNDS == file_bounds:
@@ -350,9 +350,7 @@ def start_process(run_what, cwd):
     @return Running subprocess
     """
     # logging.debug(run_what)
-    p = subprocess.Popen(
-        run_what, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
-    )
+    p = subprocess.Popen(run_what, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
     p.args = run_what
     return p
 
@@ -364,11 +362,7 @@ def finish_process(process):
         # it again before it exits without this
         if -1073741510 == process.returncode:
             sys.exit(process.returncode)
-        raise RuntimeError(
-            "Error running {} [{}]: ".format(process.args, process.returncode)
-            + stderr
-            + stdout
-        )
+        raise RuntimeError("Error running {} [{}]: ".format(process.args, process.returncode) + stderr + stdout)
     return stdout, stderr
 
 
@@ -621,9 +615,7 @@ def ensure(
                 # HACK: check that it returns what we asked for so we know it's
                 #       updated to work properly with this and just return path
                 if not (can_fail and result is None) and result != paths:
-                    raise RuntimeError(
-                        f"Expected function returning {paths} but got {result}"
-                    )
+                    raise RuntimeError(f"Expected function returning {paths} but got {result}")
             if not (can_fail and result is None) and not paths_exist(list_paths):
                 raise RuntimeError(f"Expected {list_paths} to exist")
             yield result
@@ -695,9 +687,7 @@ def ensures(
                         except Exception as ex:
                             # failed parsing file
                             ex_current = ex
-                            logging.error(
-                                f"Failed parsing {paths} so removing and retrying"
-                            )
+                            logging.error(f"Failed parsing {paths} so removing and retrying")
                             force_remove(paths)
                 except KeyboardInterrupt as ex:
                     raise ex
@@ -742,10 +732,7 @@ def make_show_args(fct, show_args, ignore_args=["self"]):
             if "self" not in kwargs.keys():
                 # if not named then assume it's first argument
                 args = args[1:]
-        return ", ".join(
-            [f"{x}" for x in args]
-            + [f"{k}={v}" for k, v in kwargs.items() if k in check_args]
-        )
+        return ", ".join([f"{x}" for x in args] + [f"{k}={v}" for k, v in kwargs.items() if k in check_args])
 
     return do_show_args
 
@@ -757,9 +744,7 @@ def log_entry_exit(logger=logging, show_args=True):
 
         @wraps(fct)
         def wrapper(*args, **kwargs):
-            with log_on_entry_exit(
-                f"{fct.__name__}({call_show(*args, **kwargs)})", logger
-            ):
+            with log_on_entry_exit(f"{fct.__name__}({call_show(*args, **kwargs)})", logger):
                 return fct(*args, **kwargs)
 
         return wrapper
@@ -775,9 +760,7 @@ def parse_str_list(s):
         raise RuntimeError(f"Expected list surrounded by [] but got {s}")
 
     def parse(x):
-        if (x.startswith("'") and x.endswith("'")) or (
-            x.startswith('"') and x.endswith('"')
-        ):
+        if (x.startswith("'") and x.endswith("'")) or (x.startswith('"') and x.endswith('"')):
             # it's a string, so just remove the quotes
             return x[1:-1]
         if re.match("^[0-9]+$", x):
@@ -799,9 +782,7 @@ cffdrs = import_cffdrs()
 
 def find_ranges_missing(datetime_start, datetime_end, times, freq="H"):
     # determine which times don't exist between start and end time
-    times_needed = set(
-        pd.date_range(datetime_start, datetime_end, freq=freq, inclusive="both")
-    )
+    times_needed = set(pd.date_range(datetime_start, datetime_end, freq=freq, inclusive="both"))
     if not times_needed:
         return times_needed
     ranges_missing = []
@@ -869,9 +850,7 @@ def count_procs(name="tbd"):
     for p in psutil.process_iter():
         try:
             if p.name() == name:
-                processes.append(
-                    p.as_dict(attrs=["cpu_times", "name", "pid", "status"])
-                )
+                processes.append(p.as_dict(attrs=["cpu_times", "name", "pid", "status"]))
         except psutil.NoSuchProcess:
             continue
     return len(processes)

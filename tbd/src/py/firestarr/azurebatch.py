@@ -5,6 +5,7 @@ import time
 import azure.batch as batch
 import azure.batch.batch_auth as batchauth
 import azure.batch.models as batchmodels
+import pandas as pd
 from common import CONFIG, SECONDS_PER_MINUTE, logging
 from multiprocess import Lock, Process
 from redundancy import get_stack
@@ -25,12 +26,23 @@ _REGISTRY_PASSWORD = CONFIG.get("REGISTRY_PASSWORD")
 _REGISTRY_URL = CONFIG.get("REGISTRY_URL")
 _CONTAINER_PY = f"{_REGISTRY_URL}/tbd_prod_stable:latest"
 _CONTAINER_BIN = f"{_REGISTRY_URL}/firestarr:latest"
-
+SSH_KEY = (
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCZuB9m2+4D0GcnWr9BH/"
+    "rqXTHqu9IV2fH3/PFMs8CT8NdlgCGvltxSIksLg/TM4wLe/G9B0/"
+    "qB9jBXrShx85AHcs9d62bweh9GVE1jMgixDzZWtAc3pS2Z6/"
+    "L8ppJj80QaEnl9equFMHCtWRN03hRD35WM4yx1QgJ5GoiJiDHsOMZtQ/"
+    "ARQtYHjr8yLZFONZMBzsh9I0QdXUYECw8gbvOfzJtaGwWzl66pvAhaQk3Rt9"
+    "0UTVIpu8nCn4liqI+/ym62bSjxwn/5FgAkGirLF9zI4QxjJRHTMtc5nWNTpb"
+    "IdXuqvFKTaTFjOIz+mj3JwW4DcuWP6sT3BMYBajlXF4/Ma7KUgUa9B8OOaVvB"
+    "wTulNg7PX6JnzDXxWEqIz41NqFqEDNnp+J1q5rckEAehWcXlYxwj7wKUfseSKf"
+    "qr1vkkG/1Afit/T3ECix6lkp5rc4/5h1qSDuEZJ09IX3BMnDIpSYQMvYezZtRl"
+    "GMJ44kVX1f8JWj7PyA5CA09qZwoDsbkM= jordan@khonsu"
+)
 _POOL_VM_SIZE = "STANDARD_F72S_V2"
 # _POOL_VM_SIZE = "STANDARD_F32S_V2"
-POOL_ID = "pool_firestarr_dev"
+POOL_ID = "pool_firestarr"
 _MIN_NODES = 1
-_MAX_NODES = 1
+_MAX_NODES = 100
 # _MAX_NODES = 1
 # if any tasks pending but not running then want enough nodes to start
 # those and keep the current ones running, but if nothing in queue then
@@ -71,9 +83,8 @@ def restart_unusable_nodes(pool_id=POOL_ID, client=None):
                         # HACK: update in case changed during loop
                         node = client.compute_node.get(pool_id, node_id)
                         if "unusable" == node.state:
-                            client.compute_node.reboot(
-                                pool_id, node_id, node_reboot_option="terminate"
-                            )
+                            logging.error(f"Node unusable: {node_id}")
+                            client.compute_node.reboot(pool_id, node_id, node_reboot_option="terminate")
                     except batchmodels.BatchErrorException:
                         # HACK: just ignore because probably another
                         #       thread is trying to do the same thing?
@@ -234,7 +245,7 @@ def add_monolithic_task(job_id, client=None):
     client.task.add_collection(job_id, tasks)
 
 
-def schedule_tasks(job_id, tasks, client=None):
+def schedule_job_tasks(job_id, tasks, client=None):
     if client is None:
         client = get_batch_client()
     client.task.add_collection(job_id, tasks)
@@ -247,8 +258,8 @@ def get_task_name(dir_fire):
 def find_tasks_running(job_id, dir_fire, client=None):
     if client is None:
         client = get_batch_client()
-    # HACK: want to check somewhere and this seems good enough for now
-    restart_unusable_nodes(client=client)
+    # # HACK: want to check somewhere and this seems good enough for now
+    # restart_unusable_nodes(client=client)
     task_name = get_task_name(dir_fire)
     tasks = []
     # try:
@@ -299,7 +310,9 @@ def make_or_get_simulation_task(job_id, dir_fire, client=None):
             id=task_id,
             command_line="./sim.sh",
             container_settings=get_container_settings(
-                client, _CONTAINER_BIN, workdir=dir_fire
+                _CONTAINER_BIN,
+                workdir=dir_fire,
+                client=client,
             ),
             user_identity=get_user_identity(),
         )
@@ -365,15 +378,9 @@ def get_active(client=None):
     if client is None:
         client = get_batch_client()
     jobs = {j.id: j for j in client.job.list() if j.state == "active"}
-    tasks = {
-        job.id: {t.id: t for t in client.task.list(job.id) if t.state == "active"}
-        for job in jobs.values()
-    }
+    tasks = {job.id: {t.id: t for t in client.task.list(job.id) if t.state == "active"} for job in jobs.values()}
     pools = {p.id: p for p in client.pool.list() if p.state == "active"}
-    nodes = {
-        pool.id: {n.id: n for n in list_nodes(pool.id, client=None)}
-        for pool in pools.values()
-    }
+    nodes = {pool.id: {n.id: n for n in list_nodes(pool.id, client=None)} for pool in pools.values()}
     return jobs, tasks, pools, nodes
 
 
@@ -443,9 +450,7 @@ def wait_for_tasks_to_complete(job_id, client=None):
     with tqdm(desc="Waiting for tasks", total=len(tasks)) as tq:
         while left > 0:
             # does this update or do we need to get them again?
-            incomplete_tasks = [
-                task for task in tasks if task.state != batchmodels.TaskState.completed
-            ]
+            incomplete_tasks = [task for task in tasks if task.state != batchmodels.TaskState.completed]
             left = len(incomplete_tasks)
             tq.update(prev - left)
             prev = left
@@ -523,7 +528,10 @@ def make_schedule(pool_id=POOL_ID, client=None):
         print("", flush=True)
     schedule = batchmodels.JobScheduleAddParameter(
         id=job_schedule_id,
-        schedule=batchmodels.Schedule(recurrence_interval="PT1H"),
+        schedule=batchmodels.Schedule(
+            recurrence_interval="PT1H",
+            do_not_run_until=(pd.to_datetime(datetime.date.today(), utc=True) + datetime.timedelta(days=1, hours=4)),
+        ),
         job_specification=batchmodels.JobSpecification(
             pool_info=batchmodels.PoolInformation(pool_id=pool_id),
             job_manager_task=batchmodels.JobManagerTask(
@@ -585,34 +593,46 @@ def get_login(pool_id=POOL_ID, client=None):
     if client is None:
         client = get_batch_client()
     node_id = list_nodes()[0].as_dict()["id"]
+    # try:
+    #     client.compute_node.delete_user(pool_id, node_id, "user")
+    # except batchmodels.BatchErrorException:
+    #     pass
+    user = "user"
     try:
-        client.compute_node.delete_user(
-            pool_id,
-            node_id,
-            "user")
-    except batchmodels.BatchErrorException:
-        pass
-    try:
+        print(f"Trying to add user {user}")
         client.compute_node.add_user(
             pool_id,
             node_id,
-            batchmodels.ComputeNodeUser(
-                name="user", is_admin=True, ssh_public_key=SSH_KEY
-            ),
+            batchmodels.ComputeNodeUser(name=user, is_admin=True, ssh_public_key=SSH_KEY),
         )
     except batchmodels.BatchErrorException:
-        pass
+        client.compute_node.update_user(
+            pool_id,
+            node_id,
+            user,
+            node_update_user_parameter=batchmodels.NodeUpdateUserParameter(
+                ssh_public_key=SSH_KEY,
+                expiry_time=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1),
+            ),
+        )
     s = client.compute_node.get_remote_login_settings(
         pool_id,
         node_id,
     )
     cmd = "sudo /mnt/batch/tasks/fsmounts/firestarr_data/container/run_docker_bash.sh"
-    print(f"ssh -ti ~/.ssh/id_rsa -p {s.remote_login_port} user@{s.remote_login_ip_address} {cmd}")
+    print(f"ssh -ti ~/.ssh/id_rsa -p {s.remote_login_port} {user}@{s.remote_login_ip_address} {cmd}")
+
+
+def enable_autoscale(pool_id=POOL_ID, client=None):
+    if client is None:
+        client = get_batch_client()
+    client.pool.patch(pool_id, batchmodels.PoolPatchParameter())
 
 
 if __name__ == "__main__":
     client = get_batch_client()
     # pool_id = create_container_pool()
+    # print(get_login())
     # pool_id = create_container_pool(force=True)
     # run_oneoff_task("echo test >> /appl/data/testoneoff")
     # run_oneoff_task("/appl/tbd/scripts/force_run.sh")

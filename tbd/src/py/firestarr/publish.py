@@ -2,12 +2,13 @@ import datetime
 import os
 import shutil
 import time
-import numpy as np
 
+import numpy as np
 from common import (
     CREATION_OPTIONS,
     DIR_OUTPUT,
     DIR_ZIP,
+    FILE_LOCK_PUBLISH,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_DATE_YMD,
     FORMAT_OUTPUT,
@@ -16,6 +17,7 @@ from common import (
     force_remove,
     list_dirs,
     listdir_sorted,
+    locks_for,
     logging,
     zip_folder,
 )
@@ -34,18 +36,22 @@ def publish_all(
 ):
     dir_output = find_latest_outputs(dir_output)
     # check_copy_interim(dir_output, include_interim)
-    changed = merge_dirs(
-        dir_output, changed_only=changed_only, force=force, force_project=force_project
-    )
-    if changed or force or force_publish:
-        import publish_azure
+    with locks_for(FILE_LOCK_PUBLISH):
+        changed = merge_dirs(
+            dir_output,
+            changed_only=changed_only,
+            force=force,
+            force_project=force_project,
+        )
+        if changed or force or force_publish:
+            import publish_azure
 
-        publish_azure.upload_dir(dir_output)
-        # HACK: might be my imagination, but maybe there's a delay so wait a bit
-        time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
-        import publish_geoserver
+            publish_azure.upload_dir(dir_output)
+            # HACK: might be my imagination, but maybe there's a delay so wait a bit
+            time.sleep(PUBLISH_AZURE_WAIT_TIME_SECONDS)
+            import publish_geoserver
 
-        publish_geoserver.publish_folder(dir_output)
+            publish_geoserver.publish_folder(dir_output)
 
 
 def find_latest_outputs(dir_output=None):
@@ -249,11 +255,13 @@ def merge_dirs(
             file_base = os.path.basename(f)
             zone = file_base[: file_base.index("_")]
             by_zone[zone] = by_zone.get(zone, []) + [r]
+
         def merge_zone(for_what):
             zone, results_crs_zone = for_what
             dir_merge = f"{dir_parent}/zones/{zone}"
             changed, file_base = merge_files(results_crs_zone, dir_merge)
             return (changed, file_base)
+
         # # do this just to get something right now
         # zone_rasters_results = apply(by_zone.items(), merge_zone, desc="Merging zones")
         # # zone_rasters_results = pmap(merge_zone, by_zone.items(), desc="Merging zones")

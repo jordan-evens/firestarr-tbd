@@ -13,6 +13,7 @@ from common import (
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
+    FILE_LOCK_PUBLISH,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FLAG_SAVE_PREPARED,
     MAX_NUM_DAYS,
@@ -136,9 +137,7 @@ class Run(object):
         self._do_merge = do_merge
         self._dir_fires = dir_fires
         self._prefix = (
-            "m3"
-            if self._dir_fires is None
-            else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
+            "m3" if self._dir_fires is None else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
         )
         FMT_RUNID = "%Y%m%d%H%M"
         self._modelrun = None
@@ -150,9 +149,7 @@ class Run(object):
         else:
             self._name = os.path.basename(dir)
             if not self._name.startswith(self._prefix):
-                raise RuntimeError(
-                    f"Trying to resume {dir} that didn't use fires from {self._prefix}"
-                )
+                raise RuntimeError(f"Trying to resume {dir} that didn't use fires from {self._prefix}")
             self._dir = dir
             self._id = self._name.replace(f"{self._prefix}_", "")
             self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
@@ -193,9 +190,7 @@ class Run(object):
                 self._modelrun = rundata.get("modelrun", None)
                 self._published_clean = rundata.get("published_clean", False)
             except Exception as ex:
-                logging.error(
-                    f"Couldn't load existing simulation file {self._file_rundata}"
-                )
+                logging.error(f"Couldn't load existing simulation file {self._file_rundata}")
                 logging.error(get_stack(ex))
 
     def save_rundata(self):
@@ -227,13 +222,11 @@ class Run(object):
                 force_remove(invalid_paths)
         return invalid_paths
 
-    def check_and_publish(self, ignore_incomplete_okay=True):
+    def check_and_publish(self, ignore_incomplete_okay=True, run_incomplete=False, no_publish=False):
         df_fires = self.load_fires()
 
         def get_df_fire(fire_name):
-            return df_fires.reset_index().loc[
-                df_fires.reset_index()["fire_name"] == fire_name
-            ]
+            return df_fires.reset_index().loc[df_fires.reset_index()["fire_name"] == fire_name]
 
         is_interim = {}
         is_changed = {}
@@ -246,48 +239,56 @@ class Run(object):
         want_dates = WANT_DATES
 
         def check_copy_outputs(fire_name):
-            dir_fire = os.path.join(self._dir_sims, fire_name)
-            changed, interim, files_project = copy_fire_outputs(
-                dir_fire, self._dir_output, changed=False
-            )
-            was_running = check_running(dir_fire)
-            return dir_fire, changed, interim, files_project, was_running
+            try:
+                dir_fire = os.path.join(self._dir_sims, fire_name)
+                changed, interim, files_project = copy_fire_outputs(dir_fire, self._dir_output, changed=False)
+                was_running = check_running(dir_fire)
+                return dir_fire, changed, interim, files_project, was_running
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception:
+                return dir_fire, None, None, None, None
 
         results = pmap(check_copy_outputs, df_fires.index, desc="Checking outputs")
         for r in tqdm(results, desc="Categorizing results"):
             dir_fire, changed, interim, files_project, was_running = r
             file_sim = get_simulation_file(dir_fire)
-            is_changed[dir_fire] = changed
-            is_interim[dir_fire] = interim
             df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
-            if df_fire is None:
-                is_incomplete[dir_fire] = df_fire
-            if was_running:
-                is_running[dir_fire] = df_fire
-            else:
-                if 1 != len(df_fire):
-                    raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
-                data = df_fire.iloc[0]
-                max_days = data["max_days"]
-                date_offsets = [x for x in want_dates if x <= max_days]
-                len_target = len(date_offsets)
-                if not FLAG_IGNORE_PERIM_OUTPUTS:
-                    len_target += 1
-                # +1 for perimeter
-                if 0 == len(files_project):
-                    is_prepared[dir_fire] = df_fire
-                elif len(files_project) != len_target:
-                    # logging.warning(f"Adding incomplete fire {dir_fire}")
-                    # is_incomplete[dir_fire] = df_fire
-                    logging.error(f"Ignoring incomplete fire {dir_fire}")
-                    is_ignored[dir_fire] = df_fire
+            if changed is not None:
+                is_changed[dir_fire] = changed
+                is_interim[dir_fire] = interim
+                if df_fire is None:
+                    is_incomplete[dir_fire] = df_fire
+                if was_running:
+                    is_running[dir_fire] = df_fire
                 else:
-                    is_complete[dir_fire] = df_fire
+                    if 1 != len(df_fire):
+                        raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
+                    data = df_fire.iloc[0]
+                    max_days = data["max_days"]
+                    date_offsets = [x for x in want_dates if x <= max_days]
+                    len_target = len(date_offsets)
+                    if not FLAG_IGNORE_PERIM_OUTPUTS:
+                        len_target += 1
+                    # +1 for perimeter
+                    if 0 == len(files_project):
+                        is_prepared[dir_fire] = df_fire
+                    elif len(files_project) != len_target:
+                        if ignore_incomplete_okay:
+                            logging.error(f"Ignoring incomplete fire {dir_fire}")
+                            is_ignored[dir_fire] = df_fire
+                        else:
+                            logging.warning(f"Adding incomplete fire {dir_fire}")
+                            is_incomplete[dir_fire] = df_fire
+                    else:
+                        is_complete[dir_fire] = df_fire
+            else:
+                is_ignored[dir_fire] = df_fire
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=True)
 
-        if is_prepared:
+        if is_prepared and run_incomplete:
             # start but don't wait
             pmap(
                 run_fire,
@@ -304,13 +305,13 @@ class Run(object):
             self._simulation.prepare(df_fire)
             return self.do_run_fire(dir_fire)
 
-        if is_incomplete:
+        if is_incomplete and run_incomplete:
             pmap(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
-
-        publish_all(self._dir_output, force=changed)
+        if not no_publish:
+            publish_all(self._dir_output, force=changed)
         num_done = len(is_complete)
         if is_ignored:
-            logging.error("Ignored incomplete fires: {is_ignored}")
+            logging.error(f"Ignored incomplete fires: {is_ignored}")
         if ignore_incomplete_okay:
             num_done += len(is_ignored)
         return num_done == len(df_fires)
@@ -323,8 +324,7 @@ class Run(object):
         # FIX: check the weather or folders here
         df_final, changed = self.run_fires_in_dir(check_missing=False)
         logging.info(
-            f"Done running {len(df_final)} fires with a total simulation time"
-            f"of {df_final['sim_time'].sum()}"
+            f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
         )
         return df_final, changed
 
@@ -368,9 +368,7 @@ class Run(object):
                     time.sleep(60)
                 if not was_running:
                     # publish didn't work, but nothing is running, so retry running?
-                    logging.error(
-                        "Changes found when publishing, but nothing running so retry"
-                    )
+                    logging.error("Changes found when publishing, but nothing running so retry")
         self._published_clean = True
         self.save_rundata()
         logging.info("Finished simulation for {self._run_id}")
@@ -387,9 +385,7 @@ class Run(object):
 
         logging.info(f"Removing file locks for {self._id}")
         force_remove(
-            itertools.chain.from_iterable(
-                [find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]]
-            )
+            itertools.chain.from_iterable([find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]])
         )
         return df_final
 
@@ -401,9 +397,7 @@ class Run(object):
                 logging.info("Deleting existing fires")
                 force_remove(_)
             # keep a copy of the settings for reference
-            shutil.copy(
-                "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
-            )
+            shutil.copy("/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini"))
             # also keep binary instead of trying to track source
             shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
             df_fires = self._src_fires.get_fires().to_crs(self._crs)
@@ -464,9 +458,7 @@ class Run(object):
         logging.info(f"Have {len(files_sim)} groups prepared")
         if FLAG_SAVE_PREPARED:
             try:
-                df_fires_prepared = pd.concat(
-                    [read_gpd_file_safe(get_simulation_file(f)) for f in files_sim]
-                )
+                df_fires_prepared = pd.concat([read_gpd_file_safe(get_simulation_file(f)) for f in files_sim])
                 for col in ["datetime", "date_startup", "start_time"]:
                     df_fires_prepared.loc[:, col] = df_fires_prepared[col].astype(str)
                 df_fires_prepared = df_fires_prepared.rename(
@@ -493,20 +485,14 @@ class Run(object):
             # only keep fires that are in bounds
             df = df.loc[np.unique(df_join.index)]
             if "PRIORITY" in df_join.columns:
-                df_priority = (
-                    df_join.sort_values(["PRIORITY"]).groupby("fire_name").first()
-                )
+                df_priority = df_join.sort_values(["PRIORITY"]).groupby("fire_name").first()
                 df["ID"] = df_priority.loc[df.index, "ID"]
                 df["PRIORITY"] = df_priority.loc[df.index, "PRIORITY"]
             if "DURATION" in df_bounds.columns:
                 df["DURATION"] = (
-                    df_join.sort_values(["DURATION"], ascending=False)
-                    .groupby("fire_name")
-                    .first()["DURATION"]
+                    df_join.sort_values(["DURATION"], ascending=False).groupby("fire_name").first()["DURATION"]
                 )
-        df["DURATION"] = np.min(
-            list(zip([self._max_days] * len(df), df["DURATION"])), axis=1
-        )
+        df["DURATION"] = np.min(list(zip([self._max_days] * len(df), df["DURATION"])), axis=1)
         df = df.sort_values(["PRIORITY", "ID", "DURATION", "area"])
         return df
 
@@ -538,21 +524,15 @@ class Run(object):
         dir_names = set(dirs_fire)
         diff_extra = dir_names.difference(fire_names)
         if diff_extra:
-            raise RuntimeError(
-                f"Have directories for fires that aren't in input:\n{diff_extra}"
-            )
-        expected = {
-            f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names
-        }
+            raise RuntimeError(f"Have directories for fires that aren't in input:\n{diff_extra}")
+        expected = {f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names}
 
         def check_file(file_sim):
             try:
                 if os.path.isfile(file_sim):
                     df_fire = read_gpd_file_safe(file_sim)
                     if 1 != len(df_fire):
-                        raise RuntimeError(
-                            f"Expected exactly one fire in file {file_sim}"
-                        )
+                        raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
                     return True
             except KeyboardInterrupt as ex:
                 raise ex
@@ -560,11 +540,7 @@ class Run(object):
                 pass
             return False
 
-        missing = [
-            fire_name
-            for fire_name, file_sim in expected.items()
-            if not check_file(file_sim)
-        ]
+        missing = [fire_name for fire_name, file_sim in expected.items() if not check_file(file_sim)]
         if missing:
             if remove_directory:
                 logging.info(f"Need to make directories for {len(missing)} simulations")
@@ -599,8 +575,7 @@ class Run(object):
                 self.prep_folders()
         # HACK: order by PRIORITY so it doesn't make it alphabetical by ID
         dirs_sim = {
-            id[1]: [os.path.join(self._dir_sims, x) for x in g.index]
-            for id, g in df_fires.groupby(["PRIORITY", "ID"])
+            id[1]: [os.path.join(self._dir_sims, x) for x in g.index] for id, g in df_fires.groupby(["PRIORITY", "ID"])
         }
         # run for each boundary in order
         changed = False
@@ -610,7 +585,6 @@ class Run(object):
         sim_times = []
         # # FIX: this is just failing and delaying things over and over right now
         # NUM_TRIES = 5
-        file_lock_publish = os.path.join(self._dir_output, "publish")
 
         @log_order()
         def check_publish(g, sim_results):
@@ -619,24 +593,18 @@ class Run(object):
             nonlocal sim_time
             nonlocal sim_times
             nonlocal results
-            with locks_for(file_lock_publish):
+            with locks_for(FILE_LOCK_PUBLISH):
                 for i in range(len(sim_results)):
                     result = sim_results[i]
                     # should be in the same order as input
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
                         logging.warning(f"Exception running {dir_fire} was {result}")
-                    if (
-                        result is None
-                        or isinstance(result, Exception)
-                        or (not np.all(result.get("sim_time", False)))
-                    ):
+                    if result is None or isinstance(result, Exception) or (not np.all(result.get("sim_time", False))):
                         logging.warning("Could not run fire %s", dir_fire)
                     else:
                         if 1 != len(result):
-                            raise RuntimeError(
-                                "Expected exactly one result for %s" % dir_fire
-                            )
+                            raise RuntimeError("Expected exactly one result for %s" % dir_fire)
                         row_result = result.iloc[0]
                         fire_name = row_result["fire_name"]
                         if fire_name not in results:
@@ -654,21 +622,19 @@ class Run(object):
                     if self.check_do_publish():
                         n = len(sim_times)
                         logging.info(
-                            "Total of {} fires took {}s - average time is {}s".format(
-                                n, sim_time, sim_time / n
-                            )
+                            "Total of {} fires took {}s - average time is {}s".format(n, sim_time, sim_time / n)
                         )
                         publish_all(self._dir_output, force=changed)
                         logging.debug(f"Done publishing results for {g}")
                         # no longer changed because we just published
-                    else:
+                    elif self.check_do_merge():
                         merge_dirs(self._dir_output)
                         logging.debug(f"Done merging directories for {g}")
                     # just updated so not changed anymore
                     changed = False
 
-        # use callback if at least merging
-        callback_publish = check_publish if self.check_do_merge() else do_nothing
+        # # use callback if at least merging
+        # callback_publish = check_publish if self.check_do_merge() else do_nothing
 
         def prepare_fire(dir_fire):
             # print(dir_fire)
@@ -690,10 +656,7 @@ class Run(object):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
 
         if self._is_batch:
-            dirs_fire = [
-                os.path.join(self._dir_sims, x)
-                for x in itertools.chain.from_iterable(dirs_sim.values())
-            ]
+            dirs_fire = [os.path.join(self._dir_sims, x) for x in itertools.chain.from_iterable(dirs_sim.values())]
             # make one list of tasks and submit it
             tasks_existed = apply(
                 dirs_fire,
@@ -706,16 +669,22 @@ class Run(object):
                 run_fire,
                 dirs_sim,
                 desc="Running simulations via azurebatch",
-                callback_group=callback_publish,
+                callback_group=check_publish,
             )
         else:
-            pmap_by_group(
-                run_fire,
-                dirs_sim,
-                desc="Running simulations",
-                callback_group=callback_publish,
-            )
-        force_remove(file_lock_publish)
+            done = False
+            while not done:
+                try:
+                    pmap_by_group(
+                        run_fire,
+                        dirs_sim,
+                        desc="Running simulations",
+                        callback_group=check_publish,
+                    )
+                    done = True
+                except BrokenPipeError:
+                    pass
+        force_remove(FILE_LOCK_PUBLISH)
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()
         total_time = t1 - t0
@@ -727,11 +696,9 @@ class Run(object):
                 min(sim_times),
                 max(sim_times),
             )
-        df_final = pd.concat(
-            [make_gdf_from_series(r, self._crs) for r in results.values()]
-        )
+        df_final = pd.concat([make_gdf_from_series(r, self._crs) for r in results.values()])
         try:
-            save_shp(df_final, self._dir_out, "df_fires_final.shp")
+            save_shp(df_final, os.path.join(self._dir_out, "df_fires_final.shp"))
         except Exception as ex:
             logging.error("Couldn't save final fires")
             logging.error(get_stack(ex))
@@ -742,9 +709,7 @@ def make_resume(dir_resume=None, do_publish=False, do_merge=False, *args, **kwar
     # resume last run
     if dir_resume is None:
         dirs = [
-            x
-            for x in list_dirs(DIR_SIMS)
-            if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
+            x for x in list_dirs(DIR_SIMS) if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
         ]
         if not dirs:
             raise RuntimeError("No valid runs to resume")

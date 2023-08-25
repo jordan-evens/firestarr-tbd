@@ -83,10 +83,7 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
             ex_current = ex
             if retries <= 0 or not should_ignore(ex):
                 raise ex
-        print(
-            f"Reinitializing after:\n\t{ex_current}\n\t"
-            "{self._init_args}\n\t{self._init_kwds}"
-        )
+        print(f"Reinitializing after:\n\t{ex_current}\n\t" f"{self._init_args}\n\t{self._init_kwds}")
         # need to reinitialize
         args = list(self._init_args) + list(self._init_kwds.values())
         for arg in args:

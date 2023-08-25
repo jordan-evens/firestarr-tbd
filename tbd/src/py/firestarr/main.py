@@ -13,6 +13,7 @@ from common import (
 )
 from datasources.spotwx import get_model_dir_uncached, set_model_dir
 from log import add_log_file
+from redundancy import get_stack
 from run import Run, make_resume
 
 # NOTE: rotating log file doesn't help because this isn't continuously running
@@ -115,6 +116,7 @@ def run_main(args):
             # if we give it a simulation directory then resume those sims
             run_current = Run(dir=dir_arg, do_publish=do_publish)
             logging.info(f"Resuming simulations in {dir_arg}")
+            run_current.check_and_publish()
         else:
             logging.info("Starting new run")
             run_current = Run(
@@ -138,9 +140,20 @@ if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
     args_orig = sys.argv[1:]
     while True:
-        args = args_orig[:]
-        # returns true if just finished current run
-        if run_main(args):
-            break
-        logging.info("Trying again because used old weather")
-    logging.info("Finished successfully")
+        # HACK: just do forever for now since running manually
+        logging.info("Attempting update")
+        while True:
+            args = args_orig[:]
+            try:
+                # returns true if just finished current run
+                if run_main(args):
+                    break
+                logging.info("Trying again because used old weather")
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception as ex:
+                logging.error(ex)
+                logging.error(get_stack(ex))
+                logging.info("Trying again because of error")
+                pass
+        logging.info("Finished successfully")

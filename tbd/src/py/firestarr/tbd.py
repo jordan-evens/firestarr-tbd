@@ -8,7 +8,6 @@ import timeit
 import pandas as pd
 import psutil
 from azurebatch import (
-    make_or_get_job,
     add_simulation_task,
     check_successful,
     find_tasks_running,
@@ -16,7 +15,9 @@ from azurebatch import (
     have_batch_config,
     is_running_on_azure,
     list_nodes,
+    make_or_get_job,
     make_or_get_simulation_task,
+    schedule_job_tasks,
 )
 from common import (
     CONFIG,
@@ -29,6 +30,7 @@ from common import (
     WANT_DATES,
     ensure_dir,
     force_remove,
+    get_stack,
     listdir_sorted,
     locks_for,
     logging,
@@ -54,6 +56,7 @@ _RUN_FIRESTARR = None
 _FIND_RUNNING = None
 JOB_ID = None
 IS_USING_BATCH = None
+
 
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
@@ -96,16 +99,26 @@ def run_firestarr_batch(dir_fire, wait=True):
 
 
 def find_running_batch(dir_fire):
-    return find_tasks_running(JOB_ID, dir_fire)
+    while True:
+        try:
+            return find_tasks_running(JOB_ID, dir_fire)
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception as ex:
+            pass
+
 
 def get_simulation_task(dir_fire):
     return make_or_get_simulation_task(JOB_ID, dir_fire)
 
+
 def schedule_tasks(tasks):
-    schedule_tasks(JOB_ID, tasks)
+    schedule_job_tasks(JOB_ID, tasks)
+
 
 def get_nodes():
     return list_nodes()
+
 
 def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     global _RUN_FIRESTARR
@@ -195,15 +208,9 @@ def find_outputs(dir_fire):
     # FIX: include perimeter file
     files_tiff = [x for x in files if x.endswith(".tif")]
     probs_all = [x for x in files_tiff if "probability" in x]
-    files_prob = [
-        os.path.join(dir_fire, x) for x in probs_all if x.startswith("probability")
-    ]
-    files_interim = [
-        os.path.join(dir_fire, x) for x in probs_all if x.startswith("interim")
-    ]
-    files_perim = [
-        os.path.join(dir_fire, x) for x in files_tiff if os.path.basename(dir_fire) in x
-    ]
+    files_prob = [os.path.join(dir_fire, x) for x in probs_all if x.startswith("probability")]
+    files_interim = [os.path.join(dir_fire, x) for x in probs_all if x.startswith("interim")]
+    files_perim = [os.path.join(dir_fire, x) for x in files_tiff if os.path.basename(dir_fire) in x]
     return files_prob, files_interim, files_perim
 
 
@@ -218,9 +225,7 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     is_interim = False
     if files_interim and not files_prob:
         logging.debug(f"Using interim rasters for {dir_fire}")
-        dir_tmp_fire = ensure_dir(
-            os.path.join(DIR_TMP, os.path.basename(dir_output), "interim", fire_name)
-        )
+        dir_tmp_fire = ensure_dir(os.path.join(DIR_TMP, os.path.basename(dir_output), "interim", fire_name))
         force_remove(dir_tmp_fire)
         call_safe(shutil.copytree, dir_fire, dir_tmp_fire, dirs_exist_ok=True)
         # double check that outputs weren't created while copying
@@ -269,16 +274,19 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
                     nodata=None,
                 )
                 if extent is None:
-                    raise RuntimeError(
-                        f"Fire {dir_fire} has invalid output file {file_src}"
-                    )
+                    raise RuntimeError(f"Fire {dir_fire} has invalid output file {file_src}")
                 # if file didn't exist then it's changed now
                 changed = True
     return changed, is_interim, files_project
 
 
 def run_fire_from_folder(
-    dir_fire, dir_output, verbose=False, prepare_only=False, run_only=False, no_wait=False,
+    dir_fire,
+    dir_output,
+    verbose=False,
+    prepare_only=False,
+    run_only=False,
+    no_wait=False,
 ):
     def nolog(*args, **kwargs):
         pass
@@ -322,23 +330,26 @@ def run_fire_from_folder(
         if not sim_time:
             # try parsing log for simulation time
             sim_time = None
-            if os.path.exists(file_log):
-                # if log says it ran then don't run it
-                # HACK: just use tail instead of looping or seeking ourselves
-                stdout, stderr = run_process(["tail", "-1", file_log], "/appl/tbd")
-                if stdout:
-                    line = stdout.strip().split("\n")[-1]
-                    g = re.match(".*Total simulation time was (.*) seconds", line)
-                    if g and g.groups():
-                        sim_time = int(g.groups()[0])
+            try:
+                if os.path.isfile(file_log):
+                    # if log says it ran then don't run it
+                    # HACK: just use tail instead of looping or seeking ourselves
+                    stdout, stderr = run_process(["tail", "-1", file_log], "/appl/tbd")
+                    if stdout:
+                        line = stdout.strip().split("\n")[-1]
+                        g = re.match(".*Total simulation time was (.*) seconds", line)
+                        if g and g.groups():
+                            sim_time = int(g.groups()[0])
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception:
+                pass
         want_dates = WANT_DATES
         max_days = data["max_days"]
         date_offsets = [x for x in want_dates if x <= max_days]
         # HACK: rerun if not enough outputs
         outputs = listdir_sorted(dir_fire)
-        probs = [
-            x for x in outputs if x.endswith("tif") and x.startswith("probability")
-        ]
+        probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
         if not sim_time or len(probs) != len(date_offsets):
             file_sh = os.path.join(dir_fire, "sim.sh")
             if prepare_only and os.path.isfile(file_sh):
@@ -363,10 +374,7 @@ def run_fire_from_folder(
                 log_info("Startup coordinates are {}, {}".format(lat, lon))
                 hour = start_time.hour
                 minute = start_time.minute
-                tz = (
-                    start_time.tz.utcoffset(start_time).total_seconds()
-                    / SECONDS_PER_HOUR
-                )
+                tz = start_time.tz.utcoffset(start_time).total_seconds() / SECONDS_PER_HOUR
                 # HACK: I think there might be issues with forecasts being at
                 #           the half hour?
                 if math.floor(tz) != tz:
@@ -419,7 +427,15 @@ def run_fire_from_folder(
                 if prepare_only:
                     # is prepared but not run, so return dir_fire
                     return dir_fire
-            sim_time = run_firestarr(dir_fire)
+            try:
+                sim_time = run_firestarr(dir_fire)
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception as ex:
+                logging.error(f"Couldn't run fire {dir_fire}")
+                logging.error(get_stack(ex))
+                force_remove(file_sh)
+                return None
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother
             df_fire["sim_time"] = sim_time
@@ -433,8 +449,6 @@ def run_fire_from_folder(
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
-        changed, is_interim, files_project = copy_fire_outputs(
-            dir_fire, dir_output, changed
-        )
+        changed, is_interim, files_project = copy_fire_outputs(dir_fire, dir_output, changed)
         df_fire["changed"] = changed
         return df_fire
