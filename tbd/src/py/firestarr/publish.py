@@ -24,7 +24,7 @@ from common import (
 from gdal_merge_max import gdal_merge_max
 from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
 from redundancy import call_safe, get_stack
-from tqdm_util import pmap, tqdm
+from tqdm_util import keep_trying, pmap, tqdm
 
 
 def publish_all(
@@ -134,7 +134,7 @@ def merge_dirs(
                 changed = True
             return changed, f_crs
 
-        results_crs = pmap(
+        results_crs = keep_trying(
             reproject,
             files,
             total=len(files),
@@ -231,29 +231,41 @@ def merge_dirs(
                     logging.info(f"Output already exists for {file_base}")
             return changed, file_base
 
-        by_zone = {}
-        for r in results_crs_all:
-            f = r[1]
-            file_base = os.path.basename(f)
-            zone = file_base[: file_base.index("_")]
-            by_zone[zone] = by_zone.get(zone, []) + [r]
+        # doing this by zones is way slower even if this fails
+        changed, file_base = merge_files(
+            results_crs=results_crs_all,
+            dir_merge=dir_combined,
+            verbose=True,
+        )
 
-        def merge_zone(for_what):
-            zone, results_crs_zone = for_what
-            dir_merge = f"{dir_parent}/zones/{zone}"
-            changed, file_base = merge_files(results_crs_zone, dir_merge)
-            return (changed, file_base)
+        # if not force:
+        #     by_zone = {}
+        #     for r in results_crs_all:
+        #         f = r[1]
+        #         file_base = os.path.basename(f)
+        #         zone = file_base[: file_base.index("_")]
+        #         by_zone[zone] = by_zone.get(zone, []) + [r]
 
-        # # do this just to get something right now
-        # zone_rasters_results = apply(by_zone.items(), merge_zone, desc="Merging zones")
-        # # zone_rasters_results = pmap(merge_zone, by_zone.items(), desc="Merging zones")
-        zone_rasters = {}
-        for zone, results_crs_zone in tqdm(by_zone.items(), total=len(by_zone), desc="Merging zones"):
-            dir_merge = f"{dir_parent}/zones/{zone}"
-            changed, file_base = merge_files(results_crs_zone, dir_merge)
-            zone_rasters[zone] = (changed, file_base)
-            any_change = any_change or changed
-        changed, file_base = merge_files(zone_rasters.values(), dir_combined, verbose=True)
+        #     def merge_zone(for_what):
+        #         zone, results_crs_zone = for_what
+        #         dir_merge = f"{dir_parent}/zones/{zone}"
+        #         changed, file_base = merge_files(results_crs_zone, dir_merge)
+        #         return (changed, file_base)
+
+        #     # # do this just to get something right now
+        #     # zone_rasters_results = apply(by_zone.items(), merge_zone, desc="Merging zones")
+        #     # # zone_rasters_results = keep_trying(merge_zone, by_zone.items(), desc="Merging zones")
+        #     zone_rasters = {}
+        #     for zone, results_crs_zone in tqdm(by_zone.items(), total=len(by_zone), desc="Merging zones"):
+        #         dir_merge = f"{dir_parent}/zones/{zone}"
+        #         changed, file_base = merge_files(results_crs_zone, dir_merge)
+        #         zone_rasters[zone] = (changed, file_base)
+        #         any_change = any_change or changed
+        #     changed, file_base = merge_files(zone_rasters.values(), dir_combined, verbose=True)
+        # else:
+        #     all_files = [x[1] for x in results_crs_all]
+        #     changed, file_base = merge_files(all_files, dir_combined, verbose=True)
+
         any_change = any_change or changed
     logging.info("Final results of merge are in %s", dir_combined)
     try:

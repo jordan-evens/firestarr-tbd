@@ -251,6 +251,10 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             # FIX: want all of these to be output at the size of the largest?
             # FIX: still doesn't show whole area that was simulated
             file_out = os.path.join(dir_region, d, f"{fire_name}{suffix}.tif")
+            file_out_interim = os.path.join(dir_region, d, f"{fire_name}{TMP_SUFFIX}.tif")
+            if file_out != file_out_interim:
+                # remove interim if we have final
+                force_remove(file_out_interim)
             files_project[prob] = file_out
     if not FLAG_IGNORE_PERIM_OUTPUTS:
         if len(files_perim) > 0:
@@ -438,7 +442,7 @@ def run_fire_from_folder(
             except Exception as ex:
                 logging.error(f"Couldn't run fire {dir_fire}")
                 logging.error(get_stack(ex))
-                force_remove(files_required)
+                # force_remove(files_required)
                 return None
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother

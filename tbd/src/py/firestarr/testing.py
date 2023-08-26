@@ -223,7 +223,7 @@ def run_fire(dir_fire):
     return self.do_run_fire(dir_fire, run_only=True)
 
 
-# tqdm_util.pmap(
+# tqdm_util.keep_trying(
 #     run_fire,
 #     dirs_fire,
 #     max_processes=len(df_fires) if self._is_batch else CONCURRENT_SIMS,

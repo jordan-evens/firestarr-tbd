@@ -7,6 +7,7 @@ import multiprocess.pool
 import multiprocess.queues
 import numpy as np
 import pandas as pd
+from log import logging
 from tqdm.auto import tqdm
 
 MAX_PROCESSES = multiprocess.cpu_count()
@@ -59,17 +60,9 @@ def apply(onto, fct=None, *args, **kwargs):
             #  prep so progress_apply() works
             tqdm.pandas(*args, **kwargs)
             # apply to axis if not Series
-            return (
-                onto.progress_apply(fct)
-                if isinstance(onto, pd.Series)
-                else onto.progress_apply(fct, axis=1)
-            )
+            return onto.progress_apply(fct) if isinstance(onto, pd.Series) else onto.progress_apply(fct, axis=1)
         # return apply_direct(fct, onto, *args, **kwargs)
-        return (
-            [fct(x) for x in tqdm(onto, *args, **kwargs)]
-            if fct is not None
-            else tqdm(onto, *args, **kwargs)
-        )
+        return [fct(x) for x in tqdm(onto, *args, **kwargs)] if fct is not None else tqdm(onto, *args, **kwargs)
 
 
 def wrap_write(chunks, save_as, mode, *args, **kwargs):
@@ -143,9 +136,7 @@ def pmap_by_group(
     **kwargs,
 ):
     if not hasattr(values, "values"):
-        return pmap(
-            fct, values, max_processes=max_processes, no_limit=no_limit, *args, **kwargs
-        )
+        return pmap(fct, values, max_processes=max_processes, no_limit=no_limit, *args, **kwargs)
 
     pool = init_pool(max_processes, no_limit)
     _desc = f"{kwargs['desc']}: " if "desc" in kwargs else ""
@@ -157,11 +148,7 @@ def pmap_by_group(
     num = list(lengths.values())
     breaks = list(np.cumsum(list(lengths.values())))
     ranges = {groups[i]: list(zip([0] + breaks, breaks))[i] for i in range(len(breaks))}
-    groups_by_index = list(
-        itertools.chain.from_iterable(
-            [[groups[i]] * num[i] for i in range(len(groups))]
-        )
-    )
+    groups_by_index = list(itertools.chain.from_iterable([[groups[i]] * num[i] for i in range(len(groups))]))
     groups_left = {groups[i]: num[i] for i in range(len(groups))}
     groups_done = list()
     groups_pending = list(groups)
@@ -193,10 +180,98 @@ def pmap_by_group(
                 result[g] = results[j:k]
                 if callback_group:
                     callback_group(g, result[g])
-            pbar.set_description(
-                f"{_desc}{groups_done}/{groups_pending}".replace("]/[", "::")
-            )
+            pbar.set_description(f"{_desc}{groups_done}/{groups_pending}".replace("]/[", "::"))
         return result
     finally:
         # avoid Exception ignored in: <function Pool.__del__ at 0x7f8fd4c75d30>
         pool.terminate()
+
+
+def keep_trying(fct, values, return_with_status=False, *args, **kwargs):
+    done = False
+    successful = []
+    remaining = [(i, x) for i, x in enumerate(values)]
+    num_prev = None
+
+    def fct_try(v):
+        i, dir_fire = v
+        try:
+            return (True, i, fct(dir_fire))
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            return (False, i, dir_fire)
+
+    while not done:
+        try:
+            run_completed = pmap(
+                fct_try,
+                remaining,
+                *args,
+                **kwargs,
+            )
+            done = True
+            good = [r[1:] for r in run_completed if r[0]]
+            if good:
+                successful.extend(good)
+            remaining = [r[1:] for r in run_completed if not r[0]]
+            num_cur = len(remaining)
+            if 0 == num_cur:
+                break
+            if num_cur == num_prev:
+                logging.error(f"Settled on having {num_cur} results not working")
+                break
+            num_prev = num_cur
+        except BrokenPipeError:
+            pass
+    out = [(i, True, v) for i, v in successful] + [(i, False, v) for i, v in remaining]
+    in_order = [(f, v) for i, f, v in sorted(out, key=lambda x: x[0])]
+    if return_with_status:
+        return in_order
+    # get rid of status
+    return [v if f else None for f, v in in_order]
+
+
+def keep_trying_groups(fct, values, *args, **kwargs):
+    done = False
+    remaining = {k: v for k, v in values.items()}
+    num_prev = None
+    unsuccessful = {}
+    successful = {}
+
+    def fct_try(dir_fire):
+        try:
+            return (True, fct(dir_fire))
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            return (False, dir_fire)
+
+    while not done:
+        try:
+            run_completed = pmap_by_group(
+                fct_try,
+                remaining,
+                *args,
+                **kwargs,
+            )
+            unsuccessful = {}
+            done = True
+            num_cur = 0
+            for g, v in run_completed.items():
+                good = [r[1] for r in v if r[0]]
+                if good:
+                    successful[g] = successful.get(g, []) + good
+                bad = [r[1] for r in v if not r[0]]
+                if bad:
+                    unsuccessful[g] = bad
+                    num_cur += len(bad)
+                    done = False
+            remaining = unsuccessful
+            if num_cur > 0 and num_cur == num_prev:
+                logging.error(f"Settled on having {num_cur} results not working")
+                break
+            num_prev = num_cur
+        except BrokenPipeError:
+            pass
+    return successful, unsuccessful

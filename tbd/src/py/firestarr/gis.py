@@ -27,7 +27,7 @@ from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
 from redundancy import call_safe, get_stack, should_ignore
-from tqdm_util import pmap
+from tqdm_util import keep_trying, pmap
 
 KM_TO_M = 1000
 HA_TO_MSQ = 10000
@@ -391,13 +391,13 @@ def project_raster(
 
     if output_raster is None:
         output_raster = filename[:-4] + ".tif"
-    ensure_dir(os.path.dirname(output_raster))
     logging.debug(f"Projecting {filename} to {output_raster}")
 
     with locks_for(output_raster):
 
         def do_save(_):
             force_remove(_)
+            ensure_dir(os.path.dirname(_))
             warp = gdal.Warp(
                 _,
                 input_raster,
@@ -475,6 +475,8 @@ def save_shp(df, path):
             # HACK: convert any type of date into string
             if "date" in str(v).lower():
                 df[k] = df[k].astype(str)
+            elif v == np.int64:
+                df[k] = df[k].astype(int)
         df_index = df.set_index(keys)
         call_safe(df_index.to_file, file)
         return file
@@ -605,5 +607,5 @@ def find_invalid_tiffs(paths, bands=[1], test_read=False):
         return path
 
     # find list of invalid files
-    results = pmap(check_path, paths, desc="Validating rasters")
+    results = keep_trying(check_path, paths, desc="Validating rasters")
     return [x for x in results if x is not None]

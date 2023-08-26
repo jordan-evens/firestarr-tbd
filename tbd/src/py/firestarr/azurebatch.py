@@ -540,7 +540,7 @@ def make_schedule(pool_id=POOL_ID, client=None):
                 kill_job_on_completion=True,
                 user_identity=get_user_identity(),
                 allow_low_priority_node=False,
-                command_line="/appl/tbd/scripts/force_run.sh",
+                command_line="/appl/tbd/scripts/lock_run.sh",
                 container_settings=get_container_settings(_CONTAINER_PY, client=client),
             ),
             constraints=batchmodels.JobConstraints(max_task_retry_count=0),
@@ -612,7 +612,7 @@ def get_login(pool_id=POOL_ID, client=None):
             user,
             node_update_user_parameter=batchmodels.NodeUpdateUserParameter(
                 ssh_public_key=SSH_KEY,
-                expiry_time=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1),
+                expiry_time=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7),
             ),
         )
     s = client.compute_node.get_remote_login_settings(

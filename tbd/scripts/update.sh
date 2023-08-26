@@ -1,5 +1,5 @@
 #!/bin/bash
-. /appl/config
+. /appl/data/config || . /appl/config
 
 if [ -z "${SPOTWX_API_KEY}" ] \
     || [ -z "${BOUNDS_LATITUDE_MAX}" ] \

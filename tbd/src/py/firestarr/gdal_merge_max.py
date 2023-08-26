@@ -42,7 +42,7 @@ from redundancy import call_safe
 
 # import logging
 from tqdm import tqdm
-from tqdm_util import pmap
+from tqdm_util import keep_trying, pmap
 
 __version__ = "$id$"[5:-1]
 
@@ -88,7 +88,7 @@ def names_to_fileinfos(names):
         files_invalid.append(name)
         return None
 
-    file_infos = pmap(init, names, desc="Getting merge input file info")
+    file_infos = keep_trying(init, names, desc="Getting merge input file info")
     # HACK: looks like it just ignored things it couldn't load?
     file_infos = [x for x in file_infos if x is not None]
 

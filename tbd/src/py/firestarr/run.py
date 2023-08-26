@@ -51,7 +51,7 @@ from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
 from redundancy import call_safe, get_stack
 from simulation import Simulation
-from tqdm_util import apply, pmap, pmap_by_group, tqdm
+from tqdm_util import apply, keep_trying, keep_trying_groups, pmap, pmap_by_group, tqdm
 
 import tbd
 from tbd import (
@@ -222,11 +222,44 @@ class Run(object):
                 force_remove(invalid_paths)
         return invalid_paths
 
-    def check_and_publish(self, ignore_incomplete_okay=True, run_incomplete=False, no_publish=False):
+    def check_and_publish(
+        self,
+        ignore_incomplete_okay=True,
+        run_incomplete=False,
+        no_publish=False,
+        force_copy=True,
+        no_wait=True,
+    ):
         df_fires = self.load_fires()
+
+        def run_fire(dir_fire):
+            return self.do_run_fire(dir_fire, run_only=True, no_wait=no_wait)
 
         def get_df_fire(fire_name):
             return df_fires.reset_index().loc[df_fires.reset_index()["fire_name"] == fire_name]
+
+        def reset_and_run_fire(dir_fire):
+            fire_name = os.path.basename(dir_fire)
+            df_fire = get_df_fire(fire_name)
+            force_remove(dir_fire)
+            self._simulation.prepare(df_fire)
+            return self.do_run_fire(dir_fire, no_wait=no_wait)
+
+        def check_copy_outputs(dir_fire):
+            changed, interim, files_project = copy_fire_outputs(dir_fire, self._dir_output, changed=force_copy)
+            was_running = check_running(dir_fire)
+            return dir_fire, changed, interim, files_project, was_running
+
+        want_dates = WANT_DATES
+
+        dirs_fire = [os.path.join(self._dir_sims, fire_name) for fire_name in df_fires.index]
+        results = keep_trying(
+            fct=check_copy_outputs,
+            values=dirs_fire,
+            desc="Checking outputs",
+        )
+        # good = [r[1] for r in results if r[0]]
+        # bad = [r[1] for r in results if not r[0]]
 
         is_interim = {}
         is_changed = {}
@@ -235,22 +268,11 @@ class Run(object):
         is_prepared = {}
         is_ignored = {}
         is_running = {}
+        not_complete = {}
 
-        want_dates = WANT_DATES
-
-        def check_copy_outputs(fire_name):
-            try:
-                dir_fire = os.path.join(self._dir_sims, fire_name)
-                changed, interim, files_project = copy_fire_outputs(dir_fire, self._dir_output, changed=False)
-                was_running = check_running(dir_fire)
-                return dir_fire, changed, interim, files_project, was_running
-            except KeyboardInterrupt as ex:
-                raise ex
-            except Exception:
-                return dir_fire, None, None, None, None
-
-        results = pmap(check_copy_outputs, df_fires.index, desc="Checking outputs")
         for r in tqdm(results, desc="Categorizing results"):
+            if r is None:
+                continue
             dir_fire, changed, interim, files_project, was_running = r
             file_sim = get_simulation_file(dir_fire)
             df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
@@ -282,31 +304,28 @@ class Run(object):
                             is_incomplete[dir_fire] = df_fire
                     else:
                         is_complete[dir_fire] = df_fire
+                if dir_fire not in is_complete:
+                    not_complete[dir_fire] = df_fire
             else:
                 is_ignored[dir_fire] = df_fire
-
-        def run_fire(dir_fire):
-            return self.do_run_fire(dir_fire, run_only=True, no_wait=True)
-
+        # publish before and after fixing things
+        if not no_publish and not no_wait:
+            publish_all(self._dir_output, force=changed)
+            changed = False
         if is_prepared and run_incomplete:
             # start but don't wait
-            pmap(
+            keep_trying(
                 run_fire,
-                is_prepared.keys(),
+                set(is_prepared.keys()).union(set(not_complete.keys())),
                 max_processes=len(df_fires),
                 no_limit=self._is_batch,
                 desc="Running prepared fires",
             )
-
-        def reset_and_run_fire(dir_fire):
-            fire_name = os.path.basename(dir_fire)
-            df_fire = get_df_fire(fire_name)
-            force_remove(dir_fire)
-            self._simulation.prepare(df_fire)
-            return self.do_run_fire(dir_fire)
-
+            # HACK: should actually check
+            changed = True
         if is_incomplete and run_incomplete:
-            pmap(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
+            keep_trying(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
+            changed = True
         if not no_publish:
             publish_all(self._dir_output, force=changed)
         num_done = len(is_complete)
@@ -450,7 +469,7 @@ class Run(object):
         logging.info(f"Setting up simulation inputs for {len(df_fires)} groups")
         # for row_fire in tqdm(list_rows):
         #     do_fire(row_fire)
-        files_sim = pmap(
+        files_sim = keep_trying(
             do_fire,
             list_rows,
             desc="Preparing groups",
@@ -498,25 +517,14 @@ class Run(object):
 
     @log_order(show_args=["dir_fire"])
     def do_run_fire(self, dir_fire, prepare_only=False, run_only=False, no_wait=False):
-        try:
-            # return tbd.run_fire_from_folder(
-            #     dir_fire, self._dir_output, verbose=self._verbose
-            # )
-            return call_safe(
-                tbd.run_fire_from_folder,
-                dir_fire,
-                self._dir_output,
-                prepare_only=prepare_only,
-                run_only=run_only,
-                no_wait=no_wait,
-                verbose=self._verbose,
-            )
-        except KeyboardInterrupt as ex:
-            raise ex
-        except Exception as ex:
-            logging.error(ex)
-            logging.error(get_stack(ex))
-            return None
+        return tbd.run_fire_from_folder(
+            dir_fire,
+            self._dir_output,
+            prepare_only=prepare_only,
+            run_only=run_only,
+            no_wait=no_wait,
+            verbose=self._verbose,
+        )
 
     def find_unprepared(self, df_fires, remove_directory=False):
         dirs_fire = list_dirs(self._dir_sims)
@@ -585,6 +593,8 @@ class Run(object):
         sim_times = []
         # # FIX: this is just failing and delaying things over and over right now
         # NUM_TRIES = 5
+        cur_results = None
+        cur_group = None
 
         @log_order()
         def check_publish(g, sim_results):
@@ -593,15 +603,30 @@ class Run(object):
             nonlocal sim_time
             nonlocal sim_times
             nonlocal results
+            nonlocal cur_results
+            nonlocal cur_group
+            # global changed
+            # global any_change
+            # global sim_time
+            # global sim_times
+            # global results
+            # global cur_results
+            # global cur_group
+            cur_group = g
+            cur_results = sim_results
+            # print(f"g: {g}\n\tsim_results: {sim_results}")
             with locks_for(FILE_LOCK_PUBLISH):
                 for i in range(len(sim_results)):
-                    result = sim_results[i]
+                    okay, result = sim_results[i]
                     # should be in the same order as input
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
                         logging.warning(f"Exception running {dir_fire} was {result}")
                     if result is None or isinstance(result, Exception) or (not np.all(result.get("sim_time", False))):
                         logging.warning("Could not run fire %s", dir_fire)
+                        fire_name = os.path.basename(dir_fire)
+                        if fire_name not in results:
+                            results[fire_name] = None
                     else:
                         if 1 != len(result):
                             raise RuntimeError("Expected exactly one result for %s" % dir_fire)
@@ -645,12 +670,7 @@ class Run(object):
                 return dir_fire
             return self.do_run_fire(dir_fire, prepare_only=True)
 
-        # schedule everything first
-        pmap_by_group(
-            prepare_fire,
-            dirs_sim,
-            desc="Preparing simulations",
-        )
+        successful, unsuccessful = keep_trying_groups(fct=prepare_fire, values=dirs_sim, desc="Preparing simulations")
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
@@ -665,25 +685,16 @@ class Run(object):
             )
             tasks_new = [x[0] for x in tasks_existed if not x[1]]
             schedule_tasks(tasks_new)
-            pmap_by_group(
-                run_fire,
-                dirs_sim,
+            successful, unsuccessful = keep_trying_groups(
+                fct=run_fire,
+                values=successful,
                 desc="Running simulations via azurebatch",
                 callback_group=check_publish,
             )
         else:
-            done = False
-            while not done:
-                try:
-                    pmap_by_group(
-                        run_fire,
-                        dirs_sim,
-                        desc="Running simulations",
-                        callback_group=check_publish,
-                    )
-                    done = True
-                except BrokenPipeError:
-                    pass
+            successful, unsuccessful = keep_trying_groups(
+                fct=run_fire, values=successful, desc="Running simulations", callback_group=check_publish
+            )
         force_remove(FILE_LOCK_PUBLISH)
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()

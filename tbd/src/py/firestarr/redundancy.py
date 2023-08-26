@@ -68,6 +68,14 @@ class BytesForwarder:
                 setattr(self, f, call_copied(f))
 
 
+def has_seek(obj):
+    if hasattr(obj, "seek"):
+        fct = getattr(obj, "seek")
+        if callable(fct):
+            return True
+    return False
+
+
 def safe_init(self, *args, **kwds):
     # # HACK: this is horrible because it copies everything that happens
     # #       but read the bytes into memory so we can reset it if needed
@@ -84,13 +92,13 @@ def safe_init(self, *args, **kwds):
     fixed_args = []
     for i in range(len(self._init_args)):
         arg = self._init_args[i]
-        if isinstance(arg, BytesIO):
+        if isinstance(arg, BytesIO) and not has_seek(arg):
             fixed_args.append(BytesForwarder(arg))
         else:
             fixed_args.append(arg)
     self._init_args = tuple(fixed_args)
     for k, arg in self._init_kwds.items():
-        if isinstance(arg, BytesIO):
+        if isinstance(arg, BytesIO) and not has_seek(arg):
             self._init_args[k] = BytesForwarder(arg)
 
 
@@ -114,15 +122,8 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
         # need to reinitialize
         args = list(self._init_args) + list(self._init_kwds.values())
         for arg in args:
-            if isinstance(arg, BytesIO):
-                # reset to start of BytesIO
+            if has_seek(arg):
                 arg.seek(0)
-        # for i in range(len(self._init_args)):
-        #     arg = self._init_args[i]
-        #     if isinstance(arg, BytesIO):
-        #         # reset to start of BytesIO
-        #         print(f"seek 0 for arg {i}")
-        #         arg.seek(0)
         dill._dill.StockUnpickler.__init__(self, *self._init_args, **self._init_kwds)
         retries -= 1
     if type(obj).__module__ == getattr(self._main, "__name__", "__main__"):

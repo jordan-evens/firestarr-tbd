@@ -1,6 +1,6 @@
 #/bin/bash
 DIR=`dirname $(realpath "$0")`
-. /appl/config
+. /appl/data/config || . /appl/config
 
 if [ -z "${GEOSERVER_LAYER}" ] \
     || [ -z "${GEOSERVER_COVERAGE}" ] \
