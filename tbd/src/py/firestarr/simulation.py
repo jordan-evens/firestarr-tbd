@@ -8,6 +8,7 @@ from common import (
     FLAG_DEBUG,
     SECONDS_PER_HOUR,
     cffdrs,
+    ensure_dir,
     ensures,
     is_empty,
     logging,
@@ -122,36 +123,24 @@ class Simulation(object):
                 if date_try <= date_bad:
                     raise RuntimeError(f"Problem getting fwi for {fire_name}")
                 df_wx_actual = self._src_fwi.get_fwi(lat, lon, date_try)
-            ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values(
-                [COLUMN_TIME], ascending=False
-            ).iloc[0][["ffmc", "dmc", "dc", COLUMN_TIME]]
+            ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values([COLUMN_TIME], ascending=False).iloc[0][
+                ["ffmc", "dmc", "dc", COLUMN_TIME]
+            ]
             # make sure we convert to LST if it's LDT
             time_startup = date_startup.tz_localize(tz_lst).tz_convert("UTC")
             # HACK: get hourly for date not time, so we can know when latest is
-            df_wx_hourly_date = self._src_hourly.get_wx_hourly(
-                lat, lon, time_startup.date()
-            ).reset_index()
+            df_wx_hourly_date = self._src_hourly.get_wx_hourly(lat, lon, time_startup.date()).reset_index()
             df_wx_models = self._src_models.get_wx_model(lat, lon)
             # fill before selecting after hourly so that we always have the hour
             # right after the hourly
-            df_wx_forecast = pd.concat(
-                [wx_interpolate(g) for i, g in df_wx_models.groupby(COLUMN_MODEL)]
-            )
+            df_wx_forecast = pd.concat([wx_interpolate(g) for i, g in df_wx_models.groupby(COLUMN_MODEL)])
             cur_time = None
             if not is_empty(df_wx_hourly_date):
                 cur_time = max(df_wx_hourly_date[COLUMN_TIME])
-                df_wx_forecast = df_wx_forecast.loc[
-                    df_wx_forecast[COLUMN_TIME] > cur_time
-                ]
+                df_wx_forecast = df_wx_forecast.loc[df_wx_forecast[COLUMN_TIME] > cur_time]
             # splice every other member onto shorter members
-            dates_by_model = (
-                df_wx_forecast.groupby("model")[COLUMN_TIME]
-                .max()
-                .sort_values(ascending=False)
-            )
-            df_wx_forecast.loc[:, "id"] = df_wx_forecast["id"].apply(
-                lambda x: f"{x:02d}"
-            )
+            dates_by_model = df_wx_forecast.groupby("model")[COLUMN_TIME].max().sort_values(ascending=False)
+            df_wx_forecast.loc[:, "id"] = df_wx_forecast["id"].apply(lambda x: f"{x:02d}")
             df_spliced = None
             for (
                 idx,
@@ -174,9 +163,7 @@ class Simulation(object):
             df_wx_hourly = df_wx_hourly_date
             if not is_empty(df_wx_hourly):
                 # select just whatever's after startup indices time
-                df_wx_hourly = df_wx_hourly_date.loc[
-                    df_wx_hourly_date["datetime"] >= remove_timezone_utc(time_startup)
-                ]
+                df_wx_hourly = df_wx_hourly_date.loc[df_wx_hourly_date["datetime"] >= remove_timezone_utc(time_startup)]
             if is_empty(df_wx_hourly):
                 # if no hourly weather then start at start of streams
                 df_streams = df_spliced
@@ -208,18 +195,14 @@ class Simulation(object):
             df_wx.loc[:, "lat"] = lat
             df_wx.loc[:, "lon"] = lon
             # times need to be in LST for cffdrs
-            df_wx.loc[:, COLUMN_TIME] = [
-                x.tz_localize("UTC").tz_convert(tz_lst) for x in df_wx[COLUMN_TIME]
-            ]
+            df_wx.loc[:, COLUMN_TIME] = [x.tz_localize("UTC").tz_convert(tz_lst) for x in df_wx[COLUMN_TIME]]
             if FLAG_DEBUG:
                 # make it easier to see problems if cffdrs isn't working
                 save_geojson(df_wx, file_wx_streams)
                 df_wx = read_gpd_file_safe(file_wx_streams)
             df_wx_fire = df_wx.rename(columns={"lon": "long", COLUMN_TIME: "TIMESTAMP"})
             # remove timezone so it gets formatted properly
-            df_wx_fire.loc[:, "TIMESTAMP"] = [
-                x.tz_localize(None) for x in df_wx_fire["TIMESTAMP"]
-            ]
+            df_wx_fire.loc[:, "TIMESTAMP"] = [x.tz_localize(None) for x in df_wx_fire["TIMESTAMP"]]
             df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
             df_wx_fire[["YR", "MON", "DAY", "HR"]] = list(
                 tqdm_util.apply(
@@ -247,9 +230,7 @@ class Simulation(object):
             ].sort_values(["ID", "LAT", "LONG", "TIMESTAMP"])
             # NOTE: expects weather in localtime, but uses utcoffset to
             # figure out local sunrise/sunset
-            df_fwi = cffdrs.hFWI(
-                df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old, silent=True
-            )
+            df_fwi = cffdrs.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old, silent=True)
             # HACK: get rid of missing values at end of period
             df_fwi = df_fwi[~np.isnan(df_fwi["FWI"])].reset_index(drop=True)
             df_fwi = df_fwi.rename(
@@ -260,9 +241,7 @@ class Simulation(object):
                 }
             )
             df_fwi.columns = [x.lower() for x in df_fwi.columns]
-            df_fwi[COLUMN_TIME] = df_fwi[COLUMN_TIME].apply(
-                lambda x: x.tz_localize(tz_lst)
-            )
+            df_fwi[COLUMN_TIME] = df_fwi[COLUMN_TIME].apply(lambda x: x.tz_localize(tz_lst))
             # CHECK: should be keeping weather starting at noon values so spread event
             # probability has something to work from
             df_wx = df_fwi.loc[:]
@@ -275,12 +254,7 @@ class Simulation(object):
             # HACK: don't start right at start because the hour before is missing
             # HACK: compare origin UTC so day offsets are all the same dates
             start_time = (
-                min(
-                    df_wx[
-                        df_wx[COLUMN_TIME]
-                        >= pd.to_datetime(self._origin.today).tz_localize(tz_lst)
-                    ][COLUMN_TIME]
-                )
+                min(df_wx[df_wx[COLUMN_TIME] >= pd.to_datetime(self._origin.today).tz_localize(tz_lst)][COLUMN_TIME])
                 .tz_convert("UTC")
                 .tz_localize(None)
             ) + datetime.timedelta(hours=1)
@@ -300,6 +274,7 @@ class Simulation(object):
             df_fire["utcoffset_hours"] = utcoffset_hours
             df_fire["start_time"] = start_time_lst.isoformat()
             df_fire["wx"] = save_wx_input(df_wx, file_wx)
+            ensure_dir(os.path.dirname(_))
             save_geojson(df_fire, _)
             return _
 

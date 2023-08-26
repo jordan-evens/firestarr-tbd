@@ -419,15 +419,18 @@ def project_raster(
             bounds = [minx, miny, maxx, maxy]
             try:
                 warp = None
-            except RuntimeError as ex:
+            except KeyboardInterrupt as ex:
+                raise ex
+            except Exception as ex:
                 # HACK: keep getting:
                 #     Exception ignored in: <built-in function delete_Dataset>
                 #     Traceback (most recent call last):
                 #     File "/appl/tbd/src/py/firestarr/gis.py", line 426, in do_save
                 #         warp = None
                 #         ^^^^
-                if not should_ignore(ex):
-                    raise ex
+                # if not should_ignore(ex):
+                #     raise ex
+                pass
 
             # # HACK: make sure this exists and is correct
             # test_open = gdal.Open(_)

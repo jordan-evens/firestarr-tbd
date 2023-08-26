@@ -61,7 +61,7 @@ IS_USING_BATCH = None
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
     try:
-        stdout, stderr = run_process(["./sim.sh"], dir_fire)
+        stdout, stderr = call_safe(run_process, ["./sim.sh"], dir_fire)
     except KeyboardInterrupt as ex:
         raise ex
     except Exception as ex:
@@ -307,16 +307,22 @@ def run_fire_from_folder(
         log_info(f"Continuing after {dir_fire} finished running")
 
     file_sim = get_simulation_file(dir_fire)
+    file_sh = os.path.join(dir_fire, "sim.sh")
+    files_required = [file_sim, file_sh]
     # need directory for lock
     ensure_dir(os.path.dirname(file_sim))
     # lock before reading so if sim is running it will update file before lock ends
     with locks_for(file_sim):
         df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
         if df_fire is None:
+            force_remove(files_required)
             raise RuntimeError(f"Couldn't get fire data from {file_sim}")
         if 1 != len(df_fire):
+            force_remove(files_required)
             raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
         data = df_fire.iloc[0]
+        file_wx = os.path.join(dir_fire, data["wx"])
+        files_required.append(file_wx)
         # check if completely done
         # if data.get("postprocessed", False):
         #     df_fire["changed"] = False
@@ -351,10 +357,9 @@ def run_fire_from_folder(
         outputs = listdir_sorted(dir_fire)
         probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
         if not sim_time or len(probs) != len(date_offsets):
-            file_sh = os.path.join(dir_fire, "sim.sh")
             if prepare_only and os.path.isfile(file_sh):
                 return dir_fire
-            if not run_only:
+            if not run_only or not os.path.isfile(file_sh):
                 lat = float(data["lat"])
                 lon = float(data["lon"])
                 start_time = pd.to_datetime(data["start_time"])
@@ -384,7 +389,6 @@ def run_fire_from_folder(
                 log_info("Timezone offset is {}".format(tz))
                 start_date = start_time.date()
                 cmd = os.path.join(DIR_TBD, "tbd")
-                wx_file = os.path.join(dir_fire, data["wx"])
                 # want format like a list with no spaces
                 fmt_offsets = "[" + ",".join([str(x) for x in date_offsets]) + "]"
 
@@ -409,7 +413,7 @@ def run_fire_from_folder(
                         f"--apcp_prev {data['apcp_prev']}",
                         "-v",
                         f"--output_date_offsets {fmt_offsets}",
-                        f"--wx {strip_dir(wx_file)}",
+                        f"--wx {strip_dir(file_wx)}",
                         # f"--log {strip_dir(file_log)}",
                     ]
                 )
@@ -434,7 +438,7 @@ def run_fire_from_folder(
             except Exception as ex:
                 logging.error(f"Couldn't run fire {dir_fire}")
                 logging.error(get_stack(ex))
-                force_remove(file_sh)
+                force_remove(files_required)
                 return None
             log_info("Took {}s to run simulations".format(sim_time))
             # if sim worked then it made a log itself so don't bother

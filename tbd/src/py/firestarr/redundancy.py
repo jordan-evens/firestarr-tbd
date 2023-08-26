@@ -1,3 +1,4 @@
+import inspect
 import traceback
 from io import BytesIO
 
@@ -14,18 +15,14 @@ def get_stack(ex):
 
 
 def should_ignore(ex):
-    str_stack = get_stack(ex)
+    str_stack = get_stack(ex).lower()
     # HACK: can't reset logs so ignore them
     if ".log" in str_stack:
         return False
     ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
-    ignore_ok = ignore_ok or (
-        (
-            "Input/output error" in str_stack
-            or "I/O error" in str_stack
-            or "Resource temporarily unavailable" in str_stack
-        )
-    )
+    ignore = ["input/output error", "i/o error", "resource temporarily unavailable", "blockingioerror"]
+    for s in ignore:
+        ignore_ok = ignore_ok or s in str_stack
     return ignore_ok
 
 
@@ -50,6 +47,27 @@ if not hasattr(dill._dill.Unpickler, "old_init"):
     dill._dill.Unpickler.old_init = dill._dill.Unpickler.__init__
 
 
+def call_copied(f):
+    # HACK: copy first time function is called
+    def do_call(self, *args, **kwargs):
+        if self._copy is None:
+            self._copy = BytesIO(self._orig.read())
+        return getattr(self._copy, f)(*args, **kwargs)
+
+    return do_call
+
+
+class BytesForwarder:
+    def __init__(self, orig):
+        super().__init__()
+        self._orig = orig
+        self._copy = None
+        for f in dir(self._orig):
+            fct = getattr(self._orig, f)
+            if inspect.isfunction(fct):
+                setattr(self, f, call_copied(f))
+
+
 def safe_init(self, *args, **kwds):
     # # HACK: this is horrible because it copies everything that happens
     # #       but read the bytes into memory so we can reset it if needed
@@ -63,12 +81,17 @@ def safe_init(self, *args, **kwds):
     # make a copy of ByteIO objects
     self._init_args = args
     self._init_kwds = kwds
-    # for i in range(len(self._init_args)):
-    #     arg = self._init_args[i]
-    #     if isinstance(arg, BytesIO):
-    #         # reset to start of BytesIO
-    #         print(f"seek 0 for arg {i}")
-    #         arg.seek(0)
+    fixed_args = []
+    for i in range(len(self._init_args)):
+        arg = self._init_args[i]
+        if isinstance(arg, BytesIO):
+            fixed_args.append(BytesForwarder(arg))
+        else:
+            fixed_args.append(arg)
+    self._init_args = tuple(fixed_args)
+    for k, arg in self._init_kwds.items():
+        if isinstance(arg, BytesIO):
+            self._init_args[k] = BytesForwarder(arg)
 
 
 # HACK: tweak code to handle OSError

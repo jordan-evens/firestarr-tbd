@@ -259,7 +259,7 @@ class Run(object):
                 is_interim[dir_fire] = interim
                 if df_fire is None:
                     is_incomplete[dir_fire] = df_fire
-                if was_running:
+                elif was_running:
                     is_running[dir_fire] = df_fire
                 else:
                     if 1 != len(df_fire):
