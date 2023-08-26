@@ -89,7 +89,9 @@ getLogger("fiona").setLevel(logging.WARNING)
 BOUNDS = None
 
 # file to load settings from
-SETTINGS_FILE = r"../config"
+SETTINGS_FILE = None
+PREFERRED_SETTINGS_FILE = r"../data/config"
+DEFAULT_SETTINGS_FILE = r"../config"
 # loaded configuration
 CONFIG = None
 
@@ -169,7 +171,11 @@ def read_config(force=False):
     """
     global CONFIG
     global BOUNDS
-    logging.debug("Reading config file {}".format(SETTINGS_FILE))
+    if os.path.isfile(PREFERRED_SETTINGS_FILE):
+        SETTINGS_FILE = PREFERRED_SETTINGS_FILE
+    else:
+        SETTINGS_FILE = DEFAULT_SETTINGS_FILE
+    logging.info("Reading config file {}".format(SETTINGS_FILE))
     if force or CONFIG is None:
         # default to all of canada
         CONFIG = {

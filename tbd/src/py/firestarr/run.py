@@ -311,7 +311,7 @@ class Run(object):
             publish_all(self._dir_output, force=changed)
         num_done = len(is_complete)
         if is_ignored:
-            logging.error(f"Ignored incomplete fires: {is_ignored}")
+            logging.error(f"Ignored incomplete fires: {list(is_ignored.keys())}")
         if ignore_incomplete_okay:
             num_done += len(is_ignored)
         return num_done == len(df_fires)

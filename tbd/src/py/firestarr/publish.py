@@ -58,18 +58,14 @@ def find_latest_outputs(dir_output=None):
     if dir_output is None:
         dir_default = DIR_OUTPUT
         dirs_with_initial = [
-            x
-            for x in list_dirs(dir_default)
-            if os.path.isdir(os.path.join(dir_default, x, "initial"))
+            x for x in list_dirs(dir_default) if os.path.isdir(os.path.join(dir_default, x, "initial"))
         ]
         if dirs_with_initial:
             dir_output = os.path.join(dir_default, dirs_with_initial[-1])
             logging.info("Defaulting to directory %s", dir_output)
             return dir_output
         else:
-            raise RuntimeError(
-                f'find_latest_outputs("{dir_output}") failed: No run found'
-            )
+            raise RuntimeError(f'find_latest_outputs("{dir_output}") failed: No run found')
     return dir_output
 
 
@@ -95,9 +91,7 @@ def merge_dirs(
     for for_what in list_dirs(dir_base):
         dir_for_what = os.path.join(dir_base, for_what)
         files_by_for_what[for_what] = files_by_for_what.get(for_what, []) + [
-            os.path.join(dir_for_what, x)
-            for x in listdir_sorted(dir_for_what)
-            if x.endswith(".tif")
+            os.path.join(dir_for_what, x) for x in listdir_sorted(dir_for_what) if x.endswith(".tif")
         ]
     if not FLAG_IGNORE_PERIM_OUTPUTS:
         raise NotImplementedError("Need to deal with perimeters properly")
@@ -105,16 +99,12 @@ def merge_dirs(
         if "perim" in files_by_for_what:
             del files_by_for_what["perim"]
     dirs_what = [os.path.basename(for_what) for for_what in files_by_for_what.keys()]
-    for_dates = [
-        datetime.datetime.strptime(_, FMT_DATE_YMD) for _ in dirs_what if "perim" != _
-    ]
+    for_dates = [datetime.datetime.strptime(_, FMT_DATE_YMD) for _ in dirs_what if "perim" != _]
     if not for_dates:
         raise RuntimeError("No dates to merge")
     date_origin = min(for_dates)
     reprojected = {}
-    for for_what, files in tqdm(
-        files_by_for_what.items(), desc=f"Merging {dir_parent}"
-    ):
+    for for_what, files in tqdm(files_by_for_what.items(), desc=f"Merging {dir_parent}"):
         files = files_by_for_what[for_what]
         dir_in_for_what = os.path.basename(for_what)
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
@@ -152,9 +142,7 @@ def merge_dirs(
         )
         reprojected[dir_in_for_what] = [x for x in results_crs if x is not None]
     dir_combined = ensure_dir(f"{dir_parent}/combined")
-    for dir_in_for_what, results_crs_all in tqdm(
-        reprojected.items(), desc=f"Merging {dir_parent}"
-    ):
+    for dir_in_for_what, results_crs_all in tqdm(reprojected.items(), desc=f"Merging {dir_parent}"):
         # HACK: forget about tiling and just do what we need now
         if "perim" == dir_in_for_what:
             dir_for_what = "perim"
@@ -170,9 +158,7 @@ def merge_dirs(
             files_crs = [x[1] for x in results_crs]
             files_crs_changed = [x[1] for x in results_crs if x[0]]
             changed = 0 < len(files_crs_changed)
-            file_root = os.path.join(
-                f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}"
-            )
+            file_root = os.path.join(f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}")
             dir_tmp = ensure_dir(f"/tmp{dir_merge.replace(dir_parent, '')}")
 
             file_tmp = os.path.join(dir_tmp, f"{file_root}_tmp.tif")
@@ -197,13 +183,9 @@ def merge_dirs(
                     if 1 == len(files_merge):
                         f = files_merge[0]
                         if f == file_tmp:
-                            logging.warning(
-                                f"Ignoring trying to merge file into iteslf: {f}"
-                            )
+                            logging.warning(f"Ignoring trying to merge file into iteslf: {f}")
                         else:
-                            logging.debug(
-                                f"Only have one file so just copying {f} to {file_tmp}"
-                            )
+                            logging.debug(f"Only have one file so just copying {f} to {file_tmp}")
                             shutil.copy(f, file_tmp)
                     else:
                         invalid_files = gdal_merge_max(
@@ -266,16 +248,12 @@ def merge_dirs(
         # zone_rasters_results = apply(by_zone.items(), merge_zone, desc="Merging zones")
         # # zone_rasters_results = pmap(merge_zone, by_zone.items(), desc="Merging zones")
         zone_rasters = {}
-        for zone, results_crs_zone in tqdm(
-            by_zone.items(), total=len(by_zone), desc="Merging zones"
-        ):
+        for zone, results_crs_zone in tqdm(by_zone.items(), total=len(by_zone), desc="Merging zones"):
             dir_merge = f"{dir_parent}/zones/{zone}"
             changed, file_base = merge_files(results_crs_zone, dir_merge)
             zone_rasters[zone] = (changed, file_base)
             any_change = any_change or changed
-        changed, file_base = merge_files(
-            zone_rasters.values(), dir_combined, verbose=True
-        )
+        changed, file_base = merge_files(zone_rasters.values(), dir_combined, verbose=True)
         any_change = any_change or changed
     logging.info("Final results of merge are in %s", dir_combined)
     try:

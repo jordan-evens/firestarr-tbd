@@ -76,10 +76,15 @@ def names_to_fileinfos(names):
     files_invalid = []
 
     def init(name):
-        nonlocal files_invalid
-        fi = file_info_max()
-        if fi.init_from_name(name) == 1:
-            return fi
+        try:
+            nonlocal files_invalid
+            fi = file_info_max()
+            if fi.init_from_name(name) == 1:
+                return fi
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception:
+            pass
         files_invalid.append(name)
         return None
 
@@ -187,12 +192,8 @@ class file_info_max(object):
         # compute target window in pixel coordinates.
         tw_xoff = int((tgw_ulx - t_geotransform[0]) / t_geotransform[1] + 0.1)
         tw_yoff = int((tgw_uly - t_geotransform[3]) / t_geotransform[5] + 0.1)
-        tw_xsize = (
-            int((tgw_lrx - t_geotransform[0]) / t_geotransform[1] + 0.5) - tw_xoff
-        )
-        tw_ysize = (
-            int((tgw_lry - t_geotransform[3]) / t_geotransform[5] + 0.5) - tw_yoff
-        )
+        tw_xsize = int((tgw_lrx - t_geotransform[0]) / t_geotransform[1] + 0.5) - tw_xoff
+        tw_ysize = int((tgw_lry - t_geotransform[3]) / t_geotransform[5] + 0.5) - tw_yoff
 
         if tw_xsize < 1 or tw_ysize < 1:
             return 1
@@ -200,12 +201,8 @@ class file_info_max(object):
         # Compute source window in pixel coordinates.
         sw_xoff = int((tgw_ulx - self.geotransform[0]) / self.geotransform[1] + 0.1)
         sw_yoff = int((tgw_uly - self.geotransform[3]) / self.geotransform[5] + 0.1)
-        sw_xsize = (
-            int((tgw_lrx - self.geotransform[0]) / self.geotransform[1] + 0.5) - sw_xoff
-        )
-        sw_ysize = (
-            int((tgw_lry - self.geotransform[3]) / self.geotransform[5] + 0.5) - sw_yoff
-        )
+        sw_xsize = int((tgw_lrx - self.geotransform[0]) / self.geotransform[1] + 0.5) - sw_xoff
+        sw_ysize = int((tgw_lry - self.geotransform[3]) / self.geotransform[5] + 0.5) - sw_yoff
 
         if sw_xsize < 1 or sw_ysize < 1:
             return 1
@@ -253,9 +250,7 @@ def gdal_merge_max(
 
     driver = gdal.GetDriverByName(driver_name)
     if driver is None:
-        raise RuntimeError(
-            "Format driver %s not found, pick a supported driver." % driver_name
-        )
+        raise RuntimeError("Format driver %s not found, pick a supported driver." % driver_name)
 
     DriverMD = driver.GetMetadata()
     if "DCAP_CREATE" not in DriverMD:
@@ -314,9 +309,7 @@ def gdal_merge_max(
 
                 bands = file_infos[0].bands
 
-                t_fh = driver.Create(
-                    file_out, xsize, ysize, bands, band_type, creation_options
-                )
+                t_fh = driver.Create(file_out, xsize, ysize, bands, band_type, creation_options)
                 if t_fh is None:
                     raise RuntimeError("Creation failed, terminating gdal_merge.")
 
@@ -380,9 +373,7 @@ def raster_copy_max_with_nodata(
 
     # HACK: write maximum value
     if not np.isnan(nodata):
-        nodata_test = np.not_equal(data_src, nodata) + (
-            2 * np.not_equal(data_dst, nodata)
-        )
+        nodata_test = np.not_equal(data_src, nodata) + (2 * np.not_equal(data_dst, nodata))
     else:
         nodata_test = np.isfinite(data_src) + (2 * np.isfinite(data_dst))
     # 0: neither has data
@@ -397,9 +388,7 @@ def raster_copy_max_with_nodata(
     # so just -1 and np.maximum(0, nodata_test) and then use:
     # (data_src, data_dst, np.maximum(data_src, data_dst))
     nodata_test = np.maximum(0, nodata_test - 1)
-    to_write = np.choose(
-        nodata_test, (data_src, data_dst, np.maximum(data_src, data_dst))
-    )
+    to_write = np.choose(nodata_test, (data_src, data_dst, np.maximum(data_src, data_dst)))
 
     t_band.WriteArray(to_write, t_xoff, t_yoff)
 
@@ -497,14 +486,8 @@ def raster_copy_max(
     s_band = s_fh.GetRasterBand(s_band_n)
     t_band = t_fh.GetRasterBand(t_band_n)
 
-    data = s_band.ReadRaster(
-        s_xoff, s_yoff, s_xsize, s_ysize, t_xsize, t_ysize, t_band.DataType
-    )
-    data_cur = t_band.ReadRaster(
-        t_xoff, t_yoff, t_xsize, t_ysize, data, t_xsize, t_ysize, t_band.DataType
-    )
+    data = s_band.ReadRaster(s_xoff, s_yoff, s_xsize, s_ysize, t_xsize, t_ysize, t_band.DataType)
+    data_cur = t_band.ReadRaster(t_xoff, t_yoff, t_xsize, t_ysize, data, t_xsize, t_ysize, t_band.DataType)
     data = np.maximum(data, data_cur)
-    t_band.WriteRaster(
-        t_xoff, t_yoff, t_xsize, t_ysize, data, t_xsize, t_ysize, t_band.DataType
-    )
+    t_band.WriteRaster(t_xoff, t_yoff, t_xsize, t_ysize, data, t_xsize, t_ysize, t_band.DataType)
     return 0

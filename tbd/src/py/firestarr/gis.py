@@ -9,9 +9,20 @@ import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
 import pyproj
-from common import (DIR_DOWNLOAD, DIR_EXTRACTED, DIR_RASTER, do_nothing,
-                    ensure_dir, ensure_string_list, force_remove, is_empty,
-                    listdir_sorted, locks_for, logging, unzip)
+from common import (
+    DIR_DOWNLOAD,
+    DIR_EXTRACTED,
+    DIR_RASTER,
+    do_nothing,
+    ensure_dir,
+    ensure_string_list,
+    force_remove,
+    is_empty,
+    listdir_sorted,
+    locks_for,
+    logging,
+    unzip,
+)
 from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
@@ -27,9 +38,7 @@ CRS_LAMBERT_ATLAS = 3978
 CRS_COMPARISON = CRS_LAMBERT_ATLAS
 CRS_NAD83 = 4269
 CRS_SIMINPUT = CRS_NAD83
-VALID_GEOMETRY_EXTENSIONS = [
-    f".{x}" for x in sorted(fiona.drvsupport.vector_driver_extensions().keys())
-]
+VALID_GEOMETRY_EXTENSIONS = [f".{x}" for x in sorted(fiona.drvsupport.vector_driver_extensions().keys())]
 
 
 def read_gpd_file_safe(filename, *args, **kwargs):
@@ -66,9 +75,7 @@ def ensure_geometry_file(path):
     # support directories (including results of unzip)
     if os.path.isdir(path):
         files = [os.path.join(path, x) for x in listdir_sorted(path)]
-    files_features = [
-        x for x in files if os.path.splitext(x)[1].lower() in VALID_GEOMETRY_EXTENSIONS
-    ]
+    files_features = [x for x in files if os.path.splitext(x)[1].lower() in VALID_GEOMETRY_EXTENSIONS]
     # HACK: use .shp if there is one
     have_shp = False
     if 1 < len(files_features):
@@ -278,9 +285,7 @@ def save_point_shp(latitude, longitude, out_dir, name):
     from shapely.geometry import Point, mapping
 
     schema = {"geometry": "Point", "properties": {"name": "str"}}
-    with collections(
-        save_to, "w", "ESRI Shapefile", schema, crs=pyproj.CRS.from_epsg(4269)
-    ) as output:
+    with collections(save_to, "w", "ESRI Shapefile", schema, crs=pyproj.CRS.from_epsg(4269)) as output:
         point = Point(float(longitude), float(latitude))
         output.write({"properties": {"name": name}, "geometry": mapping(point)})
 
@@ -479,11 +484,7 @@ def save_shp(df, path):
 
 
 def to_gdf(df, crs=CRS_WGS84):
-    geometry = (
-        df["geometry"]
-        if "geometry" in df
-        else gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
-    )
+    geometry = df["geometry"] if "geometry" in df else gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
     return gpd.GeoDataFrame(df, crs=crs, geometry=geometry)
 
 
@@ -508,9 +509,7 @@ def find_closest(df, lat, lon, crs=CRS_COMPARISON, fill_missing=False):
     # pick closest for each time
     df_closest = df.groupby(["datetime"]).first()
     if 1 != len(np.unique(df_closest[["lat", "lon"]])):
-        logging.warning(
-            "Data missing for closest station for some hours so substituted"
-        )
+        logging.warning("Data missing for closest station for some hours so substituted")
     df_closest.crs = df.crs
     return df_closest.to_crs(CRS_WGS84)
 

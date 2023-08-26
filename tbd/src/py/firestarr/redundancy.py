@@ -2,6 +2,7 @@ import traceback
 from io import BytesIO
 
 import dill._dill
+from log import logging
 
 # from multiprocess.reduction import ForkingPickler
 
@@ -74,6 +75,7 @@ def safe_init(self, *args, **kwds):
 def load_safe(self):  # NOTE: if settings change, need to update attributes
     retries = NUM_RETRIES
     obj = None
+    ex_orig = None
     while True:
         ex_current = None
         try:
@@ -81,9 +83,11 @@ def load_safe(self):  # NOTE: if settings change, need to update attributes
             break
         except Exception as ex:
             ex_current = ex
+            if ex_orig is None:
+                ex_orig = ex
             if retries <= 0 or not should_ignore(ex):
-                raise ex
-        print(f"Reinitializing after:\n\t{ex_current}\n\t" f"{self._init_args}\n\t{self._init_kwds}")
+                raise ex_orig
+        logging.debug(f"Reinitializing after:\n\t{ex_current}\n\t{self._init_args}\n\t{self._init_kwds}")
         # need to reinitialize
         args = list(self._init_args) + list(self._init_kwds.values())
         for arg in args:
