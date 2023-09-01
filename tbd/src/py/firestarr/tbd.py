@@ -76,6 +76,7 @@ def run_firestarr_local(dir_fire):
 
             call_safe(save_logs)
 
+        logging.error(f"Failed running {dir_fire}")
         raise ex
 
 

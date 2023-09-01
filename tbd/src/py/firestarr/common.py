@@ -358,6 +358,7 @@ def start_process(run_what, cwd):
     # logging.debug(run_what)
     p = subprocess.Popen(run_what, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
     p.args = run_what
+    p.cwd = cwd
     return p
 
 
@@ -369,7 +370,7 @@ def finish_process(process):
         if -1073741510 == process.returncode:
             sys.exit(process.returncode)
         raise RuntimeError(
-            "Error running {} [{}]: ".format(process.args, process.returncode) + stderr[:20] + stdout[:20]
+            f"Error running {process.args} in {process.cwd} [{process.returncode}]: {stderr[:20]}\n{stdout[:20]}"
         )
         # raise RuntimeError(f"Error code {process.returncode} running {process.args}")
     return stdout, stderr

@@ -589,10 +589,10 @@ def last_failure(client=None):
     return t.as_dict()["execution_info"]["failure_info"]
 
 
-def get_login(pool_id=POOL_ID, client=None):
+def get_login(pool_id=POOL_ID, client=None, node=0):
     if client is None:
         client = get_batch_client()
-    node_id = list_nodes()[0].as_dict()["id"]
+    node_id = list_nodes()[node].as_dict()["id"]
     # try:
     #     client.compute_node.delete_user(pool_id, node_id, "user")
     # except batchmodels.BatchErrorException:

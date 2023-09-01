@@ -139,6 +139,7 @@ ENTRYPOINT /bin/bash
 
 FROM tbd_prod AS tbd_prod_stable
 ARG VERSION
+RUN sudo cp .docker/crontab /etc/crontab
 ENTRYPOINT /bin/bash -c "cd /appl/tbd && /appl/tbd/scripts/force_run.sh"
 
 FROM tbd_prod AS tbd_prod_svc
