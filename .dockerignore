@@ -2,6 +2,7 @@
 *
 
 !.docker/requirements*.txt
+!.docker/crontab
 !gis
 !tbd/src
 !tbd/CMakeLists.txt

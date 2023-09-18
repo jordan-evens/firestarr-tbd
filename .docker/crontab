@@ -1,0 +1,4 @@
+* * * * * root /appl/tbd/scripts/lock_run.sh
+*/10 * * * * root killall lock_run.sh python ipython
+*/10 * * * * root rm /appl/data/update.lock
+* * * * * root date >> /appl/data/test_this_cron
