@@ -269,6 +269,7 @@ class Run(object):
         is_ignored = {}
         is_running = {}
         not_complete = {}
+        any_change = False
 
         for r in tqdm(results, desc="Categorizing results"):
             if r is None:
@@ -277,6 +278,7 @@ class Run(object):
             file_sim = get_simulation_file(dir_fire)
             df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
             if changed is not None:
+                any_change = True
                 is_changed[dir_fire] = changed
                 is_interim[dir_fire] = interim
                 if df_fire is None:
@@ -310,7 +312,7 @@ class Run(object):
                 is_ignored[dir_fire] = df_fire
         # publish before and after fixing things
         if not no_publish and not no_wait:
-            publish_all(self._dir_output, force=changed)
+            publish_all(self._dir_output, changed_only=False, force=any_change)
             changed = False
         if is_prepared and run_incomplete:
             # start but don't wait
@@ -327,7 +329,7 @@ class Run(object):
             keep_trying(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
             changed = True
         if not no_publish:
-            publish_all(self._dir_output, force=changed)
+            publish_all(self._dir_output, changed_only=False, force=any_change)
         num_done = len(is_complete)
         if is_ignored:
             logging.error(f"Ignored incomplete fires: {list(is_ignored.keys())}")

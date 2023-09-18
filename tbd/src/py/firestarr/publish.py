@@ -164,7 +164,7 @@ def merge_dirs(
             file_tmp = os.path.join(dir_tmp, f"{file_root}_tmp.tif")
             file_base = os.path.join(ensure_dir(dir_merge), f"{file_root}.tif")
             # no point in doing this if nothing was added
-            if force or changed or not os.path.isfile(file_base):
+            if force or changed or not os.path.isfile(file_base) or not changed_only:
                 force_remove(file_tmp)
                 invalid_files = None
 
