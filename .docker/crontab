@@ -1,4 +1,4 @@
-* * * * * root /appl/tbd/scripts/lock_run.sh
-*/10 * * * * root killall lock_run.sh python ipython
-*/10 * * * * root rm /appl/data/update.lock
-* * * * * root date >> /appl/data/test_this_cron
+*/5 * * * * root sudo -u user bash -c '/appl/tbd/scripts/lock_run.sh' > /proc/1/fd/1 2>/proc/1/fd/2
+10 * * * * root bash -c 'killall lock_run.sh python & rm /appl/data/update.lock'
+* * * * * root sudo -u user bash -c 'date >> /appl/data/test_cron'
+10 * * * * root sudo -u user bash -c 'python src/py/firestarr/check_and_publish.py'
