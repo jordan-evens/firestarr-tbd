@@ -242,14 +242,17 @@ class SourceFireActive(SourceFire):
         # override with each source in the order they appear
         for i, src in enumerate(self._source_features):
             df_src = src.get_features()
-            save_fires(df_src, f"df_fires_from_feature_source_{i:02d}")
-            df_src_fires, df_unmatched_cur = assign_fires(
-                self._origin, df_src, df_fires
-            )
-            save_fires(df_src_fires, f"df_fires_assigned_feature_source_{i:02d}")
-            save_fires(df_unmatched_cur, f"df_fires_umatched_feature_source_{i:02d}")
-            df_unmatched = pd.concat([df_unmatched, df_unmatched_cur])
-            df_fires = override_fires(df_fires, df_src_fires)
+            if 0 < len(df_src):
+                save_fires(df_src, f"df_fires_from_feature_source_{i:02d}")
+                df_src_fires, df_unmatched_cur = assign_fires(
+                    self._origin, df_src, df_fires
+                )
+                save_fires(df_src_fires, f"df_fires_assigned_feature_source_{i:02d}")
+                save_fires(
+                    df_unmatched_cur, f"df_fires_umatched_feature_source_{i:02d}"
+                )
+                df_unmatched = pd.concat([df_unmatched, df_unmatched_cur])
+                df_fires = override_fires(df_fires, df_src_fires)
             save_fires(df_fires, f"df_fires_after_feature_source_{i:02d}")
         for i, src in enumerate(self._source_fires):
             df_src_fires = src.get_fires()
