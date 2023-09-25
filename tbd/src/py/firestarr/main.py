@@ -80,14 +80,19 @@ def run_main(args):
                     set_model_dir(dir_model)
                     logging.info(f"Have new weather for {dir_model}")
                     break
-                logging.info(f"Previous run already used {modelrun} - " f"waiting {WAIT_WX}s for updated weather")
+                logging.info(
+                    f"Previous run already used {modelrun} - "
+                    f"waiting {WAIT_WX}s for updated weather"
+                )
                 did_wait = True
                 time.sleep(WAIT_WX)
             # have new weather so don't resume
             return False
 
         should_resume = wait_and_check_resume()
-        logging.info(f"Based on weather and previes run, should_resume == {should_resume}")
+        logging.info(
+            f"Based on weather and previous run, should_resume == {should_resume}"
+        )
     # assume resuming if not waiting
     if no_resume and should_resume:
         logging.warning("Should resume but was told not to, so making new run")
@@ -124,7 +129,10 @@ def run_main(args):
     # returns true if just finished current run
     is_outdated = run_current.run_until_successful_or_outdated()
     is_published = run_current._published_clean
-    logging.info(f"Run {run_current._name}:\n\t" f"is_outdated = {is_outdated}, is_published = {is_published}")
+    logging.info(
+        f"Run {run_current._name}:\n\t"
+        f"is_outdated = {is_outdated}, is_published = {is_published}"
+    )
     return (no_resume or not is_outdated) and is_published
 
 
