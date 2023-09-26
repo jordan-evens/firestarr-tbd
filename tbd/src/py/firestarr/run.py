@@ -326,9 +326,11 @@ class Run(object):
                 is_ignored[dir_fire] = df_fire
         # publish before and after fixing things
         if not no_publish and not no_wait:
+            logging.debug("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
             changed = False
         if is_prepared and run_incomplete:
+            logging.debug("Running %d prepared fires" % len(is_prepared))
             # start but don't wait
             keep_trying(
                 run_fire,
@@ -340,11 +342,13 @@ class Run(object):
             # HACK: should actually check
             changed = True
         if is_incomplete and run_incomplete:
+            logging.debug("Running %d incomplete fires" % len(is_prepared))
             keep_trying(
                 reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete"
             )
             changed = True
-        if not no_publish:
+        if not no_publish and changed:
+            logging.debug("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
         num_done = len(is_complete)
         if is_ignored:
