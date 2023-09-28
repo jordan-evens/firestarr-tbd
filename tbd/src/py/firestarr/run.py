@@ -282,6 +282,7 @@ class Run(object):
         is_running = {}
         not_complete = {}
         any_change = False
+        changed = False
 
         for r in tqdm(results, desc="Categorizing results"):
             if r is None:
@@ -326,11 +327,11 @@ class Run(object):
                 is_ignored[dir_fire] = df_fire
         # publish before and after fixing things
         if not no_publish and not no_wait:
-            logging.debug("Publishing")
+            logging.info("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
             changed = False
         if is_prepared and run_incomplete:
-            logging.debug("Running %d prepared fires" % len(is_prepared))
+            logging.info("Running %d prepared fires" % len(is_prepared))
             # start but don't wait
             keep_trying(
                 run_fire,
@@ -342,13 +343,14 @@ class Run(object):
             # HACK: should actually check
             changed = True
         if is_incomplete and run_incomplete:
-            logging.debug("Running %d incomplete fires" % len(is_prepared))
+            logging.info("Running %d incomplete fires" % len(is_prepared))
             keep_trying(
                 reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete"
             )
             changed = True
-        if not no_publish and changed:
-            logging.debug("Publishing")
+        any_change = any_change or changed
+        if not no_publish and (no_wait or any_change):
+            logging.info("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
         num_done = len(is_complete)
         if is_ignored:
