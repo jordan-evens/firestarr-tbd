@@ -1,6 +1,7 @@
 #!/bin/bash
-echo `date -u --rfc-3339=seconds`: Running check and publish >> /appl/data/logs/check_and_publish.log
+echo `date -u --rfc-3339=seconds`: Running check and publish
 . /appl/data/config || . /appl/config
 source /appl/.venv/bin/activate || echo No venv
-python /appl/tbd/src/py/firestarr/check_and_publish.py $* || (echo FAILED >> /appl/data/logs/check_and_publish.log)
-echo `date -u --rfc-3339=seconds`: Done running check and publish >> /appl/data/logs/check_and_publish.log
+# HACK: use python3 and not python so killall doesn't affect this
+python3 /appl/tbd/src/py/firestarr/check_and_publish.py $* || (echo FAILED)
+echo `date -u --rfc-3339=seconds`: Done running check and publish
