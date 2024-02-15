@@ -21,6 +21,33 @@ services:
     env_file:
       - .env
 
+  tbd_dev:
+    image: tbd_dev
+    build:
+      context: .
+      target: tbd_dev
+      dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        PERF_VERSION: ${PERF_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
+      tags:
+        - tbd_dev:${VERSION}
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - type: bind
+        source: ./config
+        target: /appl/config
+      - data:/appl/data
+      - type: bind
+        source: ./tbd
+        target: /appl/tbd
+    restart: on-failure
+    cap_add:
+      - SYS_PTRACE
+
   tbd_dev_svc:
     image: tbd_dev_svc
     build:
