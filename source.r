@@ -4,6 +4,10 @@ library(data.table)
 library(terra)
 library(lattice)
 library(rasterVis)
+DIR <- "../data/test_output"
+# DIR_OUT <- "."
+DIR_OUT <- Sys.getenv("HOME")
+FILE_OUT <- file.path(DIR_OUT, paste0(basename(DIR), ".pdf"))
 # colours <- list(
 # "1"=list(r=255, g=0, b=0),
 # "2"=list(r=255, g=255, b=255),
@@ -97,7 +101,6 @@ names(hex) <- 0:255
 results <- as.data.table(results)
 write.table(results, file = "source.clr", col.names = FALSE, row.names = FALSE, sep = " ")
 
-DIR <- "../data/test_output"
 imgs <- list.files(DIR, pattern = "^source.tif$", full.names = TRUE, recursive = TRUE)
 imgs <- imgs[grep("C2", imgs)]
 rasters <- lapply(imgs, function(img) {
@@ -107,7 +110,7 @@ e <- ext(rasters[[1]])
 for (r in rasters) {
   e <- ext(extend(r, e))
 }
-pdf(paste0(basename(DIR), ".pdf"), width = 11, height = 8.5)
+pdf(FILE_OUT, width = 11, height = 8.5)
 par(mfrow = c(3, 4), mar = c(2, 2, 2, 2))
 for (i in 1:length(rasters)) {
   img <- imgs[[i]]
@@ -131,6 +134,6 @@ for (i in 1:length(rasters)) {
   # lvls$ID <- unique(r)
   # levels(r) <- lvls
   # print(levelplot(r, col.regions = col, att = "ID", main = title))
-  plot(r, col=col, main=title)
+  plot(r, col = col, main = title)
 }
 dev.off()
