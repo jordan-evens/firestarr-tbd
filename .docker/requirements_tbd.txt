@@ -10,6 +10,7 @@ numpy
 pandas
 psutil
 pycrs
+pyogrio
 pyrate-limiter==2.10.0
 rasterio
 requests

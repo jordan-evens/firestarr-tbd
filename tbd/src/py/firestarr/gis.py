@@ -467,18 +467,8 @@ def save_shp(df, path):
     file = os.path.join(dir, f"{base}.shp")
     # HACK: don't lock on file until we fix reentrant locks
     try:
-        cols = df.columns
-        df = df.reset_index()
-        keys = [x for x in df.columns if x not in cols]
-        for k in [x for x in df.columns if x != "geometry"]:
-            v = df.dtypes[k]
-            # HACK: convert any type of date into string
-            if "date" in str(v).lower():
-                df[k] = df[k].astype(str)
-            elif v == np.int64:
-                df[k] = df[k].astype(int)
-        df_index = df.set_index(keys)
-        call_safe(df_index.to_file, file)
+        # fiona was having all kinds of issues with column types so just use pyogrio
+        call_safe(lambda f: df.reset_index().to_file(f, engine="pyogrio"), file)
         return file
     except KeyboardInterrupt as ex:
         raise ex
