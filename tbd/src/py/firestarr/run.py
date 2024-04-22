@@ -774,7 +774,8 @@ class Run(object):
                 max(sim_times),
             )
         df_final = pd.concat(
-            [make_gdf_from_series(r, self._crs) for r in results.values()]
+            # [make_gdf_from_series(r, self._crs) for r in results.values()]
+            [make_gdf_from_series(r, self._crs) for r in results.values() if r is not None]
         )
         try:
             save_shp(df_final, os.path.join(self._dir_out, "df_fires_final.shp"))

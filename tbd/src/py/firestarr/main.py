@@ -50,6 +50,7 @@ def run_main(args):
     no_resume, args = check_arg("--no-resume", args)
     if do_resume and no_resume:
         raise RuntimeError("Can't specify --no-resume and --resume")
+    no_retry, args = check_arg("--no-retry", args)
     # don't use resume arg if running again
     do_resume = do_resume and run_current is None
     no_publish, args = check_arg("--no-publish", args)
