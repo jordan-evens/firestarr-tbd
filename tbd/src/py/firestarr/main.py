@@ -30,12 +30,13 @@ sys.path.append("/usr/local/bin")
 did_wait = False
 run_current = None
 run_attempts = 0
-
+no_retry = False
 
 def run_main(args):
     global did_wait
     global run_current
     global run_attempts
+    global no_retry
 
     def check_arg(a, args):
         flag = False
@@ -128,19 +129,20 @@ def run_main(args):
             )
     run_attempts += 1
     # returns true if just finished current run
-    is_outdated = run_current.run_until_successful_or_outdated()
+    is_outdated = not run_current.run_until_successful_or_outdated()
     is_published = run_current._published_clean
+    should_rerun = not (no_resume or is_outdated) and (not is_published)
     logging.info(
         f"Run {run_current._name}:\n\t"
-        f"is_outdated = {is_outdated}, is_published = {is_published}"
+        f"is_outdated = {is_outdated}, is_published = {is_published}, should_rerun = {should_rerun}, no_retry == {no_retry}"
     )
-    return (no_resume or not is_outdated) and is_published
+    return no_retry or not should_rerun
 
 
 if __name__ == "__main__":
     logging.info("Called with args %s", str(sys.argv))
     args_orig = sys.argv[1:]
-    while True:
+    while not no_retry:
         # HACK: just do forever for now since running manually
         logging.info("Attempting update")
         while True:
