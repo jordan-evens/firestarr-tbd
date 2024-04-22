@@ -36,9 +36,9 @@ else
     && ( \
         ( \
             [ -z "${FORCE_RUN}" ] \
-            && echo Checking for update \
+            && echo ${CURDATE}: Checking for update | tee -a ${FILE_LOG}\
             && diff ${FILE_CURRENT} ${FILE_LATEST} \
-            && echo ${CURDATE}: Already up to date >> ${FILE_LOG} \
+            && echo ${CURDATE}: Already up to date | tee -a ${FILE_LOG} \
         ) \
         || \
         ( \
