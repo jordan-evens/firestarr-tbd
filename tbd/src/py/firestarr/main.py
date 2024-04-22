@@ -7,6 +7,8 @@ from common import (
     DEFAULT_FILE_LOG_LEVEL,
     DIR_LOG,
     DIR_OUTPUT,
+    FILE_TBD_BINARY,
+    FILE_TBD_SETTINGS,
     SECONDS_PER_MINUTE,
     WX_MODEL,
     logging,
@@ -57,6 +59,8 @@ def run_main(args):
     no_publish, args = check_arg("--no-publish", args)
     no_merge, args = check_arg("--no-merge", args)
     no_wait, args = check_arg("--no-wait", args)
+    no_retry, args = check_arg("--no-retry", args)
+    do_retry = False if no_retry else True
     do_publish = False if no_publish else None
     do_merge = False if no_merge else None
     do_wait = not no_wait
@@ -71,6 +75,8 @@ def run_main(args):
                 modelrun = os.path.basename(dir_model)
                 # HACK: just trying to check if run used this weather
                 prev = make_resume(do_publish=False, do_merge=False)
+                if prev is None:
+                    return False
                 wx_updated = prev._modelrun != modelrun
                 if not wx_updated and not prev._published_clean:
                     logging.info("Found previous run and trying to resume")
@@ -129,7 +135,7 @@ def run_main(args):
             )
     run_attempts += 1
     # returns true if just finished current run
-    is_outdated = not run_current.run_until_successful_or_outdated()
+    is_outdated = run_current.run_until_successful_or_outdated(no_retry=do_retry)
     is_published = run_current._published_clean
     should_rerun = not (no_resume or is_outdated) and (not is_published)
     logging.info(
@@ -140,6 +146,10 @@ def run_main(args):
 
 
 if __name__ == "__main__":
+    if not os.path.exists(FILE_TBD_BINARY):
+        raise RuntimeError(f"Unable to locate simulation model binary file {FILE_TBD_BINARY}")
+    if not os.path.exists(FILE_TBD_SETTINGS):
+        raise RuntimeError(f"Unable to locate simulation model settings file {FILE_TBD_SETTINGS}")
     logging.info("Called with args %s", str(sys.argv))
     args_orig = sys.argv[1:]
     while not no_retry:

@@ -140,7 +140,11 @@ class Simulation(object):
                 df_wx_forecast = df_wx_forecast.loc[df_wx_forecast[COLUMN_TIME] > cur_time]
             # splice every other member onto shorter members
             dates_by_model = df_wx_forecast.groupby("model")[COLUMN_TIME].max().sort_values(ascending=False)
-            df_wx_forecast.loc[:, "id"] = df_wx_forecast["id"].apply(lambda x: f"{x:02d}")
+            # deprecated
+            # df_wx_forecast.loc[:, "id"] = df_wx_forecast["id"].apply(lambda x: f"{x:02d}")
+            ids = df_wx_forecast["id"]
+            del df_wx_forecast["id"]
+            df_wx_forecast.loc[:, "id"] = ids.apply(lambda x: f"{x:02d}")
             df_spliced = None
             for (
                 idx,
@@ -195,14 +199,22 @@ class Simulation(object):
             df_wx.loc[:, "lat"] = lat
             df_wx.loc[:, "lon"] = lon
             # times need to be in LST for cffdrs
-            df_wx.loc[:, COLUMN_TIME] = [x.tz_localize("UTC").tz_convert(tz_lst) for x in df_wx[COLUMN_TIME]]
+            # deprecated
+            # df_wx.loc[:, COLUMN_TIME] = [x.tz_localize("UTC").tz_convert(tz_lst) for x in df_wx[COLUMN_TIME]]
+            times = df_wx[COLUMN_TIME]
+            del df_wx[COLUMN_TIME]
+            df_wx.loc[:, COLUMN_TIME] = [x.tz_localize("UTC").tz_convert(tz_lst) for x in times]
             if FLAG_DEBUG:
                 # make it easier to see problems if cffdrs isn't working
                 save_geojson(df_wx, file_wx_streams)
                 df_wx = read_gpd_file_safe(file_wx_streams)
             df_wx_fire = df_wx.rename(columns={"lon": "long", COLUMN_TIME: "TIMESTAMP"})
             # remove timezone so it gets formatted properly
-            df_wx_fire.loc[:, "TIMESTAMP"] = [x.tz_localize(None) for x in df_wx_fire["TIMESTAMP"]]
+            # deprecated
+            # df_wx_fire.loc[:, "TIMESTAMP"] = [x.tz_localize(None) for x in df_wx_fire["TIMESTAMP"]]
+            timestamps = df_wx_fire["TIMESTAMP"]
+            del df_wx_fire["TIMESTAMP"]
+            df_wx_fire.loc[:, "TIMESTAMP"] = [x.tz_localize(None) for x in timestamps]
             df_wx_fire.columns = [s.upper() for s in df_wx_fire.columns]
             df_wx_fire[["YR", "MON", "DAY", "HR"]] = list(
                 tqdm_util.apply(
@@ -230,6 +242,16 @@ class Simulation(object):
             ].sort_values(["ID", "LAT", "LONG", "TIMESTAMP"])
             # NOTE: expects weather in localtime, but uses utcoffset to
             # figure out local sunrise/sunset
+            # FIX: if values are not valid then station isn't started so use TMP to figure out when it should
+            if not (0 <= ffmc_old):
+                print(f"Invalid FFMC value for startup {ffmc_old}")
+                ffmc_old = 0
+            if not (0 <= dmc_old):
+                print(f"Invalid DMC value for startup {dmc_old}")
+                dmc_old = 0
+            if not (0 <= dc_old):
+                print(f"Invalid DC value for startup {dc_old}")
+                dc_old = 0
             df_fwi = cffdrs.hFWI(df_wx_fire, utcoffset_hours, ffmc_old, dmc_old, dc_old, silent=True)
             # HACK: get rid of missing values at end of period
             df_fwi = df_fwi[~np.isnan(df_fwi["FWI"])].reset_index(drop=True)

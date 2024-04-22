@@ -123,6 +123,8 @@ DIR_SRC_PY_CFFDRSNG = os.path.join(DIR_SRC_PY, "cffdrs-ng")
 sys.path.append(DIR_SRC_PY_CFFDRSNG)
 
 DIR_TBD = "/appl/tbd"
+FILE_TBD_BINARY = os.path.join(DIR_TBD, "tbd")
+FILE_TBD_SETTINGS = os.path.join(DIR_TBD, "settings.ini")
 DIR_SCRIPTS = os.path.join(DIR_TBD, "scripts")
 
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))

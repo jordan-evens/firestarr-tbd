@@ -41,7 +41,7 @@ def wx_interpolate(df):
     date_min = df["datetime"].min()
     date_max = df["datetime"].max()
     times = pd.DataFrame(
-        pd.date_range(date_min, date_max, freq="H").values, columns=["datetime"]
+        pd.date_range(date_min, date_max, freq="h").values, columns=["datetime"]
     )
     crs = df.crs
     index_names = df.index.names
@@ -54,7 +54,7 @@ def wx_interpolate(df):
         g_fill = pd.merge(times, g, how="left")
         # treat rain as if it all happened at start of any gaps
         g_fill["prec"] = g_fill["prec"].fillna(0)
-        g_fill = g_fill.fillna(method="ffill")
+        g_fill = g_fill.ffill()
         g_fill[index_names] = i
         groups.append(g_fill)
     df_filled = to_gdf(pd.merge(pd.concat(groups), gdf_geom), crs)

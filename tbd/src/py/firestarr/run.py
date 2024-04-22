@@ -14,6 +14,8 @@ from common import (
     DIR_OUTPUT,
     DIR_SIMS,
     FILE_LOCK_PUBLISH,
+    FILE_TBD_BINARY,
+    FILE_TBD_SETTINGS,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FLAG_SAVE_PREPARED,
     MAX_NUM_DAYS,
@@ -372,14 +374,14 @@ class Run(object):
         )
         return df_final, changed
 
-    def run_until_successful_or_outdated(self):
+    def run_until_successful_or_outdated(self, no_retry=False):
         def is_current():
             dir_model = get_model_dir_uncached(WX_MODEL)
             modelrun = os.path.basename(dir_model)
             return modelrun == self._modelrun
 
         # HACK: thread is throwing errors so just actually wait for now
-        result = self.run_until_successful()
+        result = self.run_until_successful(no_retry=no_retry)
         return is_current()
         # p = None
         # try:
@@ -394,9 +396,11 @@ class Run(object):
         #     if p and p.is_alive():
         #         p.terminate()
 
-    def run_until_successful(self):
+    def run_until_successful(self, no_retry=False):
+        should_try = True
         is_successful = False
-        while not is_successful:
+        while not is_successful and should_try:
+            should_try = no_retry
             df_final, changed = self.process()
             while True:
                 is_successful = self.check_and_publish()
@@ -445,11 +449,9 @@ class Run(object):
                 logging.info("Deleting existing fires")
                 force_remove(_)
             # keep a copy of the settings for reference
-            shutil.copy(
-                "/appl/tbd/settings.ini", os.path.join(self._dir_model, "settings.ini")
-            )
+            shutil.copy(FILE_TBD_SETTINGS, os.path.join(self._dir_model, "settings.ini"))
             # also keep binary instead of trying to track source
-            shutil.copy("/appl/tbd/tbd", os.path.join(self._dir_model, "tbd"))
+            shutil.copy(FILE_TBD_BINARY, os.path.join(self._dir_model, "tbd"))
             df_fires = self._src_fires.get_fires().to_crs(self._crs)
             save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups.shp"))
             df_fires["area"] = area_ha(df_fires)
@@ -794,7 +796,10 @@ def make_resume(dir_resume=None, do_publish=False, do_merge=False, *args, **kwar
             if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
         ]
         if not dirs:
-            raise RuntimeError("No valid runs to resume")
+            # raise RuntimeError("No valid runs to resume")
+            # shouldn't resume if can't
+            logging.warning("No valid runs to resume")
+            return None
         dir_resume = dirs[-1]
     dir_resume = os.path.join(DIR_SIMS, dir_resume)
     kwargs["dir"] = dir_resume
