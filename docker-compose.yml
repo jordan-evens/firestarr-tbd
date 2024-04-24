@@ -110,6 +110,7 @@ services:
       - data:/appl/data
     env_file:
       - .env
+    restart: always
 
   firestarr:
     image: firestarr
