@@ -428,7 +428,8 @@ def run_fire_from_folder(
 
                 def mk_sim_sh(*a, **k):
                     with open(file_sh, "w") as f_out:
-                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args}\n"])
+                        # add $* at end so with can call with more args from cli
+                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args} $*\n"])
 
                 call_safe(mk_sim_sh)
                 # NOTE: needs to be octal base
