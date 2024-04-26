@@ -17,7 +17,7 @@ from common import (
     remove_timezone_utc,
 )
 from datasources.datatypes import SourceModel
-from gis import read_gpd_file_safe, save_geojson, to_gdf
+from gis import gdf_from_file, save_geojson, to_gdf
 from net import try_save_http
 from pyrate_limiter import Duration, FileLockSQLiteBucket, Limiter, RequestRate
 
@@ -228,7 +228,7 @@ class SourceGEPS(SourceModel):
         @ensures(
             file_out,
             True,
-            fct_process=read_gpd_file_safe,
+            fct_process=gdf_from_file,
             retries=1,
         )
         def do_create(_):

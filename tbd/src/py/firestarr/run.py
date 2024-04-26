@@ -45,9 +45,10 @@ from gis import (
     CRS_WGS84,
     area_ha,
     find_invalid_tiffs,
+    gdf_from_file,
+    gdf_to_file,
     make_gdf_from_series,
-    read_gpd_file_safe,
-    save_shp,
+    vector_path,
 )
 from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
@@ -93,7 +94,7 @@ class SourceFireGroup(SourceFire):
             # get perimeters from default service
             src_fires_active = SourceFireActive(self._dir_out, self._origin)
             df_fires_active = src_fires_active.get_fires()
-            save_shp(df_fires_active, os.path.join(self._dir_out, "df_fires_active"))
+            gdf_to_file(df_fires_active, self._dir_out, "df_fires_active")
             date_latest = np.max(df_fires_active["datetime"])
             # don't add in fires that don't match because they're out
             df_fires_groups = group_fires(df_fires_active)
@@ -105,7 +106,7 @@ class SourceFireGroup(SourceFire):
         else:
             # get perimeters from a folder
             df_fires = get_fires_folder(self._dir_fires, CRS_COMPARISON)
-            save_shp(df_fires, os.path.join(self._dir_out, "df_fires_folder"))
+            gdf_to_file(df_fires, self._dir_out, "df_fires_folder")
             df_fires = df_fires.to_crs(CRS_COMPARISON)
             # HACK: can't just convert to lat/long crs and use centroids from that
             # because it causes a warning
@@ -118,7 +119,7 @@ class SourceFireGroup(SourceFire):
         df_fires = df_fires[df_fires["lon"] <= BOUNDS["longitude"]["max"]]
         df_fires = df_fires[df_fires["lat"] >= BOUNDS["latitude"]["min"]]
         df_fires = df_fires[df_fires["lat"] <= BOUNDS["latitude"]["max"]]
-        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups"))
+        gdf_to_file(df_fires, self._dir_out, "df_fires_groups")
         return df_fires
 
 
@@ -170,7 +171,7 @@ class Run(object):
         self._dir_sims = ensure_dir(os.path.join(self._dir, "sims"))
         self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
         self._crs = crs
-        self._file_fires = os.path.join(self._dir_out, "df_fires_prioritized.shp")
+        self._file_fires = vector_path(self._dir_out, "df_fires_prioritized")
         self._file_rundata = os.path.join(self._dir_out, "run.json")
         self.load_rundata()
         if not self._modelrun:
@@ -279,7 +280,7 @@ class Run(object):
                 continue
             dir_fire, changed, interim, files_project, was_running = r
             file_sim = get_simulation_file(dir_fire)
-            df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
+            df_fire = gdf_from_file(file_sim) if os.path.isfile(file_sim) else None
             if changed is not None:
                 any_change = True
                 is_changed[dir_fire] = changed
@@ -432,7 +433,7 @@ class Run(object):
             # also keep binary instead of trying to track source
             shutil.copy(FILE_TBD_BINARY, os.path.join(self._dir_model, "tbd"))
             df_fires = self._src_fires.get_fires().to_crs(self._crs)
-            save_shp(df_fires, os.path.join(self._dir_out, "df_fires_groups.shp"))
+            gdf_to_file(df_fires, self._dir_out, "df_fires_groups")
             df_fires["area"] = area_ha(df_fires)
             # HACK: make into list to get rid of index so multi-column assignment works
             df_fires[["lat", "lon"]] = list(
@@ -443,7 +444,7 @@ class Run(object):
                 )
             )
             df_prioritized = self.prioritize(df_fires)
-            save_shp(df_prioritized, _)
+            gdf_to_file(df_prioritized, _)
             return _
 
         return do_create(self._file_fires)
@@ -451,7 +452,7 @@ class Run(object):
     def load_fires(self):
         if not os.path.isfile(self._file_fires):
             raise RuntimeError(f"Expected fires to be in file {self._file_fires}")
-        return read_gpd_file_safe(self._file_fires).set_index(["fire_name"])
+        return gdf_from_file(self._file_fires).set_index(["fire_name"])
 
     @log_order()
     def prep_folders(self, remove_existing=False, remove_invalid=False):
@@ -489,15 +490,16 @@ class Run(object):
         logging.info(f"Have {len(files_sim)} groups prepared")
         if FLAG_SAVE_PREPARED:
             try:
-                df_fires_prepared = pd.concat([read_gpd_file_safe(get_simulation_file(f)) for f in files_sim])
+                df_fires_prepared = pd.concat([gdf_from_file(get_simulation_file(f)) for f in files_sim])
                 for col in ["datetime", "date_startup", "start_time"]:
                     df_fires_prepared.loc[:, col] = df_fires_prepared[col].astype(str)
                 df_fires_prepared = df_fires_prepared.rename(
                     columns={"date_startup": "startday", "utcoffset_hours": "utcoffset"}
                 )
-                save_shp(
+                gdf_to_file(
                     df_fires_prepared,
-                    os.path.join(self._dir_out, "df_fires_prepared.shp"),
+                    self._dir_out,
+                    "df_fires_prepared",
                 )
             except Exception as ex:
                 logging.debug("Couldn't save prepared fires")
@@ -509,7 +511,7 @@ class Run(object):
         if df_bounds is None:
             file_bounds = BOUNDS["bounds"]
             if file_bounds:
-                df_bounds = read_gpd_file_safe(file_bounds).to_crs(df.crs)
+                df_bounds = gdf_from_file(file_bounds).to_crs(df.crs)
         df[["ID", "PRIORITY", "DURATION"]] = "", 0, self._max_days
         if df_bounds is not None:
             df_join = df[["geometry"]].sjoin(df_bounds)
@@ -550,7 +552,7 @@ class Run(object):
         def check_file(file_sim):
             try:
                 if os.path.isfile(file_sim):
-                    df_fire = read_gpd_file_safe(file_sim)
+                    df_fire = gdf_from_file(file_sim)
                     if 1 != len(df_fire):
                         raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
                     return True
@@ -727,7 +729,7 @@ class Run(object):
             [make_gdf_from_series(r, self._crs) for r in results.values() if r is not None]
         )
         try:
-            save_shp(df_final, os.path.join(self._dir_out, "df_fires_final.shp"))
+            gdf_to_file(df_final, self._dir_out, "df_fires_final")
         except Exception as ex:
             logging.error("Couldn't save final fires")
             logging.error(get_stack(ex))
@@ -738,7 +740,9 @@ def make_resume(dir_resume=None, do_publish=False, do_merge=False, *args, **kwar
     # resume last run
     if dir_resume is None:
         dirs = [
-            x for x in list_dirs(DIR_SIMS) if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
+            x
+            for x in list_dirs(DIR_SIMS)
+            if os.path.exists(vector_path(os.path.join(DIR_SIMS, x, "data"), "df_fires_groups"))
         ]
         if not dirs:
             # raise RuntimeError("No valid runs to resume")

@@ -9,6 +9,7 @@ import sys
 import fiona.drvsupport
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import pyproj
 from common import (
     DIR_DOWNLOAD,
@@ -40,10 +41,13 @@ CRS_COMPARISON = CRS_LAMBERT_ATLAS
 CRS_NAD83 = 4269
 CRS_SIMINPUT = CRS_NAD83
 VALID_GEOMETRY_EXTENSIONS = [f".{x}" for x in sorted(fiona.drvsupport.vector_driver_extensions().keys())]
+VECTOR_FILE_EXTENSION = "gpkg"
 
 
-def read_gpd_file_safe(filename, *args, **kwargs):
-    return call_safe(gpd.read_file, filename, *args, **kwargs)
+def gdf_from_file(filename, *args, **kwargs):
+    # funnel everything through this so we can ignore file type everywhere else
+    fct_read = gpd.read_parquet if filename.lower().endswith(".parquet") else gpd.read_file
+    return call_safe(fct_read, filename, *args, **kwargs)
 
 
 def ensure_geometry_file(path):
@@ -97,7 +101,7 @@ def ensure_geometry_file(path):
 
 
 def load_geometry_file(path):
-    return read_gpd_file_safe(ensure_geometry_file(path))
+    return gdf_from_file(ensure_geometry_file(path))
 
 
 def GetFeatureCount(shp):
@@ -163,7 +167,7 @@ def Project(src, outputShapefile, outSpatialRef):
     @param outSpatialRef Spatial reference to project into
     @return None
     """
-    df = read_gpd_file_safe(src)
+    df = gdf_from_file(src)
     df_out = df.to_crs(outSpatialRef.ExportToWkt())
     call_safe(df_out.to_file, outputShapefile)
 
@@ -462,14 +466,39 @@ def save_geojson(df, path):
         raise ex
 
 
-def save_shp(df, path):
-    dir = os.path.dirname(path)
-    base = os.path.splitext(os.path.basename(path))[0]
-    file = os.path.join(dir, f"{base}.shp")
+def vector_path(dir, base):
+    # create a file path with the right extension for the vector file format we're using
+    return os.path.join(dir, f"{base}.{VECTOR_FILE_EXTENSION}")
+
+
+def gdf_to_file(df, dir, base=None):
+    # funnel everything through this so we can ignore file type everywhere else
+    if base is None:
+        base = os.path.splitext(os.path.basename(dir))[0]
+        dir = os.path.dirname(dir)
+    file = vector_path(dir, base)
+    # FIX: lots of things apparently rely on the side effects of saving files
+    #      using this and then loading them again
     # HACK: don't lock on file until we fix reentrant locks
     try:
-        # fiona was having all kinds of issues with column types so just use pyogrio
-        call_safe(lambda f: df.reset_index().to_file(f, engine="pyogrio"), file)
+        cols = df.columns
+        df = df.reset_index()
+        keys = [x for x in df.columns if x not in cols]
+        for k in [x for x in df.columns if x != "geometry"]:
+            v = df.dtypes[k]
+            # HACK: convert any type of date into string
+            if "date" in str(v).lower():
+                df[k] = df[k].astype(str)
+            elif v == np.int64:
+                df[k] = df[k].astype(int)
+        # df_index = df.set_index(keys)
+        fct_save = df.to_file
+        if "parquet" == VECTOR_FILE_EXTENSION:
+            fct_save = df.to_parquet
+        elif "gpkg" == VECTOR_FILE_EXTENSION:
+            # need to specify driver
+            fct_save = lambda f: df.to_file(f, driver="GPKG")
+        call_safe(fct_save, file)
         return file
     except KeyboardInterrupt as ex:
         raise ex

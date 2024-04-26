@@ -39,8 +39,8 @@ from common import (
 from gis import (
     Rasterize,
     find_best_raster,
+    gdf_from_file,
     project_raster,
-    read_gpd_file_safe,
     save_geojson,
     save_point_shp,
 )
@@ -318,7 +318,7 @@ def run_fire_from_folder(
     ensure_dir(os.path.dirname(file_sim))
     # lock before reading so if sim is running it will update file before lock ends
     with locks_for(file_sim):
-        df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
+        df_fire = gdf_from_file(file_sim) if os.path.isfile(file_sim) else None
         if df_fire is None:
             force_remove(files_required)
             raise RuntimeError(f"Couldn't get fire data from {file_sim}")

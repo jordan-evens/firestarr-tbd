@@ -78,7 +78,7 @@ verbose = self._verbose
 # # lock before reading so if sim is running it will update file before lock ends
 
 
-# df_fire = read_gpd_file_safe(file_sim) if os.path.isfile(file_sim) else None
+# df_fire = gdf_from_file(file_sim) if os.path.isfile(file_sim) else None
 # if df_fire is None:
 #     raise RuntimeError(f"Couldn't get fire data from {file_sim}")
 # if 1 != len(df_fire):
@@ -130,7 +130,7 @@ verbose = self._verbose
 #                 perim = Rasterize(file_sim, raster, reference)
 #         else:
 #             # think this should be fine for using individual points
-#             save_point_shp(lat, lon, dir_fire, fire_name)
+#             save_point_file(lat, lon, dir_fire, fire_name)
 #             perim = None
 #         log_info("Startup coordinates are {}, {}".format(lat, lon))
 #         hour = start_time.hour

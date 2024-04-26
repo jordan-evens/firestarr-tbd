@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import shapely.geometry
 from common import DIR_GENERATED, ensures
-from gis import CRS_WGS84, load_geometry_file, read_gpd_file_safe
+from gis import CRS_WGS84, gdf_from_file, gdf_to_file, load_geometry_file, vector_path
 
 KM_TO_M = 1000
 BY_NAME = {}
@@ -26,7 +26,7 @@ def to_file_dir(df, name, dir_out, centroids_compare=None):
     step = len(BY_NAME)
     df_wgs84 = df.to_crs(CRS_WGS84)
     df_wgs84.to_file(os.path.join(dir_out, f"{step:02d}_{name}.geojson"))
-    df_wgs84.to_file(os.path.join(dir_out, f"{step:02d}_{name}.shp"))
+    gdf_to_file(df_wgs84, dir_out, f"{step:02d}_{name}")
     if centroids_compare:
         try:
             print(dist(centroids_compare, centroids(dissolve(df).set_index(["EN"]))))
@@ -96,9 +96,9 @@ def get_features_canada(
     file_bounds=FILE_BOUNDS,
     col_name=COLUMN_ENGLISH_NAME,
 ):
-    file_out = os.path.join(dir_out, "canada.shp")
+    file_out = vector_path(dir_out, "canada")
 
-    @ensures(file_out, True, fct_process=read_gpd_file_safe, mkdirs=True)
+    @ensures(file_out, True, fct_process=gdf_from_file, mkdirs=True)
     def do_create(_):
         # col_name needs to be english name of area so it can join
         # on bounds column EN
@@ -137,7 +137,7 @@ def update_bounds(
         return to_file_dir(df, name, dir_out, centroids_canada)
 
     df_bounds = to_file(
-        read_gpd_file_safe(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
+        gdf_from_file(file_bounds).sort_values(["EN"]).to_crs(crs_orig),
         "bounds",
     )
     df = df_bounds.set_index(["EN"])
@@ -158,7 +158,7 @@ def update_bounds(
         df.reset_index()[["ID", "EN", "FR", "PRIORITY", "DURATION", "geometry"]].set_index(["ID"]).to_crs(CRS_WGS84)
     )
     bounds.to_file(file_bounds)
-    bounds.to_file(os.path.join(dir_out, "bounds.shp"))
+    gdf_to_file(bounds, dir_out, "bounds")
 
 
 if "__main__" == __name__:

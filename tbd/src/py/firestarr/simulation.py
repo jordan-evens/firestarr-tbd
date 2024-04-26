@@ -24,7 +24,7 @@ from datasources.default import (
     SourceModelAll,
     wx_interpolate,
 )
-from gis import read_gpd_file_safe, save_geojson
+from gis import gdf_from_file, save_geojson
 from redundancy import NUM_RETRIES
 from timezonefinder import TimezoneFinder
 
@@ -207,7 +207,7 @@ class Simulation(object):
             if FLAG_DEBUG:
                 # make it easier to see problems if cffdrs isn't working
                 save_geojson(df_wx, file_wx_streams)
-                df_wx = read_gpd_file_safe(file_wx_streams)
+                df_wx = gdf_from_file(file_wx_streams)
             df_wx_fire = df_wx.rename(columns={"lon": "long", COLUMN_TIME: "TIMESTAMP"})
             # remove timezone so it gets formatted properly
             # deprecated

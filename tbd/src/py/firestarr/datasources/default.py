@@ -30,7 +30,7 @@ from gis import (
     KM_TO_M,
     area_ha,
     area_ha_to_radius_m,
-    save_shp,
+    gdf_to_file,
     to_gdf,
 )
 
@@ -186,19 +186,21 @@ class SourceFireActive(SourceFire):
             df_points = df[df.geometry.type == "Point"]
             df_polygons = df[df.geometry.type != "Point"]
             if 0 < len(df_points):
-                save_shp(
+                gdf_to_file(
                     df_points,
-                    os.path.join(self._dir_out, f"{file_root}_points"),
+                    self._dir_out,
+                    f"{file_root}_points",
                 )
             if 0 < len(df_polygons):
-                save_shp(
+                gdf_to_file(
                     df_polygons,
-                    os.path.join(self._dir_out, f"{file_root}_polygons"),
+                    self._dir_out,
+                    f"{file_root}_polygons",
                 )
 
         df_ciffc = self._source_ciffc.get_fires()
         df_fires = df_ciffc.loc[:]
-        save_shp(df_fires, os.path.join(self._dir_out, "df_fires_ciffc"))
+        gdf_to_file(df_fires, self._dir_out, "df_fires_ciffc")
         df_circles = df_fires.loc[df_fires.geometry.type == "Point"].to_crs(CRS_COMPARISON)
         # HACK: put in circles of proper area so spatial join should hopefully
         # overlap actual polygons
@@ -208,7 +210,7 @@ class SourceFireActive(SourceFire):
             desc="Converting points with area to circles",
         ).simplify(100)
         df_circles = df_circles.to_crs(CRS_WGS84)
-        save_shp(df_circles, os.path.join(self._dir_out, "df_fires_circles"))
+        gdf_to_file(df_circles, self._dir_out, "df_fires_circles")
         df_fires = self.check_columns(df_circles.iloc[:])
         df_unmatched = None
         # override with each source in the order they appear
