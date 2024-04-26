@@ -42,7 +42,7 @@ from gis import (
     gdf_from_file,
     project_raster,
     save_geojson,
-    save_point_shp,
+    save_point_file,
 )
 from redundancy import call_safe
 
@@ -378,9 +378,10 @@ def run_fire_from_folder(
                         # running from non-fuel for the points like normally
                         perim = Rasterize(file_sim, raster, reference)
                 else:
-                    # think this should be fine for using individual points
-                    save_point_shp(lat, lon, dir_fire, fire_name)
                     perim = None
+                # NOTE: save point file either way so we can see where it is
+                # think this should be fine for using individual points
+                save_point_file(lat, lon, dir_fire, fire_name)
                 log_info("Startup coordinates are {}, {}".format(lat, lon))
                 hour = start_time.hour
                 minute = start_time.minute

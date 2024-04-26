@@ -277,22 +277,16 @@ def Rasterize(file_lyr, raster, reference):
     return call_safe(do_rasterize)
 
 
-def save_point_shp(latitude, longitude, out_dir, name):
+def save_point_file(latitude, longitude, out_dir, name):
     """!
-    Save a shapefile with a single point having the given coordinates
+    Save a file with a single point having the given coordinates
     @param latitude Latitude to use for point
     @param longitude Longitude to use for point
     @param out_dir Directory to save shapefile to
     @param name Name of point within file, and file to save to
     @return None
     """
-    save_to = os.path.join(out_dir, "{}.shp".format(name))
-    from shapely.geometry import Point, mapping
-
-    schema = {"geometry": "Point", "properties": {"name": "str"}}
-    with collections(save_to, "w", "ESRI Shapefile", schema, crs=pyproj.CRS.from_epsg(4269)) as output:
-        point = Point(float(longitude), float(latitude))
-        output.write({"properties": {"name": name}, "geometry": mapping(point)})
+    gdf_to_file(to_gdf(pd.DataFrame({"lat": [latitude], "lon": [longitude]})), out_dir, name)
 
 
 def sum_raster(raster, band_number=1):
