@@ -34,11 +34,11 @@ from datasources.datatypes import (
 from datasources.spotwx import fix_coords, fmt_rounded
 from gis import find_closest, gdf_from_file, save_geojson
 from make_bounds import get_bounds_from_id
-from net import try_save_http
+from net import RETRY_MAX_ATTEMPTS, try_save_http
 
 DIR_AGENCY_ON = ensure_dir(os.path.join(DIR_DOWNLOAD, "agency", "ON"))
 SERVER_LIO = "https://ws.lioservices.lrc.gov.on.ca"
-URL_SERVER = f"{SERVER_LIO}/arcgis1061a/rest/services/MNRF/Ontario_Fires_Map/MapServer"
+URL_SERVER = f"{SERVER_LIO}/arcgis1/rest/services/MNRF/Ontario_Fires_Map/MapServer"
 LAYER_FIRE_POINT = 0
 LAYER_HOURLY = 29
 LAYER_DAILY = 30
@@ -93,12 +93,24 @@ def do_query(save_as, layer, fct_parse=None, query=QUERY_ALL, fields=FIELDS_ALL,
             f"f={os.path.splitext(save_as)[-1][1:]}",
         ]
     )
+
+    # HACK: keep getting
+    # {
+    #     "error": {
+    #         "code": 400,
+    #         "message": "Unable to complete operation.",
+    #         "details": [
+    #            "Invalid connection property."
+    #         ]
+    #         }
+    # }
     return try_save_http(
         url,
         save_as,
         keep_existing=False,
         fct_pre_save=None,
         fct_post_save=lambda _: (fct_parse or do_nothing)(parse_by_extension(_)),
+        fct_is_invalid=lambda r: "error" in r.text,
     )
 
 
