@@ -115,6 +115,22 @@ def get_features_canada(
     return do_create(file_out)
 
 
+def get_bounds_from_id(id, dir_out=DIR_BOUNDS, *args, **kwargs):
+    id = id.upper()
+    file_out = vector_path(dir_out, f"bounds_{id}")
+
+    @ensures(file_out, True, fct_process=gdf_from_file, mkdirs=True)
+    def do_create(_):
+        gdf_ca = get_features_canada(dir_out=dir_out, *args, **kwargs)
+        gdf = gdf_ca.set_index(["ID"]).loc[[id]]
+        gdf = dissolve(fill(buffer(explode(gdf), 100)))
+        gdf = simplify(gdf, 1)
+        gdf.reset_index().to_file(_)
+        return _
+
+    return do_create(file_out)
+
+
 def update_bounds(
     file_bounds=FILE_BOUNDS,
     dir_out=DIR_BOUNDS,

@@ -33,7 +33,7 @@ from datasources.datatypes import (
 )
 from datasources.spotwx import fix_coords, fmt_rounded
 from gis import find_closest, gdf_from_file, save_geojson
-from make_bounds import get_features_canada
+from make_bounds import get_bounds_from_id
 from net import try_save_http
 
 DIR_AGENCY_ON = ensure_dir(os.path.join(DIR_DOWNLOAD, "agency", "ON"))
@@ -48,7 +48,7 @@ DATE_FIELDS = {
 }
 QUERY_ALL = "1=1"
 FIELDS_ALL = ["*"]
-BOUNDS_ON = get_features_canada().set_index(["ID"]).loc[["ON"]]
+BOUNDS_ON = get_bounds_from_id("ON")
 
 
 def fix_date(t):
