@@ -154,7 +154,7 @@ if __name__ == "__main__":
     while not no_retry:
         # HACK: just do forever for now since running manually
         logging.info("Attempting update")
-        while True:
+        while not no_retry:
             args = args_orig[:]
             try:
                 # returns true if just finished current run
@@ -167,5 +167,4 @@ if __name__ == "__main__":
                 logging.error(ex)
                 logging.error(get_stack(ex))
                 logging.info("Trying again because of error")
-                pass
         logging.info("Finished successfully")
