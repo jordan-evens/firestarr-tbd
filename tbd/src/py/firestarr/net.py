@@ -13,6 +13,7 @@ import requests
 import tqdm_util
 from common import (
     FLAG_DEBUG,
+    always_false,
     do_nothing,
     ensure_dir,
     ensures,
@@ -65,7 +66,11 @@ CACHE_DOWNLOADED = {}
 CACHE_LOCK_FILE = "/tmp/firestarr_cache"
 
 
-def _save_http_uncached(url, save_as):
+def _save_http_uncached(
+    url,
+    save_as,
+    fct_is_invalid=always_false,
+):
     modlocal = None
     logging.debug(f"Opening {url}")
     response = requests.get(
@@ -74,7 +79,7 @@ def _save_http_uncached(url, save_as):
         verify=VERIFY,
         headers=HEADERS,
     )
-    if 200 != response.status_code:
+    if 200 != response.status_code or fct_is_invalid(response):
         raise HTTPError(
             mask_url(url),
             response.status_code,
@@ -106,8 +111,12 @@ def _save_http_uncached(url, save_as):
 
 
 @cache
-def _save_http_cached(url, save_as):
-    return call_safe(_save_http_uncached, url, save_as)
+def _save_http_cached(
+    url,
+    save_as,
+    fct_is_invalid=always_false,
+):
+    return call_safe(_save_http_uncached, url, save_as, fct_is_invalid)
 
 
 def check_downloaded(path):
@@ -144,6 +153,7 @@ def save_http(
     keep_existing,
     fct_pre_save,
     fct_post_save,
+    fct_is_invalid=always_false,
 ):
     logging.debug(f"save_http({url}, {save_as})")
 
@@ -163,7 +173,7 @@ def save_http(
             return r
         # HACK: put in one last lock so it doesn't download twice
         with locks_for(_ + ".tmp"):
-            r = _save_http_cached((fct_pre_save or do_nothing)(url), _)
+            r = _save_http_cached((fct_pre_save or do_nothing)(url), _, fct_is_invalid)
         # logging.debug(f"do_save({_}) - returning {r}")
         # mark_downloaded(_)
         return _
@@ -215,11 +225,12 @@ def try_save_http(
     fct_post_save,
     max_save_retries=RETRY_MAX_ATTEMPTS,
     check_code=False,
+    fct_is_invalid=always_false,
 ):
     save_tries = 0
     while True:
         try:
-            return save_http(url, save_as, keep_existing, fct_pre_save, fct_post_save)
+            return save_http(url, save_as, keep_existing, fct_pre_save, fct_post_save, fct_is_invalid)
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
