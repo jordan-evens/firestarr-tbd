@@ -90,7 +90,7 @@ class SourceFeatureM3Download(SourceFeature):
 
         df = get_shp("perimeters")
         # HACK: if empty then no results returned so fill with today where missing
-        df["LASTDATE"].loc[df["LASTDATE"].isna()] = datetime.date.today()
+        df.loc[df["LASTDATE"].isna(), "LASTDATE"] = datetime.date.today()
         df["datetime"] = to_utc(df["LASTDATE"])
         since = pd.to_datetime(self._last_active_since, utc=True)
         return df.loc[df["datetime"] >= since]
