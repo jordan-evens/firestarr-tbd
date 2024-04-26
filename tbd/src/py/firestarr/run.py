@@ -659,7 +659,7 @@ class Run(object):
                     if self.check_do_publish():
                         n = len(sim_times)
                         logging.info(
-                            "Total of {} fires took {}s - average time is {}s".format(n, sim_time, sim_time / n)
+                            "Total of {} fires took {}s - average time is {:0.1f}s".format(n, sim_time, sim_time / n)
                         )
                         publish_all(self._dir_output, force=changed)
                         logging.debug(f"Done publishing results for {g}")
