@@ -46,9 +46,7 @@ class SourceFeatureM3Service(SourceFeature):
         filter = None
         if self._last_active_since:
             # FIX: implement upper bound
-            filter = (
-                f"lastdate >= {self._last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
-            )
+            filter = f"lastdate >= {self._last_active_since.strftime('%Y-%m-%d')}T00:00:00Z"
 
         def do_parse(_):
             logging.debug(f"Reading {_}")
@@ -97,9 +95,7 @@ class SourceFeatureM3Download(SourceFeature):
 
 
 class SourceFeatureM3(SourceFeature):
-    def __init__(
-        self, dir_out, origin, last_active_since_offset=DEFAULT_LAST_ACTIVE_SINCE_OFFSET
-    ) -> None:
+    def __init__(self, dir_out, origin, last_active_since_offset=DEFAULT_LAST_ACTIVE_SINCE_OFFSET) -> None:
         super().__init__(bounds=None)
         self._origin = origin
         self._dir_out = dir_out
@@ -109,9 +105,9 @@ class SourceFeatureM3(SourceFeature):
             if last_active_since_offset is not None
             else datetime.date(self._origin.today.year, 1, 1)
         )
-        self._source = (
-            SourceFeatureM3Service if USE_CWFIS_SERVICE else SourceFeatureM3Download
-        )(self._dir_out, self._last_active_since)
+        self._source = (SourceFeatureM3Service if USE_CWFIS_SERVICE else SourceFeatureM3Download)(
+            self._dir_out, self._last_active_since
+        )
 
     def _get_features(self):
         return self._source.get_features()
@@ -123,9 +119,7 @@ def make_name_ciffc(df):
 
     return tqdm_util.apply(
         df,
-        lambda x: make_name(
-            x["datetime"], x["field_agency_code"], x["field_agency_fire_id"]
-        ),
+        lambda x: make_name(x["datetime"], x["field_agency_code"], x["field_agency_fire_id"]),
         desc="Generating names",
     )
 
@@ -191,13 +185,7 @@ class SourceFireCiffcService(SourceFire):
     def _get_fires(self):
         save_as = f"{self._dir_out}/ciffc_current.json"
         filter = (
-            " and ".join(
-                [
-                    f"\"field_stage_of_control_status\"<>'{status}'"
-                    for status in self._status_ignore
-                ]
-            )
-            or None
+            " and ".join([f"\"field_stage_of_control_status\"<>'{status}'" for status in self._status_ignore]) or None
         )
 
         def do_parse(_):
@@ -213,18 +201,14 @@ class SourceFireCiffcService(SourceFire):
             gdf["fire_name"] = make_name_ciffc(gdf)
             gdf = gdf.loc[gdf["datetime"].apply(lambda x: x.year) == self._year]
             gdf = gdf.set_index(["fire_name"])
-            dupes = [
-                k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1
-            ]
+            dupes = [k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1]
             df_dupes = gdf.loc[dupes].reset_index()
             gdf = gdf.drop(dupes)
             df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)[
                 ["fire_name", "datetime", "area", "status"]
             ]
             df_pick = (
-                df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)
-                .groupby(["fire_name"])
-                .first()
+                df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False).groupby(["fire_name"]).first()
             )
             df_pick.crs = df_dupes.crs
             gdf = pd.concat([gdf, df_pick])
@@ -328,9 +312,7 @@ class SourceFwiCwfisDownload(SourceFwi):
         )
 
     def _get_fwi(self, lat, lon, date):
-        return select_fwi(
-            lat, lon, self._get_wx_base(self._dir_out, date), self.columns
-        )
+        return select_fwi(lat, lon, self._get_wx_base(self._dir_out, date), self.columns)
 
 
 class SourceFwiCwfisService(SourceFwi):
@@ -339,20 +321,14 @@ class SourceFwiCwfisService(SourceFwi):
         self._dir_out = dir_out
 
     def _get_fwi(self, lat, lon, date):
-        df_wx = model_data.get_wx_cwfis(
-            self._dir_out, date, indices=",".join(self.columns)
-        )
+        df_wx = model_data.get_wx_cwfis(self._dir_out, date, indices=",".join(self.columns))
         return select_fwi(lat, lon, df_wx, self.columns)
 
 
 class SourceFwiCwfis(SourceFwi):
     def __init__(self, dir_out) -> None:
         super().__init__(bounds=None)
-        self._source = (
-            SourceFwiCwfisService(dir_out)
-            if USE_CWFIS_SERVICE
-            else SourceFwiCwfisDownload(dir_out)
-        )
+        self._source = SourceFwiCwfisService(dir_out) if USE_CWFIS_SERVICE else SourceFwiCwfisDownload(dir_out)
 
     def _get_fwi(self, lat, lon, date):
         return self._source.get_fwi(lat, lon, date)

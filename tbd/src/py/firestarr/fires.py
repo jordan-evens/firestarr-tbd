@@ -116,9 +116,7 @@ def name_groups(df):
     df_groups["lon"] = centroids.x
     df_groups["lat"] = centroids.y
     # HACK: name based on UTM coordinates
-    df_groups["raster"] = tqdm_util.apply(
-        df_groups["lon"], find_best_zone_raster, desc="Finding zone rasters"
-    )
+    df_groups["raster"] = tqdm_util.apply(df_groups["lon"], find_best_zone_raster, desc="Finding zone rasters")
     df_rasters = pd.DataFrame({"raster": np.unique(df_groups[["raster"]])})
     df_rasters["wkt"] = tqdm_util.apply(
         df_rasters["raster"],
@@ -142,9 +140,7 @@ def name_groups(df):
         n_or_s = "N" if lat >= 0 else "S"
         return f"{zone:02d}{n_or_s}_{basemap:05d}"
 
-    for i, g in tqdm_util.apply(
-        df_centroids.groupby(["zone"]), desc="Naming groups by zone"
-    ):
+    for i, g in tqdm_util.apply(df_centroids.groupby(["zone"]), desc="Naming groups by zone"):
         wkt = g["wkt"].iloc[0]
         g_zone = g.to_crs(wkt)
         df_groups.loc[g_zone.index, "fire_name"] = tqdm_util.apply(

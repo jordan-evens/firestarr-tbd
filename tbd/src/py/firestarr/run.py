@@ -139,9 +139,7 @@ class Run(object):
         self._do_merge = do_merge
         self._dir_fires = dir_fires
         self._prefix = (
-            "m3"
-            if self._dir_fires is None
-            else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
+            "m3" if self._dir_fires is None else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
         )
         FMT_RUNID = "%Y%m%d%H%M"
         self._modelrun = None
@@ -153,9 +151,7 @@ class Run(object):
         else:
             self._name = os.path.basename(dir)
             if not self._name.startswith(self._prefix):
-                raise RuntimeError(
-                    f"Trying to resume {dir} that didn't use fires from {self._prefix}"
-                )
+                raise RuntimeError(f"Trying to resume {dir} that didn't use fires from {self._prefix}")
             self._dir = dir
             self._id = self._name.replace(f"{self._prefix}_", "")
             self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
@@ -196,9 +192,7 @@ class Run(object):
                 self._modelrun = rundata.get("modelrun", None)
                 self._published_clean = rundata.get("published_clean", False)
             except Exception as ex:
-                logging.error(
-                    f"Couldn't load existing simulation file {self._file_rundata}"
-                )
+                logging.error(f"Couldn't load existing simulation file {self._file_rundata}")
                 logging.error(get_stack(ex))
 
     def save_rundata(self):
@@ -244,9 +238,7 @@ class Run(object):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=no_wait)
 
         def get_df_fire(fire_name):
-            return df_fires.reset_index().loc[
-                df_fires.reset_index()["fire_name"] == fire_name
-            ]
+            return df_fires.reset_index().loc[df_fires.reset_index()["fire_name"] == fire_name]
 
         def reset_and_run_fire(dir_fire):
             fire_name = os.path.basename(dir_fire)
@@ -256,17 +248,13 @@ class Run(object):
             return self.do_run_fire(dir_fire, no_wait=no_wait)
 
         def check_copy_outputs(dir_fire):
-            changed, interim, files_project = copy_fire_outputs(
-                dir_fire, self._dir_output, changed=force_copy
-            )
+            changed, interim, files_project = copy_fire_outputs(dir_fire, self._dir_output, changed=force_copy)
             was_running = check_running(dir_fire)
             return dir_fire, changed, interim, files_project, was_running
 
         want_dates = WANT_DATES
 
-        dirs_fire = [
-            os.path.join(self._dir_sims, fire_name) for fire_name in df_fires.index
-        ]
+        dirs_fire = [os.path.join(self._dir_sims, fire_name) for fire_name in df_fires.index]
         results = keep_trying(
             fct=check_copy_outputs,
             values=dirs_fire,
@@ -302,9 +290,7 @@ class Run(object):
                     is_running[dir_fire] = df_fire
                 else:
                     if 1 != len(df_fire):
-                        raise RuntimeError(
-                            f"Expected exactly one fire in file {file_sim}"
-                        )
+                        raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
                     data = df_fire.iloc[0]
                     max_days = data["max_days"]
                     date_offsets = [x for x in want_dates if x <= max_days]
@@ -346,9 +332,7 @@ class Run(object):
             changed = True
         if is_incomplete and run_incomplete:
             logging.info("Running %d incomplete fires" % len(is_prepared))
-            keep_trying(
-                reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete"
-            )
+            keep_trying(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
             changed = True
         any_change = any_change or changed
         if not no_publish and (no_wait or any_change):
@@ -369,8 +353,7 @@ class Run(object):
         # FIX: check the weather or folders here
         df_final, changed = self.run_fires_in_dir(check_missing=False)
         logging.info(
-            f"Done running {len(df_final)} fires with a total simulation time"
-            f"of {df_final['sim_time'].sum()}"
+            f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
         )
         return df_final, changed
 
@@ -416,9 +399,7 @@ class Run(object):
                     time.sleep(60)
                 if not was_running:
                     # publish didn't work, but nothing is running, so retry running?
-                    logging.error(
-                        "Changes found when publishing, but nothing running so retry"
-                    )
+                    logging.error("Changes found when publishing, but nothing running so retry")
         self._published_clean = True
         self.save_rundata()
         logging.info("Finished simulation for {self._run_id}")
@@ -435,9 +416,7 @@ class Run(object):
 
         logging.info(f"Removing file locks for {self._id}")
         force_remove(
-            itertools.chain.from_iterable(
-                [find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]]
-            )
+            itertools.chain.from_iterable([find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]])
         )
         return df_final
 
@@ -510,9 +489,7 @@ class Run(object):
         logging.info(f"Have {len(files_sim)} groups prepared")
         if FLAG_SAVE_PREPARED:
             try:
-                df_fires_prepared = pd.concat(
-                    [read_gpd_file_safe(get_simulation_file(f)) for f in files_sim]
-                )
+                df_fires_prepared = pd.concat([read_gpd_file_safe(get_simulation_file(f)) for f in files_sim])
                 for col in ["datetime", "date_startup", "start_time"]:
                     df_fires_prepared.loc[:, col] = df_fires_prepared[col].astype(str)
                 df_fires_prepared = df_fires_prepared.rename(
@@ -539,20 +516,14 @@ class Run(object):
             # only keep fires that are in bounds
             df = df.loc[np.unique(df_join.index)]
             if "PRIORITY" in df_join.columns:
-                df_priority = (
-                    df_join.sort_values(["PRIORITY"]).groupby("fire_name").first()
-                )
+                df_priority = df_join.sort_values(["PRIORITY"]).groupby("fire_name").first()
                 df["ID"] = df_priority.loc[df.index, "ID"]
                 df["PRIORITY"] = df_priority.loc[df.index, "PRIORITY"]
             if "DURATION" in df_bounds.columns:
                 df["DURATION"] = (
-                    df_join.sort_values(["DURATION"], ascending=False)
-                    .groupby("fire_name")
-                    .first()["DURATION"]
+                    df_join.sort_values(["DURATION"], ascending=False).groupby("fire_name").first()["DURATION"]
                 )
-        df["DURATION"] = np.min(
-            list(zip([self._max_days] * len(df), df["DURATION"])), axis=1
-        )
+        df["DURATION"] = np.min(list(zip([self._max_days] * len(df), df["DURATION"])), axis=1)
         df = df.sort_values(["PRIORITY", "ID", "DURATION", "area"])
         return df
 
@@ -573,21 +544,15 @@ class Run(object):
         dir_names = set(dirs_fire)
         diff_extra = dir_names.difference(fire_names)
         if diff_extra:
-            raise RuntimeError(
-                f"Have directories for fires that aren't in input:\n{diff_extra}"
-            )
-        expected = {
-            f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names
-        }
+            raise RuntimeError(f"Have directories for fires that aren't in input:\n{diff_extra}")
+        expected = {f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names}
 
         def check_file(file_sim):
             try:
                 if os.path.isfile(file_sim):
                     df_fire = read_gpd_file_safe(file_sim)
                     if 1 != len(df_fire):
-                        raise RuntimeError(
-                            f"Expected exactly one fire in file {file_sim}"
-                        )
+                        raise RuntimeError(f"Expected exactly one fire in file {file_sim}")
                     return True
             except KeyboardInterrupt as ex:
                 raise ex
@@ -595,11 +560,7 @@ class Run(object):
                 pass
             return False
 
-        missing = [
-            fire_name
-            for fire_name, file_sim in expected.items()
-            if not check_file(file_sim)
-        ]
+        missing = [fire_name for fire_name, file_sim in expected.items() if not check_file(file_sim)]
         if missing:
             if remove_directory:
                 logging.info(f"Need to make directories for {len(missing)} simulations")
@@ -634,8 +595,7 @@ class Run(object):
                 self.prep_folders()
         # HACK: order by PRIORITY so it doesn't make it alphabetical by ID
         dirs_sim = {
-            id[1]: [os.path.join(self._dir_sims, x) for x in g.index]
-            for id, g in df_fires.groupby(["PRIORITY", "ID"])
+            id[1]: [os.path.join(self._dir_sims, x) for x in g.index] for id, g in df_fires.groupby(["PRIORITY", "ID"])
         }
         # run for each boundary in order
         changed = False
@@ -674,20 +634,14 @@ class Run(object):
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
                         logging.warning(f"Exception running {dir_fire} was {result}")
-                    if (
-                        result is None
-                        or isinstance(result, Exception)
-                        or (not np.all(result.get("sim_time", False)))
-                    ):
+                    if result is None or isinstance(result, Exception) or (not np.all(result.get("sim_time", False))):
                         logging.warning("Could not run fire %s", dir_fire)
                         fire_name = os.path.basename(dir_fire)
                         if fire_name not in results:
                             results[fire_name] = None
                     else:
                         if 1 != len(result):
-                            raise RuntimeError(
-                                "Expected exactly one result for %s" % dir_fire
-                            )
+                            raise RuntimeError("Expected exactly one result for %s" % dir_fire)
                         row_result = result.iloc[0]
                         fire_name = row_result["fire_name"]
                         if fire_name not in results:
@@ -705,9 +659,7 @@ class Run(object):
                     if self.check_do_publish():
                         n = len(sim_times)
                         logging.info(
-                            "Total of {} fires took {}s - average time is {}s".format(
-                                n, sim_time, sim_time / n
-                            )
+                            "Total of {} fires took {}s - average time is {}s".format(n, sim_time, sim_time / n)
                         )
                         publish_all(self._dir_output, force=changed)
                         logging.debug(f"Done publishing results for {g}")
@@ -730,18 +682,13 @@ class Run(object):
                 return dir_fire
             return self.do_run_fire(dir_fire, prepare_only=True)
 
-        successful, unsuccessful = keep_trying_groups(
-            fct=prepare_fire, values=dirs_sim, desc="Preparing simulations"
-        )
+        successful, unsuccessful = keep_trying_groups(fct=prepare_fire, values=dirs_sim, desc="Preparing simulations")
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
 
         if self._is_batch:
-            dirs_fire = [
-                os.path.join(self._dir_sims, x)
-                for x in itertools.chain.from_iterable(dirs_sim.values())
-            ]
+            dirs_fire = [os.path.join(self._dir_sims, x) for x in itertools.chain.from_iterable(dirs_sim.values())]
             # make one list of tasks and submit it
             tasks_existed = apply(
                 dirs_fire,
@@ -791,9 +738,7 @@ def make_resume(dir_resume=None, do_publish=False, do_merge=False, *args, **kwar
     # resume last run
     if dir_resume is None:
         dirs = [
-            x
-            for x in list_dirs(DIR_SIMS)
-            if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
+            x for x in list_dirs(DIR_SIMS) if os.path.exists(os.path.join(DIR_SIMS, x, "data", "df_fires_groups.shp"))
         ]
         if not dirs:
             # raise RuntimeError("No valid runs to resume")

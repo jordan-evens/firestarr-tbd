@@ -40,9 +40,7 @@ STATUS_RANK = ["OUT", "UC", "BH", "OC", "UNK"]
 def wx_interpolate(df):
     date_min = df["datetime"].min()
     date_max = df["datetime"].max()
-    times = pd.DataFrame(
-        pd.date_range(date_min, date_max, freq="h").values, columns=["datetime"]
-    )
+    times = pd.DataFrame(pd.date_range(date_min, date_max, freq="h").values, columns=["datetime"])
     crs = df.crs
     index_names = df.index.names
     df = df.reset_index()
@@ -77,21 +75,15 @@ def assign_fires(
     df_features = df_features.reset_index().to_crs(CRS_COMPARISON)
     df_fires = df_fires.reset_index().to_crs(CRS_COMPARISON)
     df_join = df_features.sjoin_nearest(df_fires, how="left", max_distance=1 * KM_TO_M)
-    df_join["status_rank"] = tqdm_util.apply(
-        df_join["status"], find_rank, desc="Ranking by status"
+    df_join["status_rank"] = tqdm_util.apply(df_join["status"], find_rank, desc="Ranking by status")
+    df_unmatched = df_join[df_join["fire_name"].isna()][["datetime_left", "geometry"]].rename(
+        columns={"datetime_left": "datetime"}
     )
-    df_unmatched = df_join[df_join["fire_name"].isna()][
-        ["datetime_left", "geometry"]
-    ].rename(columns={"datetime_left": "datetime"})
     # HACK: if unmatched then ignore more readily based on age
     min_active = to_utc(origin.today - datetime.timedelta(days=days_to_keep_unmatched))
-    df_unmatched = df_unmatched[df_unmatched["datetime"] >= min_active].reset_index(
-        drop=True
-    )
+    df_unmatched = df_unmatched[df_unmatched["datetime"] >= min_active].reset_index(drop=True)
     df_join = df_join[~df_join["fire_name"].isna()]
-    df_join = df_join.sort_values(
-        ["index", "status_rank", "area", "fire_name"], ascending=False
-    )
+    df_join = df_join.sort_values(["index", "status_rank", "area", "fire_name"], ascending=False)
     # should mean only one copy of each geometry, and picked by fire with highest status
     df_first = df_join.groupby("index").first()
     # doesn't have crs after groupby
@@ -100,14 +92,10 @@ def assign_fires(
     # so that we can replace all of their named entries
     df_status = df_join.loc[:].set_index(["index"])
     # assign highest status for any of overlapping fires to all fires that overlap
-    df_status[["status", "status_rank"]] = df_first.loc[df_status.index][
-        ["status", "status_rank"]
-    ]
+    df_status[["status", "status_rank"]] = df_first.loc[df_status.index][["status", "status_rank"]]
     # dissolve by fire_name but use max so highest lastdate stays
     df_dissolve = df_status.dissolve(by="fire_name", aggfunc="max").reset_index()
-    df_dissolve["datetime"] = pick_max(
-        df_dissolve["datetime_left"], df_dissolve["datetime_right"]
-    )
+    df_dissolve["datetime"] = pick_max(df_dissolve["datetime_left"], df_dissolve["datetime_right"])
     # at this point we might have the same geometry for multiple fires, but that
     # just means they'll all get replaced with it and then the group dissolve
     # will take care of duplicates
@@ -136,9 +124,7 @@ def override_fires(df_fires, df_override):
         if cols_missing:
             df_override.loc[matched, cols_missing] = df_fires.loc[matched, cols_missing]
         df_fires.loc[matched] = df_override.loc[matched]
-        df_fires.loc[matched, "datetime"] = pick_max_by_column(
-            df_fires, df_override, "datetime", matched
-        )
+        df_fires.loc[matched, "datetime"] = pick_max_by_column(df_fires, df_override, "datetime", matched)
     return df_fires
 
 
@@ -147,12 +133,8 @@ def find_sources_in_module(module, class_type):
     import inspect
 
     module = importlib.import_module(module)
-    classes = [
-        y for y in [getattr(module, x) for x in dir(module)] if inspect.isclass(y)
-    ]
-    return [
-        c for c in classes if (issubclass(c, class_type) and not inspect.isabstract(c))
-    ]
+    classes = [y for y in [getattr(module, x) for x in dir(module)] if inspect.isclass(y)]
+    return [c for c in classes if (issubclass(c, class_type) and not inspect.isabstract(c))]
 
 
 def find_sources_in_dir(class_type, dir_search="private"):
@@ -163,9 +145,7 @@ def find_sources_in_dir(class_type, dir_search="private"):
     modules = [f"datasources.{dir_search.replace('/', '.')}.{f}" for f in files]
     from itertools import chain
 
-    return list(
-        chain.from_iterable([find_sources_in_module(m, class_type) for m in modules])
-    )
+    return list(chain.from_iterable([find_sources_in_module(m, class_type) for m in modules]))
 
 
 def find_sources(class_type, private_first=False):
@@ -188,9 +168,7 @@ class SourceFireActive(SourceFire):
         self._origin = origin
         self._status_include = status_include
         self._status_omit = status_omit
-        self._source_ciffc = SourceFireCiffc(
-            dir_out, status_ignore=None, year=self._origin.today.year
-        )
+        self._source_ciffc = SourceFireCiffc(dir_out, status_ignore=None, year=self._origin.today.year)
         # sources for features that we don't have a fire attached to
         self._source_features = [
             SourceFeatureM3(self._dir_out, self._origin),
@@ -200,9 +178,7 @@ class SourceFireActive(SourceFire):
             for s in find_sources(SourceFeature, private_first=False)
         ]
         # sources for features that area associated with specific fires
-        self._source_fires = [
-            s(self._dir_out) for s in find_sources(SourceFire, private_first=False)
-        ]
+        self._source_fires = [s(self._dir_out) for s in find_sources(SourceFire, private_first=False)]
 
     @cache
     def _get_fires(self):
@@ -223,16 +199,12 @@ class SourceFireActive(SourceFire):
         df_ciffc = self._source_ciffc.get_fires()
         df_fires = df_ciffc.loc[:]
         save_shp(df_fires, os.path.join(self._dir_out, "df_fires_ciffc"))
-        df_circles = df_fires.loc[df_fires.geometry.type == "Point"].to_crs(
-            CRS_COMPARISON
-        )
+        df_circles = df_fires.loc[df_fires.geometry.type == "Point"].to_crs(CRS_COMPARISON)
         # HACK: put in circles of proper area so spatial join should hopefully
         # overlap actual polygons
         df_circles["geometry"] = tqdm_util.apply(
             df_circles,
-            lambda x: x.geometry.buffer(
-                max(0.1, area_ha_to_radius_m(max(0, x["area"])))
-            ),
+            lambda x: x.geometry.buffer(max(0.1, area_ha_to_radius_m(max(0, x["area"])))),
             desc="Converting points with area to circles",
         ).simplify(100)
         df_circles = df_circles.to_crs(CRS_WGS84)
@@ -244,13 +216,9 @@ class SourceFireActive(SourceFire):
             df_src = src.get_features()
             if 0 < len(df_src):
                 save_fires(df_src, f"df_fires_from_feature_source_{i:02d}")
-                df_src_fires, df_unmatched_cur = assign_fires(
-                    self._origin, df_src, df_fires
-                )
+                df_src_fires, df_unmatched_cur = assign_fires(self._origin, df_src, df_fires)
                 save_fires(df_src_fires, f"df_fires_assigned_feature_source_{i:02d}")
-                save_fires(
-                    df_unmatched_cur, f"df_fires_umatched_feature_source_{i:02d}"
-                )
+                save_fires(df_unmatched_cur, f"df_fires_umatched_feature_source_{i:02d}")
                 df_unmatched = pd.concat([df_unmatched, df_unmatched_cur])
                 df_fires = override_fires(df_fires, df_src_fires)
             save_fires(df_fires, f"df_fires_after_feature_source_{i:02d}")
@@ -296,9 +264,9 @@ class SourceFwiBest(SourceFwi):
         super().__init__(bounds=None)
         self._dir_out = dir_out
         # want private sources first since it stops at first match
-        self._sources = [
-            s(self._dir_out) for s in find_sources(SourceFwi, private_first=True)
-        ] + [SourceFwiCwfis(self._dir_out)]
+        self._sources = [s(self._dir_out) for s in find_sources(SourceFwi, private_first=True)] + [
+            SourceFwiCwfis(self._dir_out)
+        ]
 
     @cache
     def _get_fwi(self, lat, lon, date):
@@ -320,13 +288,7 @@ class SourceModelAll(SourceModel):
         ]
 
     def _get_wx_model(self, lat, lon):
-        return pd.concat(
-            [
-                src._get_wx_model(lat, lon)
-                for src in self._sources
-                if src.applies_to(lat, lon)
-            ]
-        )
+        return pd.concat([src._get_wx_model(lat, lon) for src in self._sources if src.applies_to(lat, lon)])
 
 
 class SourceHourlyEmpty(SourceHourly):

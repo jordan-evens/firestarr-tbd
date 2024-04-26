@@ -30,10 +30,7 @@ if check_missing:
         self.prep_folders()
 is_batch = assign_firestarr_batch(self._dir_sims)
 # HACK: order by PRIORITY so it doesn't make it alphabetical by ID
-dirs_sim = {
-    id[1]: [os.path.join(self._dir_sims, x) for x in g.index]
-    for id, g in df_fires.groupby(["PRIORITY", "ID"])
-}
+dirs_sim = {id[1]: [os.path.join(self._dir_sims, x) for x in g.index] for id, g in df_fires.groupby(["PRIORITY", "ID"])}
 # run for each boundary in order
 changed = False
 any_change = False
@@ -45,10 +42,7 @@ sim_times = []
 file_lock_publish = os.path.join(self._dir_output, "publish")
 
 
-dirs_fire = [
-    os.path.join(self._dir_sims, x)
-    for x in itertools.chain.from_iterable(dirs_sim.values())
-]
+dirs_fire = [os.path.join(self._dir_sims, x) for x in itertools.chain.from_iterable(dirs_sim.values())]
 dir_fire = dirs_fire[0]
 
 dir_fire

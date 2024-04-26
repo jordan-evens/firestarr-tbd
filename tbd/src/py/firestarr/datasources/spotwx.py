@@ -43,9 +43,7 @@ def get_spotwx_limit():
 
 
 # NOTE: does not work with multiprocess unless bucket_class is set properly
-limiter = Limiter(
-    RequestRate(get_spotwx_limit(), Duration.MINUTE), bucket_class=FileLockSQLiteBucket
-)
+limiter = Limiter(RequestRate(get_spotwx_limit(), Duration.MINUTE), bucket_class=FileLockSQLiteBucket)
 
 
 def limit_api(x):
@@ -96,17 +94,11 @@ def get_model_dir_uncached(model):
     lat = BOUNDS["latitude"]["mid"]
     lon = BOUNDS["longitude"]["mid"]
     url = make_spotwx_query(model, lat, lon, output="archive")
-    save_as = os.path.join(
-        ensure_dir(os.path.join(DIR_SPOTWX, model)), f"spotwx_{model}_current.csv"
-    )
+    save_as = os.path.join(ensure_dir(os.path.join(DIR_SPOTWX, model)), f"spotwx_{model}_current.csv")
 
     def do_parse(df):
-        model_time = np.max(
-            df["modelrun"].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d_%HZ"))
-        )
-        return ensure_dir(
-            os.path.join(DIR_SPOTWX, model, model_time.strftime("%Y%m%d_%HZ"))
-        )
+        model_time = np.max(df["modelrun"].apply(lambda x: datetime.datetime.strptime(x, "%Y%m%d_%HZ")))
+        return ensure_dir(os.path.join(DIR_SPOTWX, model, model_time.strftime("%Y%m%d_%HZ")))
 
     return try_save_http(
         url,
@@ -159,11 +151,7 @@ def query_wx_ensembles_rounded(model, lat, lon):
     def do_parse(df_initial):
         index = ["MODEL", "LAT", "LON", "ISSUEDATE", "UTC_OFFSET", "DATETIME"]
         cols = ["TMP", "RH", "WSPD", "WDIR", "PRECIP"]
-        keep_cols = [
-            x
-            for x in df_initial.columns
-            if x in index or np.any([x.startswith(f"{_}_") for _ in cols])
-        ]
+        keep_cols = [x for x in df_initial.columns if x in index or np.any([x.startswith(f"{_}_") for _ in cols])]
         df_by_var = pd.melt(df_initial, id_vars=index, value_vars=keep_cols)
         df_by_var["var"] = tqdm_util.apply(
             df_by_var["variable"],
@@ -179,9 +167,7 @@ def query_wx_ensembles_rounded(model, lat, lon):
             )
         ]
         del df_by_var["variable"]
-        df_wx = pd.pivot(
-            df_by_var, index=index + ["id"], columns="var", values="value"
-        ).reset_index()
+        df_wx = pd.pivot(df_by_var, index=index + ["id"], columns="var", values="value").reset_index()
         df_wx.groupby(["id"])["PRECIP_ttl"]
         df = None
         for i, g in df_wx.groupby(["id"]):
@@ -201,9 +187,7 @@ def query_wx_ensembles_rounded(model, lat, lon):
         df["datetime"] = remove_timezone_utc(df["datetime"])
         num_days = len(np.unique(df["datetime"].dt.date))
         if 14 > num_days:
-            raise RuntimeError(
-                f"Expected at least 14 days of weather in GEPS model but got {num_days}"
-            )
+            raise RuntimeError(f"Expected at least 14 days of weather in GEPS model but got {num_days}")
         df = df.rename(columns={"tmp": "temp", "wdir": "wd", "wspd": "ws"})
         df["issuedate"] = remove_timezone_utc(df["issuedate"])
         index_final = ["model", "lat", "lon", "issuedate", "id"]
@@ -216,9 +200,7 @@ def query_wx_ensembles_rounded(model, lat, lon):
         save_as,
         keep_existing=True,
         fct_pre_save=limit_api,
-        fct_post_save=make_spotwx_parse(
-            need_column="UTC_OFFSET", fct_parse=do_parse, expected_value=0
-        ),
+        fct_post_save=make_spotwx_parse(need_column="UTC_OFFSET", fct_parse=do_parse, expected_value=0),
     )
 
 
@@ -240,9 +222,7 @@ class SourceGEPS(SourceModel):
         return "geps"
 
     def _get_wx_model(self, lat, lon):
-        file_out = os.path.join(
-            self._dir_out, make_filename(self.model, lat, lon, "geojson")
-        )
+        file_out = os.path.join(self._dir_out, make_filename(self.model, lat, lon, "geojson"))
 
         # retry once in case existing file doesn't parse
         @ensures(

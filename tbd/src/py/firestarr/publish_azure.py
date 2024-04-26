@@ -26,12 +26,7 @@ def get_token():
     # HACK: % in config file gets parsed as variable replacement, so unqoute for that
     token = CONFIG.get("AZURE_TOKEN", "")
     args = token.split("&")
-    args_kv = {
-        k: v
-        for k, v in [
-            (arg[: arg.index("=")], arg[(arg.index("=") + 1) :]) for arg in args
-        ]
-    }
+    args_kv = {k: v for k, v in [(arg[: arg.index("=")], arg[(arg.index("=") + 1) :]) for arg in args]}
     args_kv["sig"] = urllib.parse.quote(args_kv["sig"])
     return "&".join(f"{k}={v}" for k, v in args_kv.items())
 
@@ -52,9 +47,7 @@ def read_config():
 
 def get_blob_service_client():
     retry = ExponentialRetry(initial_backoff=1, increment_base=3, retry_total=5)
-    return BlobServiceClient(
-        account_url=AZURE_URL, credential=AZURE_TOKEN, retry_policy=retry
-    )
+    return BlobServiceClient(account_url=AZURE_URL, credential=AZURE_TOKEN, retry_policy=retry)
 
 
 def get_container():
@@ -90,9 +83,7 @@ def upload_static():
     logging.info("Listing blobs")
     dir_remote = "static"
     # delete old blobs
-    blob_list = [
-        x for x in container.list_blobs(name_starts_with=f"{dir_remote}/bounds.")
-    ]
+    blob_list = [x for x in container.list_blobs(name_starts_with=f"{dir_remote}/bounds.")]
     for blob in blob_list:
         logging.info(f"Deleting {blob.name}")
         container.delete_blob(blob.name)
@@ -146,21 +137,15 @@ def upload_dir(dir_run=None):
     dir_sim_data = os.path.join(DIR_SIMS, run_name, "data")
     dir_shp = "current_shp"
     file_root = "df_fires_prioritized"
-    files_group = [
-        x for x in listdir_sorted(dir_sim_data) if x.startswith(f"{file_root}.")
-    ]
-    blob_list = [
-        x for x in container.list_blobs(name_starts_with=f"{dir_shp}/{file_root}")
-    ]
+    files_group = [x for x in listdir_sorted(dir_sim_data) if x.startswith(f"{file_root}.")]
+    blob_list = [x for x in container.list_blobs(name_starts_with=f"{dir_shp}/{file_root}")]
     for blob in blob_list:
         logging.info(f"Deleting {blob.name}")
         container.delete_blob(blob.name)
     for f in files_group:
         path = os.path.join(dir_sim_data, f)
         with open(path, "rb") as data:
-            container.upload_blob(
-                name=f"{dir_shp}/{f}", data=data, metadata=metadata, overwrite=True
-            )
+            container.upload_blob(name=f"{dir_shp}/{f}", data=data, metadata=metadata, overwrite=True)
     logging.info("Listing blobs")
     # delete old blobs
     blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
@@ -178,16 +163,12 @@ def upload_dir(dir_run=None):
         path = os.path.join(dir_combined, f)
         # HACK: just upload into archive too so we don't have to move later
         with open(path, "rb") as data:
-            container.upload_blob(
-                name=f"current/{f}", data=data, metadata=metadata, overwrite=True
-            )
+            container.upload_blob(name=f"current/{f}", data=data, metadata=metadata, overwrite=True)
         archived = f"archive/{f}"
         if is_empty([x for x in container.list_blobs(archived)]):
             # don't upload if already in archive
             with open(path, "rb") as data:
-                container.upload_blob(
-                    name=archived, data=data, metadata=metadata, overwrite=True
-                )
+                container.upload_blob(name=archived, data=data, metadata=metadata, overwrite=True)
 
 
 if "__main__" == __name__:

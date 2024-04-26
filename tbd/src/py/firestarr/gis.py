@@ -1,4 +1,5 @@
 """Non-ArcGIS GIS utility code"""
+
 import collections
 import math
 import os

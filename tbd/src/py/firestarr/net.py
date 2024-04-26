@@ -234,9 +234,7 @@ def try_save_http(
                     CACHE_DOWNLOADED[save_as] = None
                 return None
             if FLAG_DEBUG or save_tries >= max_save_retries:
-                logging.error(
-                    f"Downloading {m} to {save_as} - Failed after {save_tries} attempts"
-                )
+                logging.error(f"Downloading {m} to {save_as} - Failed after {save_tries} attempts")
                 raise ex
             logging.warning(f"Downloading {m} to {save_as} - Retrying after:\n\t{ex}")
             time.sleep(RETRY_DELAY)

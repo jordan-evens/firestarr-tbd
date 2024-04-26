@@ -1,4 +1,5 @@
 """Ontario's publicly available data"""
+
 import datetime
 import os
 import urllib.parse
@@ -60,9 +61,7 @@ def fix_date(t):
     except TypeError:
         pass
     # HACK: shp can't save datetime
-    return fmt_date(
-        (datetime.datetime(1970, 1, 1) + datetime.timedelta(milliseconds=t))
-    )
+    return fmt_date((datetime.datetime(1970, 1, 1) + datetime.timedelta(milliseconds=t)))
 
 
 def fix_dates(df):
@@ -83,9 +82,7 @@ def parse_by_extension(path):
         return f.readlines()
 
 
-def do_query(
-    save_as, layer, fct_parse=None, query=QUERY_ALL, fields=FIELDS_ALL, other=None
-):
+def do_query(save_as, layer, fct_parse=None, query=QUERY_ALL, fields=FIELDS_ALL, other=None):
     url = f"{URL_SERVER}/{layer}/query?" + "&".join(
         [
             f"where={urllib.parse.quote(query)}",
@@ -123,17 +120,11 @@ def get_query_date(field, datetime_start=None, datetime_end=None):
 def check_latest(layer):
     save_as = os.path.join(DIR_AGENCY_ON, f"on_wx_layer{layer}_latest.pjson")
     # look up closest station in layer and make a query
-    stats = (
-        '[{"statisticType":"max","onStatisticField":"'
-        + DATE_FIELDS[layer]
-        + '","outStatisticFieldName":"latest"}]'
-    )
+    stats = '[{"statisticType":"max","onStatisticField":"' + DATE_FIELDS[layer] + '","outStatisticFieldName":"latest"}]'
     other = [f"outStatistics={urllib.parse.quote(stats)}"]
 
     def do_parse(df):
-        return pd.to_datetime(
-            fix_date(df["features"][0]["attributes"]["LATEST"]), utc=True
-        )
+        return pd.to_datetime(fix_date(df["features"][0]["attributes"]["LATEST"]), utc=True)
 
     return do_query(save_as, layer, fct_parse=do_parse, fields=["latest"], other=other)
 
@@ -169,9 +160,7 @@ def try_download_fwi(date):
             f"DFOSS_WEATHER_TYPE='{wx_type}'",
         ]
     )
-    save_as = os.path.join(
-        DIR_AGENCY_ON, f"on_wx_layer{layer}_{date.strftime(FMT_DATE_YMD)}.geojson"
-    )
+    save_as = os.path.join(DIR_AGENCY_ON, f"on_wx_layer{layer}_{date.strftime(FMT_DATE_YMD)}.geojson")
 
     def do_parse(df):
         if is_empty(df):
@@ -196,9 +185,7 @@ def try_download_fwi(date):
 @cache
 def get_fwi(date):
     # once we have fwi actuals for a date they shouldn't change
-    file_fwi_date = os.path.join(
-        DIR_AGENCY_ON, f"fwi_{date.strftime(FMT_DATE_YMD)}.geojson"
-    )
+    file_fwi_date = os.path.join(DIR_AGENCY_ON, f"fwi_{date.strftime(FMT_DATE_YMD)}.geojson")
     # can't ensure that this is going to be created if no data exists
     with locks_for(file_fwi_date):
         if not os.path.exists(file_fwi_date):
@@ -223,9 +210,7 @@ def make_file_name(layer, hr_begin, hr_end, dir_out=DIR_AGENCY_ON):
     fmt_end = "" if hr_end is None else f"_{hr_end.strftime(FMT_FILE_MINUTE)}"
     return os.path.join(
         dir_out,
-        f"on_wx_layer{layer}_"
-        f"{hr_begin.strftime(FMT_FILE_MINUTE)}"
-        f"{fmt_end}.geojson",
+        f"on_wx_layer{layer}_" f"{hr_begin.strftime(FMT_FILE_MINUTE)}" f"{fmt_end}.geojson",
     )
 
 
@@ -327,10 +312,7 @@ def get_hourly(dir_out, layer, datetime_start, datetime_end):
                 df_wx = pd.concat([df_wx, get_hourly_date(dir_out, layer, d)])
             df_wx["datetime"] = remove_timezone_utc(df_wx["datetime"])
             df_wx = df_wx.sort_values([COLUMN_TIME])
-            df_wx = df_wx.loc[
-                (df_wx["datetime"] >= datetime_start)
-                & (df_wx["datetime"] <= datetime_end)
-            ]
+            df_wx = df_wx.loc[(df_wx["datetime"] >= datetime_start) & (df_wx["datetime"] <= datetime_end)]
             save_geojson(df_wx, file_stn_wx)
         return read_gpd_file_safe(file_stn_wx)
 

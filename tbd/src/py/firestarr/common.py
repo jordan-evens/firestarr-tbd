@@ -1,4 +1,5 @@
 """Shared code"""
+
 import configparser
 import datetime
 import inspect

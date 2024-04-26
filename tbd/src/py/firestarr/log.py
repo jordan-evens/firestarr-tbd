@@ -14,9 +14,7 @@ from logging import (
 
 DEFAULT_LEVEL = INFO
 # fixed-width for levelname so '-' before message always lines up
-DEFAULT_FORMAT = (
-    "%(asctime)s - %(levelname)8s - [%(filename)s:%(lineno)d] - %(message)s"
-)
+DEFAULT_FORMAT = "%(asctime)s - %(levelname)8s - [%(filename)s:%(lineno)d] - %(message)s"
 
 
 # HACK: want to have a thing called "logging" that refers to our own logger
@@ -62,11 +60,7 @@ def add_log_file(file_log, *args, **kwargs):
 
 
 def add_log_rotating(file_log, when="d", interval=1, *args, **kwargs):
-    return add_handler(
-        handlers.TimedRotatingFileHandler(file_log, when=when, interval=interval),
-        *args,
-        **kwargs
-    )
+    return add_handler(handlers.TimedRotatingFileHandler(file_log, when=when, interval=interval), *args, **kwargs)
 
 
 add_handler(LOG_DEFAULT)

@@ -74,9 +74,7 @@ def check_columns(df, template):
 
 
 def to_gdf(df, crs=CRS_WGS84):
-    return gpd.GeoDataFrame(
-        df, crs=crs, geometry=gpd.points_from_xy(df["lon"], df["lat"], crs=crs)
-    )
+    return gpd.GeoDataFrame(df, crs=crs, geometry=gpd.points_from_xy(df["lon"], df["lat"], crs=crs))
 
 
 def make_point(lat, lon, crs=CRS_WGS84):
@@ -127,9 +125,7 @@ class Source(ABC):
         return check_columns(df, cls._provides)
 
     def applies_to(self, lat, lon) -> bool:
-        return self._bounds is None or np.any(
-            self._bounds.contains(make_point(lat, lon, self._bounds.crs))
-        )
+        return self._bounds is None or np.any(self._bounds.contains(make_point(lat, lon, self._bounds.crs)))
 
 
 class SourceFeature(Source):
@@ -201,9 +197,7 @@ class SourceHourly(Source):
 
     @final
     def get_wx_hourly(self, lat, lon, datetime_start, datetime_end=None):
-        return self.check_columns(
-            self._get_wx_hourly(lat, lon, datetime_start, datetime_end)
-        )
+        return self.check_columns(self._get_wx_hourly(lat, lon, datetime_start, datetime_end))
 
 
 class SourceFwi(Source):

@@ -10,12 +10,8 @@ KM_TO_M = 1000
 BY_NAME = {}
 BUFFER_RESOLUTION = 32
 SERVER_CENSUS = "https://www12.statcan.gc.ca/census-recensement"
-URL_CANADA = (
-    f"{SERVER_CENSUS}/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip"
-)
-URL_PARKS = (
-    "https://clss.nrcan-rncan.gc.ca/data-donnees/nplb_llpn/CLAB_CA_2023-03-07.zip"
-)
+URL_CANADA = f"{SERVER_CENSUS}/2011/geo/bound-limit/files-fichiers/2016/lpr_000b16a_e.zip"
+URL_PARKS = "https://clss.nrcan-rncan.gc.ca/data-donnees/nplb_llpn/CLAB_CA_2023-03-07.zip"
 centroids_canada = None
 DIR_BOUNDS = os.path.join(DIR_GENERATED, "bounds")
 FILE_BOUNDS = "bounds.geojson"
@@ -106,17 +102,8 @@ def get_features_canada(
     def do_create(_):
         # col_name needs to be english name of area so it can join
         # on bounds column EN
-        df_canada = (
-            load_geometry_file(file_canada)
-            .sort_values([col_name])
-            .set_index([col_name])
-        )
-        df = (
-            load_geometry_file(file_bounds)
-            .sort_values(["EN"])
-            .to_crs(df_canada.crs)
-            .set_index(["EN"])
-        )
+        df_canada = load_geometry_file(file_canada).sort_values([col_name]).set_index([col_name])
+        df = load_geometry_file(file_bounds).sort_values(["EN"]).to_crs(df_canada.crs).set_index(["EN"])
         df.loc[df_canada.index, "geometry"] = df_canada["geometry"]
         # don't need precise bounds so simplify
         df = simplify(df, 1)
@@ -130,9 +117,7 @@ def update_bounds(
     file_bounds=FILE_BOUNDS,
     dir_out=DIR_BOUNDS,
 ):
-    df_canada = get_features_canada(
-        file_bounds=file_bounds, dir_out=DIR_BOUNDS
-    ).set_index(["EN"])
+    df_canada = get_features_canada(file_bounds=file_bounds, dir_out=DIR_BOUNDS).set_index(["EN"])
     crs_orig = df_canada.crs
 
     df_parks = load_geometry_file(URL_PARKS)
@@ -170,9 +155,7 @@ def update_bounds(
     df = to_file(simplify(df, 100), "simplify_100km")
     assert list(df["EN"]) == list(df_bounds["EN"])
     bounds = (
-        df.reset_index()[["ID", "EN", "FR", "PRIORITY", "DURATION", "geometry"]]
-        .set_index(["ID"])
-        .to_crs(CRS_WGS84)
+        df.reset_index()[["ID", "EN", "FR", "PRIORITY", "DURATION", "geometry"]].set_index(["ID"]).to_crs(CRS_WGS84)
     )
     bounds.to_file(file_bounds)
     bounds.to_file(os.path.join(dir_out, "bounds.shp"))

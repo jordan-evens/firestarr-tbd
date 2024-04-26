@@ -34,6 +34,7 @@ run_current = None
 run_attempts = 0
 no_retry = False
 
+
 def run_main(args):
     global did_wait
     global run_current
@@ -87,19 +88,14 @@ def run_main(args):
                     set_model_dir(dir_model)
                     logging.info(f"Have new weather for {dir_model}")
                     break
-                logging.info(
-                    f"Previous run already used {modelrun} - "
-                    f"waiting {WAIT_WX}s for updated weather"
-                )
+                logging.info(f"Previous run already used {modelrun} - " f"waiting {WAIT_WX}s for updated weather")
                 did_wait = True
                 time.sleep(WAIT_WX)
             # have new weather so don't resume
             return False
 
         should_resume = wait_and_check_resume()
-        logging.info(
-            f"Based on weather and previous run, should_resume == {should_resume}"
-        )
+        logging.info(f"Based on weather and previous run, should_resume == {should_resume}")
     # assume resuming if not waiting
     if no_resume and should_resume:
         logging.warning("Should resume but was told not to, so making new run")
