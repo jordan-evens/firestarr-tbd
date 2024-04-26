@@ -71,12 +71,14 @@ def convex_hull(df):
 
 def fill(df):
     df = df.iloc[:]
-    for i in range(len(df)):
-        b = df.iloc[i].geometry
+
+    def do_fill(b):
         polys = [shapely.geometry.Polygon(x) for x in b.interiors]
         for p in polys:
             b = b.union(p)
-        df.geometry.iloc[i] = b
+        return b
+
+    df.loc[:, "geometry"] = df.geometry.apply(do_fill)
     return df
 
 
