@@ -190,6 +190,8 @@ class SourceFireCiffcService(SourceFire):
 
         def do_parse(_):
             gdf = gdf_from_file(_)
+            # HACK: ignore previous year fires
+            gdf = gdf.loc[gdf["field_situation_report_date"].apply(lambda x: x.year) == self._year]
             gdf = gdf.rename(
                 columns={
                     "field_status_date": "datetime",
