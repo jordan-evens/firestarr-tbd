@@ -1,3 +1,4 @@
+import datetime
 import math
 import os
 import re
@@ -26,6 +27,7 @@ from common import (
     DIR_TBD,
     DIR_TMP,
     FLAG_IGNORE_PERIM_OUTPUTS,
+    FMT_FILE_SECOND,
     SECONDS_PER_HOUR,
     WANT_DATES,
     ensure_dir,
@@ -351,6 +353,13 @@ def run_fire_from_folder(
                         g = re.match(".*Total simulation time was (.*) seconds", line)
                         if g and g.groups():
                             sim_time = int(g.groups()[0])
+                    # if we didn't parse a time then move old log
+                    if not sim_time:
+                        filetime = os.path.getmtime(file_log)
+                        filedatetime = datetime.datetime.fromtimestamp(filetime)
+                        file_log_old = file_log.replace(".log", f"{filedatetime.strftime(FMT_FILE_SECOND)}.log")
+                        logging.warning(f"Moving old log file from {file_log} to {file_log_old}")
+                        shutil.move(file_log, file_log_old)
             except KeyboardInterrupt as ex:
                 raise ex
             except Exception:

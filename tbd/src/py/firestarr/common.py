@@ -34,6 +34,7 @@ FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
 FMT_DATE_YMD = "%Y%m%d"
 FMT_TIME = "%H%M"
 FMT_FILE_MINUTE = "%Y%m%d_%H%M"
+FMT_FILE_SECOND = "%Y%m%d_%H%M_%S"
 
 # makes groups that are too big because it joins mutiple groups into a chain
 # DEFAULT_GROUP_DISTANCE_KM = 60
