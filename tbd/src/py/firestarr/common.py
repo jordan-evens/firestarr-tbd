@@ -62,11 +62,6 @@ USE_CWFIS_SERVICE = False
 TIMEDELTA_DAY = datetime.timedelta(days=1)
 TIMEDELTA_HOUR = datetime.timedelta(hours=1)
 
-# use default for keep_trying() if None
-# CONCURRENT_SIMS = None
-# HACK: try just running a few at a time since time limit is low
-CONCURRENT_SIMS = max(1, tqdm_util.MAX_PROCESSES // 8)
-
 CREATION_OPTIONS = [
     "COMPRESS=LZW",
     "TILED=YES",

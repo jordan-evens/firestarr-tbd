@@ -3,7 +3,7 @@ import os
 import timeit
 
 import tqdm_util
-from common import CONCURRENT_SIMS
+
 from main import make_resume
 
 from tbd import assign_firestarr_batch, check_running
@@ -220,7 +220,7 @@ def run_fire(dir_fire):
 # tqdm_util.keep_trying(
 #     run_fire,
 #     dirs_fire,
-#     max_processes=len(df_fires) if self._is_batch else CONCURRENT_SIMS,
+#     max_processes=len(df_fires),
 #     no_limit=self._is_batch,
 #     desc="Running simulations",
 # )
@@ -228,7 +228,7 @@ def run_fire(dir_fire):
 tqdm_util.pmap_by_group(
     run_fire,
     dirs_sim,
-    max_processes=len(df_fires) if self._is_batch else CONCURRENT_SIMS,
+    max_processes=len(df_fires),
     no_limit=self._is_batch,
     desc="Running simulations",
 )

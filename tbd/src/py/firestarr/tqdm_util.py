@@ -1,6 +1,7 @@
 import collections
 import contextlib
 import itertools
+import math
 
 import multiprocess
 import multiprocess.pool
@@ -10,12 +11,30 @@ import pandas as pd
 from log import logging
 from tqdm.auto import tqdm
 
+MAX_ATTEMPTS = 1
 MAX_PROCESSES = multiprocess.cpu_count()
 TQDM_DEPTH = multiprocess.Value("i", 0)
 DEFAULT_KEEP_ALL = True
 KEEP_LEVELS = 2
 MINITERS = 2
 TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
+
+
+def max_concurrent():
+    # HACK: so we can lower number of concurrent processes when things fail
+    n = math.ceil((1.0 * MAX_PROCESSES) / math.pow(MAX_ATTEMPTS, 2))
+    return n
+
+
+def update_max_attempts(n):
+    global MAX_ATTEMPTS
+    old = MAX_ATTEMPTS
+    # HACK: so we can lower number of concurrent processes when things fail
+    if n > old:
+        MAX_ATTEMPTS = n
+        logging.warning(
+            f"Increasing number of attempts so far to {n} from {old} means limiting to {max_concurrent()} concurrent now"
+        )
 
 
 @contextlib.contextmanager
@@ -85,11 +104,11 @@ def initializer():
 
 def init_pool(processes=None, no_limit=False):
     if processes is None:
-        processes = MAX_PROCESSES
+        processes = max_concurrent()
     # allow overriding above number of cpus if really wanted
     if not no_limit:
         # no point in starting more than the number of cpus?
-        processes = min(processes, MAX_PROCESSES)
+        processes = min(processes, max_concurrent())
     # ignore Ctrl+C in workers
     return multiprocess.pool.Pool(
         initializer=initializer,
@@ -103,7 +122,7 @@ def pmap(fct, values, max_processes=None, no_limit=False, *args, **kwargs):
     # result_direct = apply_direct(fct, values, try_only=True, *args, **kwargs)
     # if result_direct is not None:
     #     return result_direct
-    is_single = (1 == max_processes) or (not no_limit and 1 == MAX_PROCESSES)
+    is_single = (1 == max_processes) or (not no_limit and 1 == max_concurrent())
     if is_single:
         # don't bother with pool if only one process
         return [fct(x) for x in apply(values, *args, **kwargs)]

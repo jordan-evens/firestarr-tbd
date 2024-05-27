@@ -7,7 +7,7 @@ import timeit
 
 import numpy as np
 import pandas as pd
-import tqdm_util
+from tqdm_util import update_max_attempts
 from common import (
     BOUNDS,
     DEFAULT_FILE_LOG_LEVEL,
@@ -685,6 +685,17 @@ class Run(object):
             return self.do_run_fire(dir_fire, prepare_only=True)
 
         successful, unsuccessful = keep_trying_groups(fct=prepare_fire, values=dirs_sim, desc="Preparing simulations")
+
+        # can't do this in prepare_fire because it's not going to change across threads
+        # HACK: try to run less simulations if they've been failing
+        max_attempts = 0
+        for k, v in dirs_sim.items():
+            for dir_fire in v:
+                num_attempts = 1 + len(
+                    [x for x in os.listdir(dir_fire) if x.startswith("firestarr") and x.endswith(".log")]
+                )
+                max_attempts = max(max_attempts, num_attempts)
+        update_max_attempts(max_attempts)
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
