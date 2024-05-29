@@ -436,6 +436,8 @@ def run_fire_from_folder(
                 )
                 if perim is not None:
                     args = args + f" --perim {strip_dir(perim)}"
+                # HACK: use tee to pipe to file and stdout
+                args = args + " 2>&1 | tee -a from_tee.log"
                 args = args.replace("\\", "/")
 
                 def mk_sim_sh(*a, **k):
