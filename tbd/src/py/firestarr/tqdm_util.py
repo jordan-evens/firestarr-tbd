@@ -22,7 +22,8 @@ TqdmArgs = collections.namedtuple("TqdmArgs", ["position", "leave"])
 
 def max_concurrent():
     # HACK: so we can lower number of concurrent processes when things fail
-    n = math.ceil((1.0 * MAX_PROCESSES) / math.pow(MAX_ATTEMPTS, 2))
+    # n = math.ceil((1.0 * MAX_PROCESSES) / math.pow(MAX_ATTEMPTS, 2))
+    n = math.ceil((1.0 * MAX_PROCESSES) / MAX_ATTEMPTS)
     return n
 
 
