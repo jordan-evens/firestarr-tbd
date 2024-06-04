@@ -4,7 +4,12 @@ services:
     build:
       context: .
       target: gis
-      dockerfile: .docker/Dockerfile_gis
+      dockerfile: .docker/Dockerfile_tbd
+      args:
+        GCC_VERSION: ${GCC_VERSION}
+        PERF_VERSION: ${PERF_VERSION}
+        USERNAME: ${USERNAME}
+        USER_ID: ${USER_ID}
       tags:
         - tbd_gis:${VERSION}
     volumes:

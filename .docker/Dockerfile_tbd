@@ -52,6 +52,15 @@ RUN . /appl/.venv/bin/activate \
 RUN chown -R ${USERNAME}:${USERNAME} /appl
 
 
+FROM tbd_dev AS gis
+ARG VERSION
+ARG USERNAME
+ARG USER_ID
+WORKDIR /appl/gis/
+RUN echo cd /appl/gis >> /home/${USERNAME}/.bashrc
+USER ${USERNAME}
+ENTRYPOINT tail -f /dev/null
+
 FROM tbd_dev AS tbd_dev_svc
 ARG VERSION
 # run as root so we can redirect to where docker logs will show progress

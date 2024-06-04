@@ -20,12 +20,9 @@ from rasterio.plot import show
 import glob
 import logging
 import sys
-sys.path.append('../util')
 import common
 
-import sys
-sys.path.append(os.path.dirname(sys.executable))
-import gdal_merge as gm
+import osgeo_utils.gdal_merge as gm
 
 
 DATA_DIR = os.path.realpath('../data')
@@ -65,7 +62,8 @@ def define_bounds():
 
 
 def to_download(url):
-    return common.save_http(DOWNLOAD_DIR, url, ignore_existing=True)
+    save_as = os.path.join(DOWNLOAD_DIR, os.path.basename(url))
+    return common.save_http(url, save_as, ignore_existing=True)
 
 if __name__ == '__main__':
     if not os.path.exists(EARTHENV):

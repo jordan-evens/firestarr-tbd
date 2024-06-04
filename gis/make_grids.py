@@ -2,6 +2,7 @@ from __future__ import print_function
 import gc
 
 # import shapefile
+from osgeo import gdal, ogr, osr
 import rasterio
 from rasterio.merge import merge
 from rasterio.plot import show
@@ -11,24 +12,19 @@ from shapely.geometry import box
 import geopandas as gpd
 from fiona.crs import from_epsg
 import pycrs
-import gdal
 import os
 import fiona
 import rasterio.mask
 import rasterio.rio
-import osr
 from pyproj import Proj
 import numpy as np
 import math
 import pandas as pd
-import gdalconst
-from osgeo import ogr
 import osgeo
 import subprocess
 
 import sys
 
-sys.path.append("../util")
 import common
 import logging
 
@@ -43,7 +39,8 @@ import sys
 
 SCRIPTS_DIR = os.path.join(os.path.dirname(sys.executable))
 sys.path.append(SCRIPTS_DIR)
-import gdal_merge as gm
+import osgeo_utils.gdal_merge as gm
+
 
 
 def fill(data, invalid=None):
@@ -574,6 +571,8 @@ def check_merged(filled_tif, zone, cols, rows):
             SCRIPTS_DIR + "/gdal_merge.py",
             "-co",
             "COMPRESS=DEFLATE",
+            "-co",
+            "TILED=YES"
             "-o",
             merged_tif,
             polywater_tif,
