@@ -9,7 +9,7 @@ RUN apt-get update --fix-missing
 FROM gcc-updated AS gcc-cmake-with_libs
 RUN apt-get install -y \
   cron curl nano procps psmisc tar util-linux unzip wget zip \
-  libgdal-dev gdal-bin \
+  libtbb-dev libgdal-dev gdal-bin \
   libtiff-dev libgeotiff-dev cmake \
   && export CPLUS_INCLUDE_PATH=/usr/include/gdal \
   && export C_INCLUDE_PATH=/usr/include/gdal
