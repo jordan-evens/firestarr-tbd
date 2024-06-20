@@ -436,14 +436,13 @@ def run_fire_from_folder(
                 )
                 if perim is not None:
                     args = args + f" --perim {strip_dir(perim)}"
-                # HACK: use tee to pipe to file and stdout
-                args = args + " 2>&1 | tee -a from_tee.log"
                 args = args.replace("\\", "/")
 
                 def mk_sim_sh(*a, **k):
                     with open(file_sh, "w") as f_out:
+                        # HACK: use tee to pipe to file and stdout
                         # add $* at end so with can call with more args from cli
-                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args} $*\n"])
+                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args} $* 2>&1 | tee -a from_tee.log\n"])
 
                 call_safe(mk_sim_sh)
                 # NOTE: needs to be octal base
