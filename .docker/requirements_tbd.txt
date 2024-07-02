@@ -3,6 +3,7 @@ azure-storage-blob
 bs4
 ConfigParser
 filelock
+fiona
 geopandas
 ipython
 multiprocess
