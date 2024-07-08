@@ -7,7 +7,7 @@ fiona
 geopandas
 ipython
 multiprocess
-numpy
+numpy<2
 pandas
 psutil
 pyarrow
