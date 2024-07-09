@@ -49,7 +49,7 @@ WORKDIR /appl/tbd/
 COPY .docker/requirements_tbd.txt /appl/requirements_tbd.txt
 RUN . /appl/.venv/bin/activate \
   && python -m pip install -r /appl/requirements_tbd.txt
-RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
+RUN chown -R ${USERNAME}:${USERNAME} /appl
 
 
 FROM tbd_dev AS tbd_dev_svc
@@ -94,7 +94,7 @@ RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
 COPY --from=tbd_build /appl/tbd/tbd /appl/tbd/
 COPY ./tbd/fuel.lut /appl/tbd/
 COPY ./tbd/settings.ini /appl/tbd/
-RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
+RUN chown -R ${USERNAME}:${USERNAME} /appl
 USER ${USERNAME}
 
 
@@ -134,7 +134,7 @@ COPY ./tbd/src/py/firestarr /appl/tbd/src/py/firestarr/
 WORKDIR /appl/tbd/src/py/cffdrs-ng
 COPY ./tbd/src/py/cffdrs-ng/NG_FWI.py .
 COPY ./tbd/src/py/cffdrs-ng/util.py .
-RUN chown -R ${USERNAME}:${USERNAME} /appl/tbd
+RUN chown -R ${USERNAME}:${USERNAME} /appl
 USER ${USERNAME}
 ENTRYPOINT /bin/bash
 
