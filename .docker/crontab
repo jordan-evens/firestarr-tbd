@@ -2,3 +2,4 @@
 */31 * * * * root bash -c 'killall lock_run.sh python & rm /appl/data/update.lock' >> /appl/data/logs/killall.log
 * * * * * root sudo -u user bash -c 'date >> /appl/data/test_cron'
 */13 * * * * root sudo -u user bash -c '/appl/tbd/scripts/check_and_publish.sh' >> /appl/data/logs/check_and_publish.log
+* 0 * * * root sudo -u user bash -c '/appl/tbd/scripts/archive_sims.sh'

@@ -32,7 +32,8 @@ RUN apt-get install -y locales \
   && sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
   && locale-gen
 RUN apt-get install -y gdb valgrind time nano ministat \
-  libdwarf-dev libelf-dev libdw-dev linux-perf clang-format
+  libdwarf-dev libelf-dev libdw-dev linux-perf clang-format \
+  p7zip-full
 ARG USER_ID
 RUN groupadd --gid ${USER_ID} ${USERNAME} \
   && useradd --uid ${USER_ID} --gid ${USER_ID} -m ${USERNAME} \
@@ -101,7 +102,7 @@ FROM minideb-with_user AS py_gdal
 RUN apt-get install -y --no-install-recommends \
   cron curl nano procps psmisc tar util-linux unzip wget zip \
   python3-pip libgdal-dev libgeotiff5 python3-numpy python3-gdal \
-  ministat sysstat rsync screen \
+  ministat sysstat rsync screen p7zip-full \
   && update-alternatives --install /usr/bin/python python /usr/bin/python3 10 \
   && apt-get clean \
   && rm -rf \
