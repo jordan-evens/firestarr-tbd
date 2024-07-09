@@ -226,25 +226,32 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     dir_region = ensure_dir(os.path.join(dir_output, "initial"))
     suffix = ""
     is_interim = False
+    if files_interim and files_prob:
+        # HACK: check timestamp and remove if older than interim
+        time_prob = os.path.getmtime(files_prob[0])
+        time_interim = os.path.getmtime(files_interim[0])
+        if time_prob < time_interim:
+            logging.warning(f"Ignoring {files_prob[0]} because {files_interim[0]} is newer")
+            files_prob = []
     if files_interim and not files_prob:
         logging.debug(f"Using interim rasters for {dir_fire}")
         dir_tmp_fire = ensure_dir(os.path.join(DIR_TMP, os.path.basename(dir_output), "interim", fire_name))
         force_remove(dir_tmp_fire)
         call_safe(shutil.copytree, dir_fire, dir_tmp_fire, dirs_exist_ok=True)
         # double check that outputs weren't created while copying
-        probs_tmp, interim_tmp, files_perim = find_outputs(dir_fire)
-        if not probs_tmp:
-            for f_interim in files_interim:
-                f_tmp = f_interim.replace("interim_", "")
-                shutil.move(f_interim, f_tmp)
-            probs_tmp, interim_tmp, files_perim = find_outputs(dir_fire)
-            if interim_tmp:
-                raise RuntimeError("Expected files to be renamed")
-            files_prob = probs_tmp
-            # force copying because not sure when interim is from
-            changed = True
-            suffix = TMP_SUFFIX
-            is_interim = False
+        probs_tmp, interim_tmp, files_perim = find_outputs(dir_tmp_fire)
+        # HACK: since we already avoided files_prob if they were out of date then never worry about probs_tmp
+        for f_interim in interim_tmp:
+            f_tmp = f_interim.replace("interim_", "")
+            shutil.move(f_interim, f_tmp)
+        probs_tmp, interim_tmp, files_perim = find_outputs(dir_tmp_fire)
+        if interim_tmp:
+            raise RuntimeError("Expected files to be renamed")
+        files_prob = probs_tmp
+        # force copying because not sure when interim is from
+        changed = True
+        suffix = TMP_SUFFIX
+        is_interim = True
     files_project = {}
     if files_prob:
         for prob in files_prob:
