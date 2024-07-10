@@ -360,6 +360,11 @@ def run_fire_from_folder(
                         g = re.match(".*Total simulation time was (.*) seconds", line)
                         if g and g.groups():
                             sim_time = int(g.groups()[0])
+                            # HACK: repeat here for now
+                            df_fire["sim_time"] = sim_time
+                            if "dates_out" in df_fire.columns:
+                                del df_fire["dates_out"]
+                            save_geojson(df_fire, file_sim)
             except KeyboardInterrupt as ex:
                 raise ex
             except Exception:
