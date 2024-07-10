@@ -5,6 +5,7 @@ from functools import cache
 
 import model_data
 import pandas as pd
+import geopandas as gpd
 import tqdm_util
 from common import (
     DEFAULT_LAST_ACTIVE_SINCE_OFFSET,
@@ -21,7 +22,7 @@ from datasources.datatypes import (
     make_point,
     make_template_empty,
 )
-from gis import CRS_COMPARISON, CRS_WGS84, gdf_from_file, to_gdf
+from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, gdf_from_file, gdf_to_file, to_gdf
 from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, make_query_geoserver
 from net import try_save_http
 
@@ -91,7 +92,46 @@ class SourceFeatureM3Download(SourceFeature):
         df.loc[df["LASTDATE"].isna(), "LASTDATE"] = datetime.date.today()
         df["datetime"] = to_utc(df["LASTDATE"])
         since = pd.to_datetime(self._last_active_since, utc=True)
-        return df.loc[df["datetime"] >= since]
+        df = df.loc[df["datetime"] >= since]
+        # HACK : add in hotspots
+        df_pts = get_shp("hotspots")
+        gdf_to_file(df_pts, self._dir_out, "df_hotspots")
+        # HACK: if empty then no results returned so fill with today where missing
+        # df_pts.rename(columns={"REP_DATE": "LASTDATE"})
+        # buffer around hotspots
+        resolution = 100
+        buffer_size = 0.1 * KM_TO_M
+        df_pts.geometry = df_pts.buffer(buffer_size, resolution=resolution)
+        # gdf_to_file(df_pts, self._dir_out, "df_hotspots_buffer")
+        # df_pts = df_pts.dissolve().reset_index()
+        # gdf_to_file(df_pts, self._dir_out, "df_hotspots_dissolve")
+        df_pts.geometry = df_pts.simplify(resolution)
+        # gdf_to_file(df_pts, self._dir_out, "df_hot/spots_simplify")
+        df_pts.loc[:, "LASTDATE"] = datetime.date.today()
+        df_pts["datetime"] = to_utc(df_pts["LASTDATE"])
+        # df = df.reset_index()[["datetime", "geometry"]]
+        # gdf_to_file(df, self._dir_out, "df_perimeters_basic")
+        df_pts = df_pts.reset_index()[["datetime", "geometry"]]
+        gdf_to_file(df_pts, self._dir_out, "df_hotspots_basic")
+        df_perims_buffer = df.iloc[:]
+        df_perims_buffer.geometry = df_perims_buffer.buffer(1.1 * KM_TO_M, resolution=resolution)
+        gdf_to_file(df_pts, self._dir_out, "df_perims_buffer")
+        df_join = gpd.sjoin(left_df=df_pts, right_df=df_perims_buffer, how="left")
+        gdf_to_file(df_join, self._dir_out, "df_join")
+        df_join = df_join.loc[df_join["index_right"].isnull()]
+        gdf_to_file(df_join, self._dir_out, "df_join_exclude")
+        df_join = df_join.dissolve().reset_index()
+        gdf_to_file(df_join, self._dir_out, "df_join_exclude_dissolve")
+        df_join = df_join.explode(index_parts=False)
+        gdf_to_file(df_join, self._dir_out, "df_join_explode")
+        df_both = pd.concat([df, df_join])
+        gdf_to_file(df_both, self._dir_out, "df_perimeters_hotspots")
+        # df_both = df_both.reset_index()[["datetime", "geometry"]]
+        # gdf_to_file(df_both, self._dir_out, "df_both_basic")
+        # df_both = df_both.dissolve().reset_index()
+        # gdf_to_file(df_both, self._dir_out, "df_both_dissolve")
+        # exit()
+        return df_both
 
 
 class SourceFeatureM3(SourceFeature):
