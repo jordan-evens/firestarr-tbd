@@ -158,6 +158,15 @@ def list_dirs(path):
     return [x for x in listdir_sorted(path) if os.path.isdir(os.path.join(path, x))]
 
 
+def is_newer_than(file_new, file_old):
+    if not os.path.isfile(file_old):
+        # always newer if nothing exists
+        return True
+    time_new = os.path.getmtime(file_new)
+    time_old = os.path.getmtime(file_old)
+    return time_new > time_old
+
+
 def to_utc(d):
     return pd.to_datetime(d, errors="coerce", utc=True)
 

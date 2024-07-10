@@ -33,6 +33,7 @@ from common import (
     ensure_dir,
     force_remove,
     get_stack,
+    is_newer_than,
     listdir_sorted,
     locks_for,
     logging,
@@ -227,11 +228,11 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     suffix = ""
     is_interim = False
     if files_interim and files_prob:
-        # HACK: check timestamp and remove if older than interim
-        time_prob = os.path.getmtime(files_prob[0])
-        time_interim = os.path.getmtime(files_interim[0])
-        if time_prob < time_interim:
-            logging.warning(f"Ignoring {files_prob[0]} because {files_interim[0]} is newer")
+        # check timestamp and remove if older than interim
+        if len(files_interim) != len(files_prob) or any(
+            [is_newer_than(files_interim[i], files_prob[i]) for i in range(len(files_interim))]
+        ):
+            logging.warning(f"Ignoring {files_prob} because {files_interim} is newer")
             files_prob = []
     if files_interim and not files_prob:
         logging.debug(f"Using interim rasters for {dir_fire}")
@@ -248,8 +249,8 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
         if interim_tmp:
             raise RuntimeError("Expected files to be renamed")
         files_prob = probs_tmp
-        # force copying because not sure when interim is from
-        changed = True
+        # # force copying because not sure when interim is from
+        # changed = True
         suffix = TMP_SUFFIX
         is_interim = True
     files_project = {}
@@ -272,25 +273,24 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             files_project[files_perim[0]] = file_out
     extent = None
     for file_src, file_out in files_project.items():
-        if changed or not os.path.isfile(file_out):
-            if changed or not os.path.isfile(file_out):
-                logging.debug(f"Adding raster to final outputs: {file_src}")
-                # if writing over file then get rid of it
-                force_remove(file_out)
-                # using previous extent is limiting later days
-                if "perim" not in file_src:
-                    extent = None
-                extent = project_raster(
-                    file_src,
-                    file_out,
-                    outputBounds=extent,
-                    # HACK: if nodata is none then 0's should just show up as 0?
-                    nodata=None,
-                )
-                if extent is None:
-                    raise RuntimeError(f"Fire {dir_fire} has invalid output file {file_src}")
-                # if file didn't exist then it's changed now
-                changed = True
+        if changed or is_newer_than(file_src, file_out):
+            logging.debug(f"Adding raster to final outputs: {file_src}")
+            # if writing over file then get rid of it
+            force_remove(file_out)
+            # using previous extent is limiting later days
+            if "perim" not in file_src:
+                extent = None
+            extent = project_raster(
+                file_src,
+                file_out,
+                outputBounds=extent,
+                # HACK: if nodata is none then 0's should just show up as 0?
+                nodata=None,
+            )
+            if extent is None:
+                raise RuntimeError(f"Fire {dir_fire} has invalid output file {file_src}")
+            # if file didn't exist then it's changed now
+            changed = True
     return changed, is_interim, files_project
 
 
