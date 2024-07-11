@@ -147,7 +147,8 @@ if __name__ == "__main__":
         raise RuntimeError(f"Unable to locate simulation model settings file {FILE_TBD_SETTINGS}")
     logging.info("Called with args %s", str(sys.argv))
     args_orig = sys.argv[1:]
-    while not no_retry:
+    should_retry = not no_retry
+    while should_retry:
         # HACK: just do forever for now since running manually
         logging.info("Attempting update")
         while not no_retry:
@@ -155,6 +156,7 @@ if __name__ == "__main__":
             try:
                 # returns true if just finished current run
                 if run_main(args):
+                    should_retry = False
                     break
                 logging.info("Trying again because used old weather")
             except KeyboardInterrupt as ex:
