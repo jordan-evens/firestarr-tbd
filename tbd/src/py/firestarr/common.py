@@ -55,8 +55,8 @@ FILE_LATEST = f"/appl/data/{WX_MODEL}_latest"
 
 PUBLISH_AZURE_WAIT_TIME_SECONDS = 10
 
-# FORMAT_OUTPUT = "COG"
-FORMAT_OUTPUT = "GTiff"
+FORMAT_OUTPUT = "COG"
+# FORMAT_OUTPUT = "GTiff"
 
 USE_CWFIS_SERVICE = False
 TIMEDELTA_DAY = datetime.timedelta(days=1)
@@ -66,7 +66,13 @@ CREATION_OPTIONS = [
     "COMPRESS=LZW",
     "TILED=YES",
     "BLOCKSIZE=512",
+    # # doesn't work
+    # "PREDICTOR=YES",
+    "BIGTIFF=YES",
+    "OVERVIEW_RESAMPLING=MODE",
     "OVERVIEWS=AUTO",
+    # # incredibly slow
+    # "TILING_SCHEME=GoogleMapsCompatible",
     "NUM_THREADS=ALL_CPUS",
 ]
 WANT_DATES = [1, 2, 3, 7, 14]

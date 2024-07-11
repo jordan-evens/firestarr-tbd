@@ -27,6 +27,7 @@ from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
 from osgeo import gdal
 from redundancy import call_safe, get_stack
 from tqdm_util import keep_trying, pmap, tqdm
+from osgeo import gdal
 
 
 def publish_all(
@@ -211,24 +212,14 @@ def merge_dirs(
                         if "GTiff" == FORMAT_OUTPUT:
                             call_safe(shutil.move, file_tmp, file_base)
                         else:
-                            # HACK: reproject should basically just be copy?
-                            # convert to COG
-                            project_raster(
-                                file_tmp,
+                            # can't progressively update COG so need to copy final GTiff in full
+                            logging.info(f"Converting file to {FORMAT_OUTPUT}: {file_base}")
+                            gdal.Translate(
                                 file_base,
-                                nodata=-1,
-                                resolution=100,
+                                file_tmp,
                                 format=FORMAT_OUTPUT,
-                                crs=f"EPSG:{CRS_COMPARISON}",
-                                options=creation_options
-                                + [
-                                    # shouldn't need much precision just for web display
-                                    "NBITS=16",
-                                    # shouldn't need alpha?
-                                    # "ADD_ALPHA=NO",
-                                    # "SPARSE_OK=TRUE",
-                                    "PREDICTOR=YES",
-                                ],
+                                resampleAlg="near",
+                                creationOptions=creation_options,
                             )
                             force_remove(file_tmp)
                         changed = True
