@@ -12,6 +12,7 @@ from common import (
     DIR_ZIP,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_DATE_YMD,
+    FMT_FILE_SECOND,
     is_empty,
     listdir_sorted,
     logging,
@@ -108,7 +109,9 @@ def upload_dir(dir_run=None):
     run_name = os.path.basename(dir_run)
     run_id = run_name[run_name.index("_") + 1 :]
     source = run_name[: run_name.index("_")]
-    date = pd.to_datetime(run_id).date().strftime(FMT_DATE_YMD)
+    as_datetime = pd.to_datetime(run_id)
+    date = as_datetime.strftime(FMT_DATE_YMD)
+    push_datetime = datetime.datetime.now(datetime.UTC)
     container = None
     dir_combined = os.path.join(dir_run, "combined")
     files = listdir_sorted(dir_combined)
@@ -139,24 +142,31 @@ def upload_dir(dir_run=None):
     dir_shp = "current_shp"
     file_root = "df_fires_prioritized"
     files_group = [x for x in listdir_sorted(dir_sim_data) if x.startswith(f"{file_root}.")]
-    blob_list = [x for x in container.list_blobs(name_starts_with=f"{dir_shp}/{file_root}")]
-    for blob in blob_list:
-        logging.info(f"Deleting {blob.name}")
-        container.delete_blob(blob.name)
-    for f in files_group:
-        path = os.path.join(dir_sim_data, f)
-        logging.info(f"Pushing {f}")
+
+    delete_after = []
+
+    def add_delete(match_start):
+        nonlocal delete_after
+        blob_list = [x for x in container.list_blobs(name_starts_with=match_start)]
+        delete_after += blob_list
+
+    def upload(path, name):
+        nonlocal delete_after
+        logging.info(f"Pushing {name}")
         with open(path, "rb") as data:
-            container.upload_blob(name=f"{dir_shp}/{f}", data=data, metadata=metadata, overwrite=True)
-    logging.info("Listing blobs")
-    # delete old blobs
-    blob_list = [x for x in container.list_blobs(name_starts_with="current/firestarr")]
-    for blob in blob_list:
-        logging.info(f"Deleting {blob.name}")
-        container.delete_blob(blob.name)
-    # archive_current(container)
+            container.upload_blob(name=name, data=data, metadata=metadata, overwrite=True)
+        # remove from list of files to delete if overwritten
+        delete_after = [x for x in delete_after if x.name != name]
+
+    # get old blobs for delete after
+    logging.info("Finding current blobs")
+    add_delete(f"{dir_shp}/{file_root}")
+    add_delete("current/firestarr")
+
+    for f in files_group:
+        upload(os.path.join(dir_sim_data, f), f"{dir_shp}/{f}")
+
     for f in files:
-        logging.info(f"Pushing {f}")
         if "perim.tif" == f:
             for_date = origin
         else:
@@ -164,14 +174,15 @@ def upload_dir(dir_run=None):
         metadata["for_date"] = for_date.strftime(FMT_DATE_YMD)
         path = os.path.join(dir_combined, f)
         # HACK: just upload into archive too so we don't have to move later
-        with open(path, "rb") as data:
-            container.upload_blob(name=f"current/{f}", data=data, metadata=metadata, overwrite=True)
-        archived = f"archive/{f}"
-        if is_empty([x for x in container.list_blobs(archived)]):
-            logging.info(f"Archiving {f}")
-            # don't upload if already in archive
-            with open(path, "rb") as data:
-                container.upload_blob(name=archived, data=data, metadata=metadata, overwrite=True)
+        upload(path, f"current/{f}")
+        # FIX: copy from container link instead of uploading multiple times
+        # archive in folder with timestamp so we know when things get pushed
+        upload(path, f"archive/{push_datetime.strftime(FMT_FILE_SECOND)}/{f}")
+
+    # delete old blobs that weren't overwritten
+    for f in delete_after:
+        logging.info(f"Removing {f.name}")
+        container.delete_blob(f)
 
 
 if "__main__" == __name__:
