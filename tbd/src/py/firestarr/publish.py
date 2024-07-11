@@ -24,13 +24,14 @@ from common import (
 )
 from gdal_merge_max import gdal_merge_max
 from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
+from osgeo import gdal
 from redundancy import call_safe, get_stack
 from tqdm_util import keep_trying, pmap, tqdm
 
 
 def publish_all(
     dir_output=None,
-    changed_only=True,
+    changed_only=False,
     force=False,
     force_project=False,
     force_publish=False,
@@ -72,7 +73,7 @@ def find_latest_outputs(dir_output=None):
 
 def merge_dirs(
     dir_input=None,
-    changed_only=True,
+    changed_only=False,
     force=False,
     force_project=False,
     creation_options=CREATION_OPTIONS,

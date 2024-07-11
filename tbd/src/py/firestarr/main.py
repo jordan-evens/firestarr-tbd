@@ -132,12 +132,13 @@ def run_main(args):
     # returns true if just finished current run
     is_outdated = run_current.run_until_successful_or_outdated(no_retry=do_retry)
     is_published = run_current._published_clean
-    should_rerun = not (no_resume or is_outdated) and (not is_published)
+    needs_publish = run_current.check_do_publish() and not is_published
+    should_rerun = (not no_resume) and (is_outdated or needs_publish)
     logging.info(
         f"Run {run_current._name}:\n\t"
         f"is_outdated = {is_outdated}, is_published = {is_published}, should_rerun = {should_rerun}, no_retry == {no_retry}"
     )
-    return no_retry or not should_rerun
+    return no_retry or should_rerun
 
 
 if __name__ == "__main__":
@@ -151,18 +152,17 @@ if __name__ == "__main__":
     while should_retry:
         # HACK: just do forever for now since running manually
         logging.info("Attempting update")
-        while not no_retry:
-            args = args_orig[:]
-            try:
-                # returns true if just finished current run
-                if run_main(args):
-                    should_retry = False
-                    break
-                logging.info("Trying again because used old weather")
-            except KeyboardInterrupt as ex:
-                raise ex
-            except Exception as ex:
-                logging.error(ex)
-                logging.error(get_stack(ex))
-                logging.info("Trying again because of error")
-        logging.info("Finished successfully")
+        args = args_orig[:]
+        try:
+            # returns true if just finished current run
+            if run_main(args):
+                should_retry = False
+                break
+            logging.info("Trying again because used old weather")
+        except KeyboardInterrupt as ex:
+            raise ex
+        except Exception as ex:
+            logging.error(ex)
+            logging.error(get_stack(ex))
+            logging.info("Trying again because of error")
+    logging.info("Finished successfully")

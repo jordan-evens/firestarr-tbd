@@ -145,6 +145,7 @@ SECONDS_PER_HOUR = MINUTES_PER_HOUR * SECONDS_PER_MINUTE
 DEFAULT_BOUNDS = "bounds.geojson"
 
 FILE_LOCK_PUBLISH = os.path.join(DIR_OUTPUT, "publish")
+FILE_LOCK_PREPUBLISH = os.path.join(DIR_OUTPUT, "prepublish")
 
 
 def listdir_sorted(path, ignore_locks=True):

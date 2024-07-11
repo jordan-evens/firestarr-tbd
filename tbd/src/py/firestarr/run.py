@@ -12,6 +12,7 @@ from common import (
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
     DIR_SIMS,
+    FILE_LOCK_PREPUBLISH,
     FILE_LOCK_PUBLISH,
     FILE_TBD_BINARY,
     FILE_TBD_SETTINGS,
@@ -236,10 +237,13 @@ class Run(object):
         self,
         ignore_incomplete_okay=True,
         run_incomplete=False,
-        no_publish=False,
-        force_copy=True,
+        no_publish=None,
+        force_copy=False,
         no_wait=True,
     ):
+        if no_publish is None:
+            no_publish = not self.check_do_publish()
+
         df_fires = self.load_fires()
 
         def run_fire(dir_fire):
@@ -348,6 +352,8 @@ class Run(object):
         if not no_publish:
             logging.info("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
+        if not any_change:
+            return True
         num_done = len(is_complete)
         if is_ignored:
             logging.error(f"Ignored incomplete fires: {list(is_ignored.keys())}")
@@ -401,6 +407,8 @@ class Run(object):
                     # HACK: abstract this later
                     if self._is_batch:
                         finish_job()
+                    # if supposed to publish must have if we succeeded
+                    self._published_clean = self.check_do_publish()
                     break
                 was_running = False
                 while self.is_running():
@@ -410,9 +418,8 @@ class Run(object):
                 if not was_running:
                     # publish didn't work, but nothing is running, so retry running?
                     logging.error("Changes found when publishing, but nothing running so retry")
-        self._published_clean = True
         self.save_rundata()
-        logging.info("Finished simulation for {self._run_id}")
+        logging.info(f"Finished simulation for {self._id}")
 
         # if this is done then shouldn't need any locks for it
         def find_locks(dir_find):
@@ -638,7 +645,7 @@ class Run(object):
             cur_group = g
             cur_results = sim_results
             # print(f"g: {g}\n\tsim_results: {sim_results}")
-            with locks_for(FILE_LOCK_PUBLISH):
+            with locks_for(FILE_LOCK_PREPUBLISH):
                 for i in range(len(sim_results)):
                     okay, result = sim_results[i]
                     # should be in the same order as input
@@ -672,7 +679,7 @@ class Run(object):
                         logging.info(
                             "Total of {} fires took {}s - average time is {:0.1f}s".format(n, sim_time, sim_time / n)
                         )
-                        publish_all(self._dir_output, force=changed)
+                        publish_all(self._dir_output, changed_only=False, force=changed)
                         logging.debug(f"Done publishing results for {g}")
                         # no longer changed because we just published
                     elif self.check_do_merge():
