@@ -15,6 +15,7 @@ from common import (
     PUBLISH_AZURE_WAIT_TIME_SECONDS,
     ensure_dir,
     force_remove,
+    is_newer_than,
     list_dirs,
     listdir_sorted,
     locks_for,
@@ -113,8 +114,8 @@ def merge_dirs(
         def reproject(f):
             changed = False
             f_crs = os.path.join(dir_crs, os.path.basename(f))
-            # don't project if file already exists, but keep track of file for merge
-            if force_project or not os.path.isfile(f_crs):
+            # don't project if file isn't newer, but keep track of file for merge
+            if force_project or is_newer_than(f, f_crs):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full exz\\V tent of the UTM zone?)
                 # do this to /tmp and then copy so it's faster (?)
