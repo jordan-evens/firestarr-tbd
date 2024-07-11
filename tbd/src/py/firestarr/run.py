@@ -7,7 +7,6 @@ import timeit
 
 import numpy as np
 import pandas as pd
-from tqdm_util import update_max_attempts
 from common import (
     BOUNDS,
     DEFAULT_FILE_LOG_LEVEL,
@@ -54,7 +53,15 @@ from log import LOGGER_NAME, add_log_file
 from publish import merge_dirs, publish_all
 from redundancy import call_safe, get_stack
 from simulation import Simulation
-from tqdm_util import apply, keep_trying, keep_trying_groups, pmap, pmap_by_group, tqdm
+from tqdm_util import (
+    apply,
+    keep_trying,
+    keep_trying_groups,
+    pmap,
+    pmap_by_group,
+    tqdm,
+    update_max_attempts,
+)
 
 import tbd
 from tbd import (
@@ -281,7 +288,9 @@ class Run(object):
             dir_fire, changed, interim, files_project, was_running = r
             file_sim = get_simulation_file(dir_fire)
             df_fire = gdf_from_file(file_sim) if os.path.isfile(file_sim) else None
-            if changed is not None:
+            if changed is None:
+                is_ignored[dir_fire] = df_fire
+            elif changed:
                 any_change = True
                 is_changed[dir_fire] = changed
                 is_interim[dir_fire] = interim
@@ -312,8 +321,6 @@ class Run(object):
                         is_complete[dir_fire] = df_fire
                 if dir_fire not in is_complete:
                     not_complete[dir_fire] = df_fire
-            else:
-                is_ignored[dir_fire] = df_fire
         # publish before and after fixing things
         if not no_publish and not no_wait:
             logging.info("Publishing")
@@ -336,7 +343,9 @@ class Run(object):
             keep_trying(reset_and_run_fire, is_incomplete.keys(), desc="Fixing incomplete")
             changed = True
         any_change = any_change or changed
-        if not no_publish and (no_wait or any_change):
+        # not waiting shouldn't trigger this if nothing is different
+        # if not no_publish and (no_wait or any_change):
+        if not no_publish:
             logging.info("Publishing")
             publish_all(self._dir_output, changed_only=False, force=any_change)
         num_done = len(is_complete)
