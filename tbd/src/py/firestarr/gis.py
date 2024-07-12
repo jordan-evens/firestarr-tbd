@@ -45,9 +45,13 @@ VECTOR_FILE_EXTENSION = "gpkg"
 
 
 def gdf_from_file(filename, *args, **kwargs):
-    # funnel everything through this so we can ignore file type everywhere else
-    fct_read = gpd.read_parquet if filename.lower().endswith(".parquet") else gpd.read_file
-    return call_safe(fct_read, filename, *args, **kwargs)
+    import warnings
+    with warnings.catch_warnings():
+        # avoid a bunch of ogr warnings
+        warnings.filterwarnings("ignore", message="Several features with id = 0 have been found")
+        # funnel everything through this so we can ignore file type everywhere else
+        fct_read = gpd.read_parquet if filename.lower().endswith(".parquet") else gpd.read_file
+        return call_safe(fct_read, filename, *args, **kwargs)
 
 
 def ensure_geometry_file(path):
