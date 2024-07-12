@@ -723,7 +723,6 @@ class Run(object):
                 desc="Running simulations",
                 callback_group=check_publish,
             )
-        force_remove(FILE_LOCK_PUBLISH)
         # return all_results, list(all_dates), total_time
         t1 = timeit.default_timer()
         total_time = t1 - t0
