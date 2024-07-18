@@ -704,17 +704,31 @@ class Run(object):
 
         # can't do this in prepare_fire because it's not going to change across threads
         # HACK: try to run less simulations if they've been failing
+        attempts_by_dir = {}
+        attempts_by_area = {}
         max_attempts = 0
         for k, v in dirs_sim.items():
+            max_by_area = 0
             for dir_fire in v:
                 num_attempts = 1 + len(
                     [x for x in os.listdir(dir_fire) if x.startswith("firestarr") and x.endswith(".log")]
                 )
                 max_attempts = max(max_attempts, num_attempts)
+                attempts_by_dir[dir_fire] = num_attempts
+                max_by_area = max(max_by_area, num_attempts)
+            attempts_by_area[k] = max_by_area
         update_max_attempts(max_attempts)
 
         def run_fire(dir_fire):
             return self.do_run_fire(dir_fire, run_only=True, no_wait=self._is_batch)
+
+        def sort_dirs(for_area):
+            # sort directories by number of times they failed in ascending order
+            return [x for _, x in sorted([(attempts_by_dir[d], d) for d in dirs_sim[for_area]])]
+
+        # dictionaries preserve insertion order
+        dirs_sim = {k: sort_dirs(k) for k, v in sorted(attempts_by_area.items(), key=lambda kv: kv[1])}
+        # logging.debug(f"Sorted by area and number of failures is:\n\t{dirs_sim}")
 
         if self._is_batch:
             dirs_fire = [os.path.join(self._dir_sims, x) for x in itertools.chain.from_iterable(dirs_sim.values())]
