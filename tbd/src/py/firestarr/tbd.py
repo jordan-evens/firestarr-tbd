@@ -223,6 +223,8 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     logging.debug(f"Collecting outputs from {dir_fire}")
     fire_name = os.path.basename(dir_fire)
     files_prob, files_interim, files_perim = find_outputs(dir_fire)
+    # HACK: keep track of changed files so we can make sure we copy new things until we can simplify this
+    files_changed = {}
     extent = None
     dir_region = ensure_dir(os.path.join(dir_output, "initial"))
     suffix = ""
@@ -249,6 +251,8 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
         if interim_tmp:
             raise RuntimeError("Expected files to be renamed")
         files_prob = probs_tmp
+        for f in files_prob:
+            files_changed[f] = True
         # # force copying because not sure when interim is from
         # changed = True
         suffix = TMP_SUFFIX
@@ -266,6 +270,9 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             if file_out != file_out_interim:
                 # remove interim if we have final
                 force_remove(file_out_interim)
+                # FIX: which one?
+                files_changed[file_out] = True
+            files_changed[prob] = True
             files_project[prob] = file_out
     if not FLAG_IGNORE_PERIM_OUTPUTS:
         if len(files_perim) > 0:
@@ -273,6 +280,7 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             files_project[files_perim[0]] = file_out
     extent = None
     for file_src, file_out in files_project.items():
+        changed = changed or file_src in files_changed or file_out in files_changed
         if changed or is_newer_than(file_src, file_out):
             logging.debug(f"Adding raster to final outputs: {file_src}")
             # if writing over file then get rid of it
