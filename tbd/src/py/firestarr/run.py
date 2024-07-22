@@ -139,6 +139,7 @@ class Run(object):
         max_days=None,
         do_publish=None,
         do_merge=None,
+        prepare_only=False,
         crs=CRS_COMPARISON,
         verbose=False,
     ) -> None:
@@ -146,6 +147,7 @@ class Run(object):
         self._max_days = MAX_NUM_DAYS if not max_days else max_days
         self._do_publish = do_publish
         self._do_merge = do_merge
+        self._prepare_only = prepare_only
         self._dir_fires = dir_fires
         self._prefix = (
             "m3" if self._dir_fires is None else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
@@ -368,9 +370,10 @@ class Run(object):
         self.prep_folders()
         # FIX: check the weather or folders here
         df_final, changed = self.run_fires_in_dir(check_missing=False)
-        logging.info(
-            f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
-        )
+        if changed is not None:
+            logging.info(
+                f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
+            )
         return df_final, changed
 
     def run_until_successful_or_outdated(self, no_retry=False):
@@ -399,9 +402,13 @@ class Run(object):
         should_try = True
         is_successful = False
         while not is_successful and should_try:
-            should_try = no_retry
+            should_try = not no_retry
             df_final, changed = self.process()
-            while True:
+            is_changed = not (not changed)
+            should_try = should_try and is_changed
+            # while changed is not None:
+            # False or None
+            while is_changed:
                 is_successful = self.check_and_publish()
                 if is_successful:
                     # HACK: abstract this later
@@ -652,8 +659,16 @@ class Run(object):
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
                         logging.warning(f"Exception running {dir_fire} was {result}")
-                    if result is None or isinstance(result, Exception) or (not np.all(result.get("sim_time", False))):
+                    if (
+                        result is None
+                        or isinstance(result, str)
+                        or isinstance(result, Exception)
+                        or (not np.all(result.get("sim_time", False)))
+                    ):
                         logging.warning("Could not run fire %s", dir_fire)
+                        if isinstance(result, str):
+                            logging.error(f"{dir_fire} result is string {result}")
+                            result = None
                         fire_name = os.path.basename(dir_fire)
                         if fire_name not in results:
                             results[fire_name] = None
@@ -701,6 +716,10 @@ class Run(object):
             return self.do_run_fire(dir_fire, prepare_only=True)
 
         successful, unsuccessful = keep_trying_groups(fct=prepare_fire, values=dirs_sim, desc="Preparing simulations")
+
+        if self._prepare_only:
+            logging.info("Done preparing")
+            return None, None
 
         # can't do this in prepare_fire because it's not going to change across threads
         # HACK: try to run less simulations if they've been failing
@@ -764,19 +783,30 @@ class Run(object):
                 min(sim_times),
                 max(sim_times),
             )
-        df_final = pd.concat(
-            # [make_gdf_from_series(r, self._crs) for r in results.values()]
-            [make_gdf_from_series(r, self._crs) for r in results.values() if r is not None]
-        )
+        df_final = None
         try:
-            gdf_to_file(df_final, self._dir_out, "df_fires_final")
+            df_final = pd.concat(
+                # [make_gdf_from_series(r, self._crs) for r in results.values()]
+                [make_gdf_from_series(r, self._crs) for r in results.values() if r is not None]
+            )
+            try:
+                gdf_to_file(df_final, self._dir_out, "df_fires_final")
+            except Exception as ex:
+                logging.error("Couldn't save final fires")
+                logging.error(get_stack(ex))
         except Exception as ex:
-            logging.error("Couldn't save final fires")
-            logging.error(get_stack(ex))
+            # ignore for now
+            pass
         return df_final, any_change
 
 
-def make_resume(dir_resume=None, do_publish=False, do_merge=False, *args, **kwargs):
+def make_resume(
+    dir_resume=None,
+    do_publish=False,
+    do_merge=False,
+    *args,
+    **kwargs,
+):
     # resume last run
     if dir_resume is None:
         dirs = [

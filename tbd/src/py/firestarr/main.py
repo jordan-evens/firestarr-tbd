@@ -33,6 +33,7 @@ did_wait = False
 run_current = None
 run_attempts = 0
 no_retry = False
+do_retry = True
 
 
 def run_main(args):
@@ -40,6 +41,7 @@ def run_main(args):
     global run_current
     global run_attempts
     global no_retry
+    global do_retry
 
     def check_arg(a, args):
         flag = False
@@ -60,6 +62,7 @@ def run_main(args):
     no_merge, args = check_arg("--no-merge", args)
     no_wait, args = check_arg("--no-wait", args)
     no_retry, args = check_arg("--no-retry", args)
+    prepare_only, args = check_arg("--prepare-only", args)
     do_retry = False if no_retry else True
     do_publish = False if no_publish else None
     do_merge = False if no_merge else None
@@ -104,7 +107,12 @@ def run_main(args):
         if 1 < len(args):
             logging.fatal(f"Too many arguments:\n\t {sys.argv}")
         dir_resume = args[0] if args else None
-        run_current = make_resume(dir_resume, do_publish=do_publish, do_merge=do_merge)
+        run_current = make_resume(
+            dir_resume,
+            do_publish=do_publish,
+            do_merge=do_merge,
+            prepare_only=prepare_only,
+        )
         logging.info(f"Resuming previous run in {run_current._dir}")
     else:
         max_days = int(args[1]) if len(args) > 1 else None
@@ -117,7 +125,7 @@ def run_main(args):
                 logging.fatal("Cannot specify number of days if resuming")
                 sys.exit(-1)
             # if we give it a simulation directory then resume those sims
-            run_current = Run(dir=dir_arg, do_publish=do_publish)
+            run_current = Run(dir=dir_arg, do_publish=do_publish, prepare_only=prepare_only)
             logging.info(f"Resuming simulations in {dir_arg}")
             run_current.check_and_publish()
         else:
@@ -127,10 +135,14 @@ def run_main(args):
                 max_days=max_days,
                 do_publish=do_publish,
                 do_merge=do_merge,
+                prepare_only=prepare_only,
             )
     run_attempts += 1
     # returns true if just finished current run
-    is_outdated = run_current.run_until_successful_or_outdated(no_retry=do_retry)
+    is_outdated = run_current.run_until_successful_or_outdated(no_retry=no_retry)
+    if prepare_only:
+        do_retry = False
+        return True
     is_published = run_current._published_clean
     needs_publish = run_current.check_do_publish() and not is_published
     should_rerun = (not no_resume) and (is_outdated or needs_publish)
@@ -148,15 +160,15 @@ if __name__ == "__main__":
         raise RuntimeError(f"Unable to locate simulation model settings file {FILE_TBD_SETTINGS}")
     logging.info("Called with args %s", str(sys.argv))
     args_orig = sys.argv[1:]
-    should_retry = not no_retry
-    while should_retry:
+    # rely on argument parsing later
+    while do_retry:
         # HACK: just do forever for now since running manually
         logging.info("Attempting update")
         args = args_orig[:]
         try:
             # returns true if just finished current run
             if run_main(args):
-                should_retry = False
+                do_retry = False
                 break
             logging.info("Trying again because used old weather")
         except KeyboardInterrupt as ex:

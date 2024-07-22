@@ -385,7 +385,7 @@ def run_fire_from_folder(
         probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
         if not sim_time or len(probs) != len(date_offsets):
             if prepare_only and os.path.isfile(file_sh):
-                return dir_fire
+                return df_fire
             if not run_only or not os.path.isfile(file_sh):
                 lat = float(data["lat"])
                 lon = float(data["lon"])
@@ -461,8 +461,8 @@ def run_fire_from_folder(
                 # NOTE: needs to be octal base
                 os.chmod(file_sh, 0o775)
                 if prepare_only:
-                    # is prepared but not run, so return dir_fire
-                    return dir_fire
+                    # is prepared but not run
+                    return df_fire
             try:
                 # if we're going to run then move old log if it exists
                 if os.path.isfile(file_log):
@@ -489,7 +489,7 @@ def run_fire_from_folder(
             changed = True
         elif prepare_only:
             # still need to run with run_only to copy outputs
-            return dir_fire
+            return df_fire
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
