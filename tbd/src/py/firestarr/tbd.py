@@ -385,6 +385,8 @@ def run_fire_from_folder(
         probs = [x for x in outputs if x.endswith("tif") and x.startswith("probability")]
         if not sim_time or len(probs) != len(date_offsets):
             if prepare_only and os.path.isfile(file_sh):
+                # save changes or else groups won't have startup indices
+                save_geojson(df_fire, file_sim)
                 return df_fire
             if not run_only or not os.path.isfile(file_sh):
                 lat = float(data["lat"])
