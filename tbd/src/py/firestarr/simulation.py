@@ -24,11 +24,13 @@ from datasources.default import (
     SourceModelAll,
     wx_interpolate,
 )
-from gis import gdf_from_file, save_geojson
+from gis import CRS_COMPARISON, KM_TO_M, gdf_from_file, make_point, save_geojson
 from redundancy import NUM_RETRIES
 from timezonefinder import TimezoneFinder
 
 from tbd import get_simulation_file
+
+MAXIMUM_STATION_DISTANCE = 100 * KM_TO_M
 
 
 def save_wx_input(df_wx, file_wx):
@@ -117,12 +119,23 @@ class Simulation(object):
             date_try = self._origin.offset(1)
             # if no data yet then problem with data source so stop
             date_bad = self._origin.offset(-3)
-            df_wx_actual = None
-            while is_empty(df_wx_actual):
+
+            # HACK: get the last couple days and pick the closest station
+            df_wx_actuals = []
+            while date_try > date_bad:
                 date_try = date_try - datetime.timedelta(days=1)
-                if date_try <= date_bad:
-                    raise RuntimeError(f"Problem getting fwi for {fire_name}")
-                df_wx_actual = self._src_fwi.get_fwi(lat, lon, date_try)
+                df_wx_actuals.append(self._src_fwi.get_fwi(lat, lon, date_try))
+            if not df_wx_actuals:
+                raise RuntimeError(f"Problem getting fwi for {fire_name}")
+            df_wx_actual = pd.concat(df_wx_actuals)
+            # HACK: calculate distance (probably the second time)
+            # HACK: figure out if too far away to use
+            pt = make_point(lat, lon, CRS_COMPARISON)
+            dists = df_wx_actual.to_crs(CRS_COMPARISON).distance(pt)
+            dist_min = min(dists)
+            df_wx_actual = df_wx_actual.loc[dists == dist_min]
+            if dist_min > MAXIMUM_STATION_DISTANCE:
+                logging.warning(f"Station for ({lat}, {lon}) is {round(dist_min / KM_TO_M, 1)}km from location")
             ffmc_old, dmc_old, dc_old, date_startup = df_wx_actual.sort_values([COLUMN_TIME], ascending=False).iloc[0][
                 ["ffmc", "dmc", "dc", COLUMN_TIME]
             ]
