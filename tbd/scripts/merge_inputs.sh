@@ -8,6 +8,8 @@ DIR_SIMS=/appl/data/sims
 # scripts/lock_run.sh --no-publish --no-merge --no-resume --no-retry
 # # at this point expect to have all the sims prepared but nothing running
 
+# scripts/force_run.sh --prepare-only --no-resume
+
 # but for now just use the last two runs
 LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 2 | head -n 1`
 

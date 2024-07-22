@@ -11,6 +11,7 @@ from common import (
     FILE_TBD_SETTINGS,
     SECONDS_PER_MINUTE,
     WX_MODEL,
+    check_arg,
     logging,
 )
 from datasources.spotwx import get_model_dir_uncached, set_model_dir
@@ -42,14 +43,6 @@ def run_main(args):
     global run_attempts
     global no_retry
     global do_retry
-
-    def check_arg(a, args):
-        flag = False
-        if a in args:
-            args.remove(a)
-            flag = True
-        logging.info(f"Flag for {a} is set to {flag}")
-        return flag, args
 
     # HACK: just get some kind of parsing for right now
     do_resume, args = check_arg("--resume", args)

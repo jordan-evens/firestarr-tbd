@@ -35,6 +35,7 @@ def publish_all(
     force=False,
     force_project=False,
     force_publish=False,
+    merge_only=False,
 ):
     dir_output = find_latest_outputs(dir_output)
     # check_copy_interim(dir_output, include_interim)
@@ -45,6 +46,9 @@ def publish_all(
             force=force,
             force_project=force_project,
         )
+        if merge_only:
+            logging.info(f"Stopping after merge for {dir_output}")
+            return
         if changed or force or force_publish:
             import publish_azure
 

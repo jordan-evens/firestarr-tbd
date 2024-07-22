@@ -241,6 +241,7 @@ class Run(object):
         run_incomplete=False,
         no_publish=None,
         force_copy=False,
+        force=False,
         no_wait=True,
     ):
         if no_publish is None:
@@ -330,7 +331,12 @@ class Run(object):
         # publish before and after fixing things
         if not no_publish and not no_wait:
             logging.info("Publishing")
-            publish_all(self._dir_output, changed_only=False, force=any_change)
+            publish_all(
+                self._dir_output,
+                changed_only=False,
+                force=any_change,
+                merge_only=not self.check_do_publish(),
+            )
             changed = False
         if is_prepared and run_incomplete:
             logging.info("Running %d prepared fires" % len(is_prepared))
@@ -351,9 +357,14 @@ class Run(object):
         any_change = any_change or changed
         # not waiting shouldn't trigger this if nothing is different
         # if not no_publish and (no_wait or any_change):
-        if not no_publish:
-            logging.info("Publishing")
-            publish_all(self._dir_output, changed_only=False, force=any_change)
+        if self.check_do_merge():
+            logging.info("Publishing" if self.check_do_publish() else "Merging")
+            publish_all(
+                self._dir_output,
+                changed_only=False,
+                force=any_change or force,
+                merge_only=not self.check_do_publish(),
+            )
         if not any_change:
             return True
         num_done = len(is_complete)
@@ -688,20 +699,25 @@ class Run(object):
                 # keep track of if anything was ever chaned
                 any_change = any_change or changed
                 # check if out of date before publishing
-                if changed:
-                    if self.check_do_publish():
+                if any_change:
+                    if self.check_do_merge():
                         n = len(sim_times)
                         logging.info(
                             "Total of {} fires took {}s - average time is {:0.1f}s".format(n, sim_time, sim_time / n)
                         )
-                        publish_all(self._dir_output, changed_only=False, force=changed)
-                        logging.debug(f"Done publishing results for {g}")
-                        # no longer changed because we just published
-                    elif self.check_do_merge():
-                        merge_dirs(self._dir_output)
-                        logging.debug(f"Done merging directories for {g}")
+                        # FIX: why is this forcing and not changed_only?
+                        publish_all(
+                            self._dir_output,
+                            changed_only=False,
+                            force=any_change,
+                            merge_only=not self.check_do_publish(),
+                        )
+                        logging.info(
+                            f"Done {'publishing' if self.check_do_publish() else 'merging'} directories for {g}"
+                        )
                     # just updated so not changed anymore
                     changed = False
+                    any_change = False
 
         # # use callback if at least merging
         # callback_publish = check_publish if self.check_do_merge() else do_nothing

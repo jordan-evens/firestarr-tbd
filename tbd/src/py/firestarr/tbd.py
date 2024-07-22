@@ -38,6 +38,7 @@ from common import (
     locks_for,
     logging,
     run_process,
+    try_remove,
 )
 from gis import (
     Rasterize,
@@ -235,7 +236,14 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             [is_newer_than(files_interim[i], files_prob[i]) for i in range(len(files_interim))]
         ):
             logging.warning(f"Ignoring {files_prob} because {files_interim} is newer")
+            # NOTE: is there any reason to not delete these?
+            # HACK: make a point of marking these as changed
+            for file_old in files_prob:
+                files_changed[file_old] = True
+                try_remove(file_old)
             files_prob = []
+            for f in files_prob:
+                files_changed[f] = True
     if files_interim and not files_prob:
         logging.debug(f"Using interim rasters for {dir_fire}")
         dir_tmp_fire = ensure_dir(os.path.join(DIR_TMP, os.path.basename(dir_output), "interim", fire_name))

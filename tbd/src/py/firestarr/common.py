@@ -879,3 +879,13 @@ def run_after_done(fct, *args, **kwargs):
     while count_procs() > 0:
         time.sleep(10)
     return fct(*args, **kwargs)
+
+
+# Look for argument in list. Remove and return whether it was there or not
+def check_arg(a, args):
+    flag = False
+    if a in args:
+        args.remove(a)
+        flag = True
+    logging.info(f"Flag for {a} is set to {flag}")
+    return flag, args
