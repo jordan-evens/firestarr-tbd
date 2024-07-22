@@ -19,6 +19,16 @@ else
     FILE_CURRENT=${DIR}/${MODEL}_current
     FILE_TMP=${DIR}/${MODEL}_tmp
     FILE_LOG=${DIR}/${MODEL}_log
+
+    if [ "" != "${IS_CRONJOB}" ];
+    then
+        if [ -z "${CRONJOB_RUN}" ];
+        then
+            echo ${CURDATE}: Not running $0 since CRONJOB_RUN is not set
+            exit
+        fi
+    fi
+
     source /appl/.venv/bin/activate || echo No venv
     cd /appl/tbd
     # echo ${CURDATE} >> ${FILE_LOG}

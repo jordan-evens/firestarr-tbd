@@ -1,6 +1,7 @@
 # don't try publishing in scheduled lock_run.sh because check_and_publish.sh will do it
-*/5 * * * * root sudo -u user bash -c '/appl/tbd/scripts/lock_run.sh --no-merge --no-publish' >> /appl/data/logs/lock_run.log
+*/5 * * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/lock_run.sh --no-merge --no-publish' >> /appl/data/logs/lock_run.log
+# really don't like this but prevent deadlocks for now by killing things so they always run again
 */31 * * * * root bash -c 'killall lock_run.sh python & rm /appl/data/update.lock' >> /appl/data/logs/killall.log
 * * * * * root sudo -u user bash -c 'date >> /appl/data/test_cron'
-*/13 * * * * root sudo -u user bash -c '/appl/tbd/scripts/check_and_publish.sh' >> /appl/data/logs/check_and_publish.log
+*/13 * * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/check_and_publish.sh' >> /appl/data/logs/check_and_publish.log
 * 0 * * * root sudo -u user bash -c '/appl/tbd/scripts/archive_sims.sh'
