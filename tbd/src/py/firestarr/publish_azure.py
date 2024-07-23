@@ -113,7 +113,8 @@ def upload_dir(dir_run=None):
     dir_combined = os.path.join(dir_run, "combined")
     files = listdir_sorted(dir_combined)
     # HACK: ignore perim for now
-    files = [f for f in files if "perim" not in f]
+    # NOTE: fix this if extension ever changes, but prevent .tif.aux.xml files
+    files = [f for f in files if "perim" not in f and f.endswith(".tif")]
 
     # assert ('perim.tif' in files)
     def get_day(f):
