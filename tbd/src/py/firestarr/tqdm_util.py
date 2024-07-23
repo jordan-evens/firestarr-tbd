@@ -264,8 +264,10 @@ def keep_trying_groups(fct, values, *args, **kwargs):
             return (True, fct(dir_fire))
         except KeyboardInterrupt as ex:
             raise ex
-        except Exception:
-            return (False, dir_fire)
+        except Exception as ex:
+            # was returning directory but that doesn't help
+            # return (False, dir_fire)
+            return (False, ex)
 
     while not done:
         try:
