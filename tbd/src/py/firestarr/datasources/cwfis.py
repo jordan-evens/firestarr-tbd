@@ -9,6 +9,7 @@ import geopandas as gpd
 import tqdm_util
 from common import (
     DEFAULT_LAST_ACTIVE_SINCE_OFFSET,
+    FLAG_DEBUG,
     FMT_DATE_YMD,
     USE_CWFIS_SERVICE,
     logging,
@@ -95,7 +96,8 @@ class SourceFeatureM3Download(SourceFeature):
         df = df.loc[df["datetime"] >= since]
         # HACK : add in hotspots
         df_pts = get_shp("hotspots")
-        gdf_to_file(df_pts, self._dir_out, "df_hotspots")
+        if FLAG_DEBUG:
+            gdf_to_file(df_pts, self._dir_out, "df_hotspots")
         # HACK: if empty then no results returned so fill with today where missing
         # df_pts.rename(columns={"REP_DATE": "LASTDATE"})
         # buffer around hotspots
@@ -112,18 +114,24 @@ class SourceFeatureM3Download(SourceFeature):
         # df = df.reset_index()[["datetime", "geometry"]]
         # gdf_to_file(df, self._dir_out, "df_perimeters_basic")
         df_pts = df_pts.reset_index()[["datetime", "geometry"]]
-        gdf_to_file(df_pts, self._dir_out, "df_hotspots_basic")
+        if FLAG_DEBUG:
+            gdf_to_file(df_pts, self._dir_out, "df_hotspots_basic")
         df_perims_buffer = df.iloc[:]
         df_perims_buffer.geometry = df_perims_buffer.buffer(1.1 * KM_TO_M, resolution=resolution)
-        gdf_to_file(df_pts, self._dir_out, "df_perims_buffer")
+        if FLAG_DEBUG:
+            gdf_to_file(df_pts, self._dir_out, "df_perims_buffer")
         df_join = gpd.sjoin(left_df=df_pts, right_df=df_perims_buffer, how="left")
-        gdf_to_file(df_join, self._dir_out, "df_join")
+        if FLAG_DEBUG:
+            gdf_to_file(df_join, self._dir_out, "df_join")
         df_join = df_join.loc[df_join["index_right"].isnull()]
-        gdf_to_file(df_join, self._dir_out, "df_join_exclude")
+        if FLAG_DEBUG:
+            gdf_to_file(df_join, self._dir_out, "df_join_exclude")
         df_join = df_join.dissolve().reset_index()
-        gdf_to_file(df_join, self._dir_out, "df_join_exclude_dissolve")
+        if FLAG_DEBUG:
+            gdf_to_file(df_join, self._dir_out, "df_join_exclude_dissolve")
         df_join = df_join.explode(index_parts=False)
-        gdf_to_file(df_join, self._dir_out, "df_join_explode")
+        if FLAG_DEBUG:
+            gdf_to_file(df_join, self._dir_out, "df_join_explode")
         df_both = pd.concat([df, df_join])
         gdf_to_file(df_both, self._dir_out, "df_perimeters_hotspots")
         # df_both = df_both.reset_index()[["datetime", "geometry"]]
