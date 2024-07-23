@@ -240,7 +240,8 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             # HACK: make a point of marking these as changed
             for file_old in files_prob:
                 files_changed[file_old] = True
-                try_remove(file_old)
+                # NOTE: could be outputting currently in another thread so don't delete
+                # try_remove(file_old)
             files_prob = []
             for f in files_prob:
                 files_changed[f] = True
