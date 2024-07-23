@@ -565,7 +565,7 @@ class Run(object):
 
     @log_order(show_args=["dir_fire"])
     def do_run_fire(self, dir_fire, prepare_only=False, run_only=False, no_wait=False):
-        return tbd.run_fire_from_folder(
+        result = tbd.run_fire_from_folder(
             dir_fire,
             self._dir_output,
             prepare_only=prepare_only,
