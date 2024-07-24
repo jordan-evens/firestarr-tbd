@@ -46,6 +46,7 @@ VECTOR_FILE_EXTENSION = "gpkg"
 
 def gdf_from_file(filename, *args, **kwargs):
     import warnings
+
     with warnings.catch_warnings():
         # avoid a bunch of ogr warnings
         warnings.filterwarnings("ignore", message="Several features with id = 0 have been found")
@@ -380,16 +381,16 @@ def project_raster(
     format=None,
 ):
     if is_invalid_tiff(filename, test_read=True):
-        force_remove(filename)
+        # NOTE: DO NOT DELETE SINCE SOMETHING ELSE COULD BE WRITING CONCURRENTLY
+        # force_remove(filename)
         return None
 
     try:
         input_raster = call_safe(gdal.Open, filename)
     except RuntimeError as ex:
-        logging.error(f"Removing invalid file {filename}")
+        # NOTE: DO NOT DELETE SINCE SOMETHING ELSE COULD BE WRITING CONCURRENTLY
+        logging.error(f"Found invalid file {filename}")
         logging.error(get_stack(ex))
-        # delete invalid input and return None
-        force_remove(filename)
         return None
 
     if output_raster is None:
