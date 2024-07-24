@@ -573,6 +573,7 @@ class Run(object):
             no_wait=no_wait,
             verbose=self._verbose,
         )
+        return result
 
     def find_unprepared(self, df_fires, remove_directory=False):
         dirs_fire = list_dirs(self._dir_sims)
