@@ -12,7 +12,7 @@ echo "Checking that previous run completed successfully"
 
 # since previous run finished fine we can do this
 echo "Preparing new run to merge into"
-scripts/force_run.sh --prepare-only --no-resume
+(scripts/force_run.sh --prepare-only --no-resume --no-retry) || (echo "Couldn't create new run to merge into" && exit -1)
 
 # but for now just use the last two runs
 LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 2 | head -n 1`
