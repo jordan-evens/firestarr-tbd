@@ -27,6 +27,9 @@ from gis import CRS_COMPARISON, CRS_WGS84, KM_TO_M, gdf_from_file, gdf_to_file, 
 from model_data import DEFAULT_STATUS_IGNORE, URL_CWFIS_DOWNLOADS, make_query_geoserver
 from net import try_save_http
 
+FLAG_DEBUG_PERIMETERS = False
+# HACK: so we can change just the value but it also requires FLAG_DEBUG
+FLAG_DEBUG_PERIMETERS = FLAG_DEBUG and FLAG_DEBUG_PERIMETERS
 WFS_CIFFC = "https://geoserver.ciffc.net/geoserver/wfs?version=2.0.0"
 
 
@@ -96,7 +99,7 @@ class SourceFeatureM3Download(SourceFeature):
         df = df.loc[df["datetime"] >= since]
         # HACK : add in hotspots
         df_pts = get_shp("hotspots")
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_pts, self._dir_out, "df_hotspots")
         # HACK: if empty then no results returned so fill with today where missing
         # df_pts.rename(columns={"REP_DATE": "LASTDATE"})
@@ -114,26 +117,27 @@ class SourceFeatureM3Download(SourceFeature):
         # df = df.reset_index()[["datetime", "geometry"]]
         # gdf_to_file(df, self._dir_out, "df_perimeters_basic")
         df_pts = df_pts.reset_index()[["datetime", "geometry"]]
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_pts, self._dir_out, "df_hotspots_basic")
         df_perims_buffer = df.iloc[:]
         df_perims_buffer.geometry = df_perims_buffer.buffer(1.1 * KM_TO_M, resolution=resolution)
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_pts, self._dir_out, "df_perims_buffer")
         df_join = gpd.sjoin(left_df=df_pts, right_df=df_perims_buffer, how="left")
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join")
         df_join = df_join.loc[df_join["index_right"].isnull()]
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_exclude")
         df_join = df_join.dissolve().reset_index()
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_exclude_dissolve")
         df_join = df_join.explode(index_parts=False)
-        if FLAG_DEBUG:
+        if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_explode")
         df_both = pd.concat([df, df_join])
-        gdf_to_file(df_both, self._dir_out, "df_perimeters_hotspots")
+        if FLAG_DEBUG_PERIMETERS:
+            gdf_to_file(df_both, self._dir_out, "df_perimeters_hotspots")
         # df_both = df_both.reset_index()[["datetime", "geometry"]]
         # gdf_to_file(df_both, self._dir_out, "df_both_basic")
         # df_both = df_both.dissolve().reset_index()
