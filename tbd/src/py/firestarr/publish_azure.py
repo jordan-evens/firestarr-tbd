@@ -145,6 +145,7 @@ def upload_dir(dir_run=None):
         container.delete_blob(blob.name)
     for f in files_group:
         path = os.path.join(dir_sim_data, f)
+        logging.info(f"Pushing {f}")
         with open(path, "rb") as data:
             container.upload_blob(name=f"{dir_shp}/{f}", data=data, metadata=metadata, overwrite=True)
     logging.info("Listing blobs")
@@ -167,6 +168,7 @@ def upload_dir(dir_run=None):
             container.upload_blob(name=f"current/{f}", data=data, metadata=metadata, overwrite=True)
         archived = f"archive/{f}"
         if is_empty([x for x in container.list_blobs(archived)]):
+            logging.info(f"Archiving {f}")
             # don't upload if already in archive
             with open(path, "rb") as data:
                 container.upload_blob(name=archived, data=data, metadata=metadata, overwrite=True)
