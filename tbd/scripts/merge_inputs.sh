@@ -46,17 +46,12 @@ for d in `diff -q ${DIR_SIMS}/${LAST_RUN}/sims ${DIR_SIMS}/${CUR_RUN}/sims | gre
 done
 
 echo "Copied outputs from ${copied} / ${N} directories"
-
-# for d in `diff -q ${DIR_SIMS}/${LAST_RUN}/sims ${DIR_SIMS}/${CUR_RUN}/sims | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"`; do
-#     # uncommon directories - just do nothing since new run will run what it has?
-#     old="${DIR_SIMS}/${LAST_RUN}/sims/${d}"
-#     new="${DIR_SIMS}/${CUR_RUN}/sims/${d}"
-#     # check that sim conditions, input tif and weather are the same
-#     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep sim.sh > /dev/null) || continue
-#     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/${d}.tif) > /dev/null || continue
-#     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/firestarr_${d}_wx.csv) > /dev/null || continue
-#     echo "Results for ${d} are from same inputs so copying"
-#     cp -rv ${old}/* ${new}/
-# done
-echo "Running merged run in ${CUR_RUN}"
-(scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
+if [ "${copied}" -eq "${N}" ]; then
+    # FIX: kind of dumb to copy everything if it's the same and then delete but simpler for now
+    echo "All inputs are the same so no reason to run anything or keep this version"
+    echo "Deleting ${CUR_RUN}"
+    rm -rfv "${CUR_RUN}"
+else
+    echo "Running merged run in ${CUR_RUN}"
+    (scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
+fi
