@@ -124,7 +124,9 @@ class Simulation(object):
             df_wx_actuals = []
             while date_try > date_bad:
                 date_try = date_try - datetime.timedelta(days=1)
-                df_wx_actuals.append(self._src_fwi.get_fwi(lat, lon, date_try))
+                df_wx_cur = self._src_fwi.get_fwi(lat, lon, date_try)
+                if 0 < len(df_wx_cur):
+                    df_wx_actuals.append(df_wx_cur)
             if not df_wx_actuals:
                 raise RuntimeError(f"Problem getting fwi for {fire_name}")
             df_wx_actual = pd.concat(df_wx_actuals)
