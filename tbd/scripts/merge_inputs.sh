@@ -2,13 +2,17 @@
 
 DIR_SIMS=/appl/data/sims
 
+echo "Checking that previous run completed successfully"
+(scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Previous run didn't finish properly" && exit -1)
 # # if we could get it running
 # LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 1`
 # # need to cancel this before it runs things
 # scripts/lock_run.sh --no-publish --no-merge --no-resume --no-retry
 # # at this point expect to have all the sims prepared but nothing running
 
-# scripts/force_run.sh --prepare-only --no-resume
+# since previous run finished fine we can do this
+echo "Preparing new run to merge into"
+scripts/force_run.sh --prepare-only --no-resume
 
 # but for now just use the last two runs
 LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 2 | head -n 1`
@@ -54,3 +58,5 @@ echo "Copied outputs from ${copied} / ${N} directories"
 #     echo "Results for ${d} are from same inputs so copying"
 #     cp -rv ${old}/* ${new}/
 # done
+echo "Running merged run in ${CUR_RUN}"
+(scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
