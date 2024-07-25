@@ -78,7 +78,7 @@ def run_firestarr_local(dir_fire):
                 with open(os.path.join(dir_fire, "stderr.log"), "w") as f_log:
                     f_log.write(stderr)
 
-            call_safe(save_logs)
+        call_safe(save_logs)
 
         logging.error(f"Failed running {dir_fire}")
         raise ex
@@ -175,6 +175,7 @@ def check_firestarr_running(dir_fire):
 
 
 def run_firestarr(dir_fire):
+    # FIX: this should definitely not be returning clock time if it's supposed to be simulation time
     # run generated command for parsing data
     t0 = timeit.default_timer()
     # expect everything to be in sim.sh
@@ -311,6 +312,26 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     return changed, is_interim, files_project
 
 
+def parse_sim_time(file_log):
+    # try parsing log for simulation time
+    sim_time = None
+    try:
+        if os.path.isfile(file_log):
+            # if log says it ran then don't run it
+            # HACK: just use tail instead of looping or seeking ourselves
+            stdout, stderr = run_process(["tail", "-1", file_log], "/appl/tbd")
+            if stdout:
+                line = stdout.strip().split("\n")[-1]
+                g = re.match(".*Total simulation time was (.*) seconds", line)
+                if g and g.groups():
+                    sim_time = int(g.groups()[0])
+    except KeyboardInterrupt as ex:
+        raise ex
+    except Exception:
+        pass
+    return sim_time
+
+
 def run_fire_from_folder(
     dir_fire,
     dir_output,
@@ -365,27 +386,22 @@ def run_fire_from_folder(
         df_fire["log_file"] = file_log
         sim_time = data.get("sim_time", None)
         if not sim_time:
-            # try parsing log for simulation time
-            sim_time = None
-            try:
-                if os.path.isfile(file_log):
-                    # if log says it ran then don't run it
-                    # HACK: just use tail instead of looping or seeking ourselves
-                    stdout, stderr = run_process(["tail", "-1", file_log], "/appl/tbd")
-                    if stdout:
-                        line = stdout.strip().split("\n")[-1]
-                        g = re.match(".*Total simulation time was (.*) seconds", line)
-                        if g and g.groups():
-                            sim_time = int(g.groups()[0])
-                            # HACK: repeat here for now
-                            df_fire["sim_time"] = sim_time
-                            if "dates_out" in df_fire.columns:
-                                del df_fire["dates_out"]
-                            save_geojson(df_fire, file_sim)
-            except KeyboardInterrupt as ex:
-                raise ex
-            except Exception:
-                pass
+            sim_time = parse_sim_time(file_log)
+            # rely on sim_time being applied to df_fire later
+            # if sim_time is not None:
+            #     try:
+            #         # HACK: repeat here for now
+            #         df_fire["sim_time"] = sim_time
+            #         if "dates_out" in df_fire.columns:
+            #             del df_fire["dates_out"]
+            #         save_geojson(df_fire, file_sim)
+            #     except KeyboardInterrupt as ex:
+            #         raise ex
+            #     except Exception:
+            #         pass
+            # HACK: save if found sim_tim
+            df_fire["sim_time"] = sim_time
+            save_geojson(df_fire, file_sim)
         want_dates = WANT_DATES
         max_days = data["max_days"]
         date_offsets = [x for x in want_dates if x <= max_days]
@@ -475,6 +491,17 @@ def run_fire_from_folder(
                     # is prepared but not run
                     return df_fire
             try:
+                # HACK: return this again since it waits for the fire to finish at the start
+                if check_running(dir_fire):
+                    logging.info(f"Retrying for running fire {dir_fire}")
+                    return run_fire_from_folder(
+                        dir_fire,
+                        dir_output,
+                        verbose=verbose,
+                        prepare_only=prepare_only,
+                        run_only=run_only,
+                        no_wait=no_wait,
+                    )
                 # if we're going to run then move old log if it exists
                 if os.path.isfile(file_log):
                     filetime = os.path.getmtime(file_log)
@@ -482,8 +509,18 @@ def run_fire_from_folder(
                     file_log_old = file_log.replace(".log", f"{filedatetime.strftime(FMT_FILE_SECOND)}.log")
                     logging.warning(f"Moving old log file from {file_log} to {file_log_old}")
                     shutil.move(file_log, file_log_old)
-
-                sim_time = run_firestarr(dir_fire)
+                try:
+                    real_time = run_firestarr(dir_fire)
+                    # parse from file instead of using clock time
+                    sim_time = parse_sim_time(file_log)
+                except FileNotFoundError as ex:
+                    # HACK: work around python not seeing processes that are too fast
+                    # seems to be happening when process finishes so quickly that python is still looking for it
+                    #       [Errno 2] No such file or directory: '/proc/[0-9]*/cwd'
+                    # parse from file instead of using clock time
+                    sim_time = parse_sim_time(file_log)
+                    if sim_time is None:
+                        raise ex
             except KeyboardInterrupt as ex:
                 raise ex
             except Exception as ex:
@@ -492,18 +529,30 @@ def run_fire_from_folder(
                 # force_remove(files_required)
                 return None
             log_info("Took {}s to run simulations".format(sim_time))
-            # if sim worked then it made a log itself so don't bother
-            df_fire["sim_time"] = sim_time
-            if "dates_out" in df_fire.columns:
-                del df_fire["dates_out"]
-            save_geojson(df_fire, file_sim)
-            changed = True
         elif prepare_only:
             # still need to run with run_only to copy outputs
             return df_fire
         else:
             # log_info("Simulation already ran but don't have processed outputs")
             log_info("Simulation already ran")
+            return df_fire
+        # try:
+        #     # save time if parsed or None if sim failed
+        #     df_fire["sim_time"] = sim_time
+        #     if "dates_out" in df_fire.columns:
+        #         del df_fire["dates_out"]
+        #     save_geojson(df_fire, file_sim)
+        # except KeyboardInterrupt as ex:
+        #     raise ex
+        # except Exception:
+        #     pass
+        # save time if parsed or None if sim failed
+        if not sim_time:
+            logging.error(f"Simulation time {sim_time} is invalid for {dir_fire}")
+        df_fire["sim_time"] = sim_time
+        # if "dates_out" in df_fire.columns:
+        #     del df_fire["dates_out"]
+        save_geojson(df_fire, file_sim)
         changed, is_interim, files_project = copy_fire_outputs(dir_fire, dir_output, changed)
         df_fire["changed"] = changed
         return df_fire

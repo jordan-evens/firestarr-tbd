@@ -669,11 +669,15 @@ class Run(object):
             # print(f"g: {g}\n\tsim_results: {sim_results}")
             with locks_for(FILE_LOCK_PREPUBLISH):
                 for i in range(len(sim_results)):
+                    # result should be a geodataframe of the simulation data
                     okay, result = sim_results[i]
                     # should be in the same order as input
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):
-                        logging.warning(f"Exception running {dir_fire} was {result}")
+                        # logging.warning(f"Exception running {dir_fire} was {result}")
+                        # seems to be happening when process finishes so quickly that python is still looking for it
+                        #       [Errno 2] No such file or directory: '/proc/297805/cwd'
+                        logging.warning(f"Exception running {dir_fire} was:\n{get_stack(result)}")
                     if (
                         result is None
                         or isinstance(result, str)
