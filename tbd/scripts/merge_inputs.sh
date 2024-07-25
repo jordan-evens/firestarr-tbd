@@ -1,9 +1,15 @@
 #!/bin/bash
+DIR=`dirname $(realpath "$0")`
+export FORCE_RUN=1
+# export IS_CRONJOB=${IS_CRONJOB}
+# HACK: clear for now
+export IS_CRONJOB=
+# use update.sh so we can lock entire script on `/usr/bin/flock -n /appl/data/update.lock`
 
 DIR_SIMS=/appl/data/sims
 
 echo "Checking that previous run completed successfully"
-(scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Previous run didn't finish properly" && exit -1)
+(${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Previous run didn't finish properly" && exit -1)
 # # if we could get it running
 # LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 1`
 # # need to cancel this before it runs things
@@ -12,7 +18,7 @@ echo "Checking that previous run completed successfully"
 
 # since previous run finished fine we can do this
 echo "Preparing new run to merge into"
-(scripts/force_run.sh --prepare-only --no-resume --no-retry) || (echo "Couldn't create new run to merge into" && exit -1)
+(${DIR}/update.sh --prepare-only --no-resume --no-retry) || (echo "Couldn't create new run to merge into" && exit -1)
 
 # but for now just use the last two runs
 LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 2 | head -n 1`
@@ -53,5 +59,9 @@ if [ "${copied}" -eq "${N}" ]; then
     rm -rfv "${CUR_RUN}"
 else
     echo "Running merged run in ${CUR_RUN}"
-    (scripts/force_run.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
+    (${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
+    echo "Validating merged run in ${CUR_RUN}"
+    (${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Validating merged run" && exit -1)
+    echo "Publishing merged run in ${CUR_RUN}"
+    (${DIR}/check_and_publish.sh) || (echo "Couldn't publish after finished" && exit -1)
 fi
