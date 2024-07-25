@@ -35,6 +35,7 @@ from common import (
     read_json_safe,
     try_remove,
 )
+from datasources.cwfis import FLAG_DEBUG_PERIMETERS
 from datasources.datatypes import SourceFire
 from datasources.default import SourceFireActive
 from datasources.spotwx import get_model_dir, get_model_dir_uncached
@@ -479,6 +480,7 @@ class Run(object):
             )
             df_prioritized = self.prioritize(df_fires)
             gdf_to_file(df_prioritized, _)
+            logging.info(f"CRS is {df_prioritized.crs} for:\n{df_prioritized}")
             return _
 
         return do_create(self._file_fires)
@@ -627,6 +629,7 @@ class Run(object):
     def run_fires_in_dir(self, check_missing=True):
         t0 = timeit.default_timer()
         df_fires = self.load_fires()
+        gdf_to_file(df_fires, "df_fires_after_load")
         if check_missing:
             if self.find_unprepared(df_fires):
                 self.prep_folders()
@@ -807,7 +810,21 @@ class Run(object):
                 [make_gdf_from_series(r, self._crs) for r in results.values() if r is not None]
             )
             try:
-                gdf_to_file(df_final, self._dir_out, "df_fires_final")
+                # HACK: df_final's geometry is a mess but the attributes are correct
+                if FLAG_DEBUG_PERIMETERS:
+                    gdf_to_file(df_final, self._dir_out, "df_fires_final")
+                    gdf_to_file(df_fires, self._dir_out, "df_fires_after_final")
+                del df_final["geometry"]
+                df_final = df_final.reset_index(drop=True)
+                # index is already fire_name
+                df_fires_geom = df_fires.reset_index()[["fire_name", "geometry"]]
+                if FLAG_DEBUG_PERIMETERS:
+                    gdf_to_file(df_fires_geom, self._dir_out, "df_fires_geom")
+                df_fires_merge_final = pd.merge(df_fires_geom, df_final).set_index("fire_name")
+                if FLAG_DEBUG_PERIMETERS:
+                    gdf_to_file(df_fires_merge_final, self._dir_out, "df_fires_merge_final")
+                df_final = df_fires_merge_final
+                gdf_to_file(df_final, self._file_fires)
             except Exception as ex:
                 logging.error("Couldn't save final fires")
                 logging.error(get_stack(ex))
