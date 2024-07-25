@@ -2,14 +2,14 @@
 DIR=/appl/tbd
 pushd ${DIR}
 CURDATE=`date -u --rfc-3339=seconds`
-echo ${CUR_DATE}: Running check and publish
+echo "${CURDATE}: Running check and publish"
 . /appl/data/config || . /appl/config
 
 if [ "" != "${IS_CRONJOB}" ];
 then
     if [ -z "${CRONJOB_RUN}" ];
     then
-        echo ${CURDATE}: Not running $0 since CRONJOB_RUN is not set
+        echo "${CURDATE}: Not running $0 since CRONJOB_RUN is not set"
         exit
     fi
 fi
