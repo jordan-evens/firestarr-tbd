@@ -7,5 +7,5 @@
 * 0 * * * root sudo -u user bash -c '/appl/tbd/scripts/archive_sims.sh | tee -a /appl/logs/archive.log'
 # make sure we turn cronjobs back on overnight in case we forgot while working on things
 * 0 * * * root sudo -u user bash -c 'sed -i "s/CRONJOB_RUN=.*/CRONJOB_RUN=1/g" /appl/data/config'
-# try merging every half hour
-*/30 * * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/lock_merge.sh | tee -a /appl/data/logs/merge_inputs.log'
+# try merging every half hour but let things run like before in the morning first
+*/30 0-5,12-23 * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/lock_merge.sh | tee -a /appl/data/logs/merge_inputs.log'
