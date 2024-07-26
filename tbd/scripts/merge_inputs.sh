@@ -56,7 +56,8 @@ if [ "${copied}" -eq "${N}" ]; then
     # FIX: kind of dumb to copy everything if it's the same and then delete but simpler for now
     echo "All inputs are the same so no reason to run anything or keep this version"
     echo "Deleting ${CUR_RUN}"
-    rm -rfv "${CUR_RUN}"
+    rm -rfv "${DIR_SIMS}/${CUR_RUN}"
+    echo "${LAST_RUN} was already up-to-date so deleted ${CUR_RUN}"
 else
     echo "Running merged run in ${CUR_RUN}"
     (${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
