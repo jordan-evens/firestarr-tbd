@@ -76,8 +76,7 @@ COPY ./tbd/CMakeLists.txt .
 RUN cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
   && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
 
-
-FROM bitnami/minideb:bookworm AS minideb-with_user
+FROM debian:trixie-slim AS minimal-with-user
 ARG USERNAME
 ARG USER_ID
 RUN apt-get update --fix-missing \
@@ -88,11 +87,10 @@ RUN groupadd --gid ${USER_ID} ${USERNAME} \
   && echo ${USERNAME} ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/${USERNAME} \
   && chmod 0440 /etc/sudoers.d/${USERNAME}
 
-
-FROM minideb-with_user AS firestarr
+FROM minimal-with-user AS firestarr
 ARG USERNAME
 ARG VERSION
-RUN apt-get install -y libgeotiff5 \
+RUN apt-get install -y libgeotiff5 libtbb12 \
   && apt-get clean \
   && rm -rf \
   /var/lib/apt/lists/* \
@@ -107,7 +105,7 @@ RUN chown -R ${USERNAME}:${USERNAME} /appl
 USER ${USERNAME}
 
 
-FROM minideb-with_user AS py_gdal
+FROM minimal-with-user AS py_gdal
 RUN apt-get install -y --no-install-recommends \
   cron curl nano procps psmisc tar util-linux unzip wget zip \
   python3-pip libgdal-dev libgeotiff5 python3-numpy python3-gdal \
