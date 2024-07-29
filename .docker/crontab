@@ -1,5 +1,5 @@
 # don't try publishing in scheduled lock_run.sh because check_and_publish.sh will do it
-*/5 * * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/lock_run.sh --no-merge --no-publish --no-retry | tee -a /appl/data/logs/lock_run.log'
+*/5 * * * * root sudo -u user bash -c 'export IS_CRONJOB=1; /appl/tbd/scripts/force_run.sh --no-merge --no-publish | tee -a /appl/data/logs/lock_run.log'
 # really don't like this but prevent deadlocks for now by killing things so they always run again
 #*/31 * * * * root bash -c 'killall lock_run.sh python & rm /appl/data/update.lock | tee -a /appl/data/logs/killall.log'
 * * * * * root sudo -u user bash -c 'date | tee -a /appl/data/test_cron'
