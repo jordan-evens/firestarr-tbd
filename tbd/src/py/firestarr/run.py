@@ -2,6 +2,7 @@ import datetime
 import itertools
 import os
 import shutil
+import sys
 import time
 import timeit
 
@@ -583,6 +584,9 @@ class Run(object):
         dir_names = set(dirs_fire)
         diff_extra = dir_names.difference(fire_names)
         if diff_extra:
+            # HACK: deal with extra folders by always stopping for now
+            logging.error("Stopping completely since folder structure is invalid")
+            sys.exit(-1)
             raise RuntimeError(f"Have directories for fires that aren't in input:\n{diff_extra}")
         expected = {f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names}
 
