@@ -822,17 +822,26 @@ class Run(object):
                 if FLAG_DEBUG_PERIMETERS:
                     gdf_to_file(df_final, self._dir_out, "df_fires_final")
                     gdf_to_file(df_fires, self._dir_out, "df_fires_after_final")
-                del df_final["geometry"]
-                df_final = df_final.reset_index(drop=True)
+                df_final_copy = df_final.loc[:]
+                del df_final_copy["geometry"]
+                df_final_copy = df_final_copy.reset_index(drop=True)
                 # index is already fire_name
                 df_fires_geom = df_fires.reset_index()[["fire_name", "geometry"]]
                 if FLAG_DEBUG_PERIMETERS:
                     gdf_to_file(df_fires_geom, self._dir_out, "df_fires_geom")
-                df_fires_merge_final = pd.merge(df_fires_geom, df_final).set_index("fire_name")
+                df_fires_merge_final = pd.merge(df_fires_geom, df_final_copy, how="left").set_index("fire_name")
                 if FLAG_DEBUG_PERIMETERS:
                     gdf_to_file(df_fires_merge_final, self._dir_out, "df_fires_merge_final")
-                df_final = df_fires_merge_final
-                gdf_to_file(df_final, self._file_fires)
+                gdf_to_file(df_fires_merge_final, self._dir_out, "df_fires_pre_final")
+                # even if this is the wrong number of rows we still want to fix and return it
+                if len(df_final) == len(df_fires):
+                    df_final_copy = df_fires_merge_final
+                    logging.info("Saving with extra information at end")
+                    gdf_to_file(df_final_copy, self._file_fires)
+                    # NOTE: only if all this worked do we actually assign again
+                    df_final = df_final_copy
+                else:
+                    logging.error(f"Expected {len(df_fires)} at end but have {len(df_final)}")
             except Exception as ex:
                 logging.error("Couldn't save final fires")
                 logging.error(get_stack(ex))
