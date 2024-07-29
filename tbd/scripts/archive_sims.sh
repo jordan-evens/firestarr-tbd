@@ -1,8 +1,11 @@
 #!/bin/bash
-KEEP=10
+KEEP_UNARCHIVED=10
 
 DIR_FROM="/appl/data/sims"
 DIR_BKUP="/appl/data/sims.bkup"
+
+# override KEEP_UNARCHIVED if set in config
+. /appl/data/config || . /appl/config
 
 function do_archive()
 {
@@ -21,7 +24,7 @@ pushd ${DIR_FROM}
 mkdir -p ${DIR_BKUP}
 rmdir * > /dev/null 2>&1
 set -e
-for run in `ls -1 | head -n-${KEEP}`
+for run in `ls -1 | head -n-${KEEP_UNARCHIVED}`
 do
   do_archive "${run}"
 done
