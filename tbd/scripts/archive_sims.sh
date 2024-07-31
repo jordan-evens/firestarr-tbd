@@ -13,11 +13,18 @@ function do_archive()
   run="$1"
   do_delete="$2"
   file_out="${DIR_BKUP}/${run}.7z"
+  # file_newest="${run}`ls -hArt ${run} | tail -n 1`"
+  file_newest=`find ${run} -type f -printf '%T@ %P\n' | sort -n | tail -n1 | awk '{print $2}'`
   echo "Archiving ${run} as ${file_out}"
   if [ -f "${file_out}" ]; then
-    echo "Checking existing archive ${file_out}"
-    # if 7z can't open the archive then we need to get rid of it
-    7za t "${file_out}" || (rm "${file_out}")
+    if [ "${file_newest}" -nt "${file_out}" ]; then
+      echo "Checking existing archive ${file_out}"
+      # if 7z can't open the archive then we need to get rid of it
+      7za t "${file_out}" || (rm "${file_out}")
+    else
+      echo "Archive already up-to-date"
+      return
+    fi
   fi
   if [ "" != "${do_delete}" ];
   then
@@ -26,9 +33,16 @@ function do_archive()
   else
     echo "Archiving without deleting ${run}"
     if [ -f "${file_out}" ]; then
+      echo "Creating ${file_out}"
       7za a ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
     else
-      7za u -u- -up0q0r2w2x0y2z0 ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
+      if [ "${file_newest}" -nt "${file_out}" ]; then
+        echo "Updating ${file_out}"
+        # 7za u -u- -up0q0r2w2x0y2z0 ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
+        7za u ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
+      else
+        echo "Archive already up-to-date"
+      fi
     fi
   fi
 }
