@@ -80,7 +80,7 @@ FROM debian:trixie-slim AS minimal-with-user
 ARG USERNAME
 ARG USER_ID
 RUN apt-get update --fix-missing \
-  && apt-get install -y sudo
+  && apt-get install -y sudo libgeotiff5 libtbb12
 RUN groupadd --gid ${USER_ID} ${USERNAME} \
   && useradd --uid ${USER_ID} --gid ${USER_ID} -m ${USERNAME} \
   && chsh --shell /bin/bash ${USERNAME} \
@@ -90,8 +90,7 @@ RUN groupadd --gid ${USER_ID} ${USERNAME} \
 FROM minimal-with-user AS firestarr
 ARG USERNAME
 ARG VERSION
-RUN apt-get install -y libgeotiff5 libtbb12 \
-  && apt-get clean \
+RUN apt-get clean \
   && rm -rf \
   /var/lib/apt/lists/* \
   /usr/share/man/*
