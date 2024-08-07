@@ -86,15 +86,14 @@ def run_firestarr_local(dir_fire):
 
 def find_running_local(dir_fire):
     processes = []
-    for p in psutil.process_iter():
+    for p in psutil.process_iter(attrs=["pid", "name", "cwd"]):
         try:
-            # able to specify either full dir, or just sim run dir
-            if p.name() == "tbd" and dir_fire in p.cwd():
-                processes.append(
-                    # p.as_dict(attrs=["cpu_times", "name", "pid", "status"])
-                    p.cwd()
-                )
-        except psutil.NoSuchProcess:
+            if p.name() == "tbd" and psutil.pid_exists(p.pid):
+                cwd = p.cwd()
+                if cwd is not None and dir_fire in cwd:
+                    processes.append(cwd)
+        except Exception as ex:
+            # HACK: a bunch of different error types can happen if process is no longer running
             continue
     return processes
 
@@ -527,7 +526,8 @@ def run_fire_from_folder(
                 logging.error(f"Couldn't run fire {dir_fire}")
                 logging.error(get_stack(ex))
                 # force_remove(files_required)
-                return None
+                # return None
+                raise ex
             log_info("Took {}s to run simulations".format(sim_time))
         elif prepare_only:
             # still need to run with run_only to copy outputs
