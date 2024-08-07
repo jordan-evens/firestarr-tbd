@@ -384,9 +384,12 @@ class Run(object):
         # FIX: check the weather or folders here
         df_final, changed = self.run_fires_in_dir(check_missing=False)
         if changed is not None:
-            logging.info(
-                f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
-            )
+            if df_final is None:
+                logging.warning("No fires in results")
+            else:
+                logging.info(
+                    f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
+                )
         return df_final, changed
 
     def run_until_successful_or_outdated(self, no_retry=False):
