@@ -8,18 +8,6 @@ import timeit
 
 import pandas as pd
 import psutil
-from azurebatch import (
-    add_simulation_task,
-    check_successful,
-    find_tasks_running,
-    get_batch_client,
-    have_batch_config,
-    is_running_on_azure,
-    list_nodes,
-    make_or_get_job,
-    make_or_get_simulation_task,
-    schedule_job_tasks,
-)
 from common import (
     CONFIG,
     DIR_DATA,
@@ -49,6 +37,19 @@ from gis import (
     save_point_file,
 )
 from redundancy import call_safe
+
+from azurebatch import (
+    add_simulation_task,
+    check_successful,
+    find_tasks_running,
+    get_batch_client,
+    have_batch_config,
+    is_running_on_azure,
+    list_nodes,
+    make_or_get_job,
+    make_or_get_simulation_task,
+    schedule_job_tasks,
+)
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"

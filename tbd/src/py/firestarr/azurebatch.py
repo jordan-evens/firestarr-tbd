@@ -20,28 +20,56 @@ _BATCH_ACCOUNT_KEY = CONFIG.get("BATCH_ACCOUNT_KEY")
 _STORAGE_ACCOUNT_NAME = CONFIG.get("STORAGE_ACCOUNT_NAME")
 _STORAGE_CONTAINER = CONFIG.get("STORAGE_CONTAINER")
 _STORAGE_KEY = CONFIG.get("STORAGE_KEY")
-_REGISTRY_SERVER = CONFIG.get("REGISTRY_SERVER")
 _REGISTRY_USER_NAME = CONFIG.get("REGISTRY_USER_NAME")
+_REGISTRY_SERVER = f"{_REGISTRY_USER_NAME}.azurecr.io"
 _REGISTRY_PASSWORD = CONFIG.get("REGISTRY_PASSWORD")
-_REGISTRY_URL = CONFIG.get("REGISTRY_URL")
+_REGISTRY_URL = f"{_REGISTRY_SERVER}/firestarr"
 _CONTAINER_PY = f"{_REGISTRY_URL}/tbd_prod_stable:latest"
 _CONTAINER_BIN = f"{_REGISTRY_URL}/firestarr:latest"
 SSH_KEY = (
-    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCZuB9m2+4D0GcnWr9BH/"
-    "rqXTHqu9IV2fH3/PFMs8CT8NdlgCGvltxSIksLg/TM4wLe/G9B0/"
-    "qB9jBXrShx85AHcs9d62bweh9GVE1jMgixDzZWtAc3pS2Z6/"
-    "L8ppJj80QaEnl9equFMHCtWRN03hRD35WM4yx1QgJ5GoiJiDHsOMZtQ/"
-    "ARQtYHjr8yLZFONZMBzsh9I0QdXUYECw8gbvOfzJtaGwWzl66pvAhaQk3Rt9"
-    "0UTVIpu8nCn4liqI+/ym62bSjxwn/5FgAkGirLF9zI4QxjJRHTMtc5nWNTpb"
-    "IdXuqvFKTaTFjOIz+mj3JwW4DcuWP6sT3BMYBajlXF4/Ma7KUgUa9B8OOaVvB"
-    "wTulNg7PX6JnzDXxWEqIz41NqFqEDNnp+J1q5rckEAehWcXlYxwj7wKUfseSKf"
-    "qr1vkkG/1Afit/T3ECix6lkp5rc4/5h1qSDuEZJ09IX3BMnDIpSYQMvYezZtRl"
-    "GMJ44kVX1f8JWj7PyA5CA09qZwoDsbkM= jordan@khonsu"
+    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDQY2udxIHnsghQZXDXNge1RD"
+    "gzu5sWkHnbad5KGCI49TrwTPwheQfApkDwOvkhkwJG0m+xts9cimeW8IfdiWjH"
+    "bVe5a8SONR/cRD7uqMJHBr/rFWqM56N7AZpoPkxhbdDppC3kxocwKqn1M9miw1"
+    "hYksm20MaJ2y/M/zXQajM3T7vxjQtnnppF435vnQFrrY/cgLZNr+SZVt3D4I/l"
+    "9lSghi8a91PbsDCQL+kACuuWAXQWV5BYqVq/hkVz3wPhus6mlfYvz9DvtUhyth"
+    "zUYcXVUUe3118Gsw+VZ2u0KRNpNqhAdRZM1VkvQUuRMDdKq/zxxvk6suO0OL3E"
+    "EuGTgljKX/1LMXFgDBOEOgZAyE82wp21luuebRjX0n4wCxKFTZVhvUcs5O0W6/M"
+    "cJrQ2w4y2xtrCrPYvzrQEEfqRldDP8L5hFiERGYtFZFFEg1j7d+nWsc2xhWfaFmT"
+    "shW3xcJCtgmNPW1KfoO/6Frlr9/Njs+gLETXHZdGJbQ/TSKFprW0="
 )
-_POOL_VM_SIZE = "STANDARD_F72S_V2"
-# _POOL_VM_SIZE = "STANDARD_F32S_V2"
+
+
+def get_container_registries():
+    return [
+        batchmodels.ContainerRegistry(
+            user_name=_REGISTRY_USER_NAME,
+            password=_REGISTRY_PASSWORD,
+            # registry_server=_REGISTRY_URL,
+            registry_server=_REGISTRY_SERVER,
+        )
+    ]
+
+
+_VM_CONFIGURATION = batchmodels.VirtualMachineConfiguration(
+    image_reference=batchmodels.ImageReference(
+        publisher="microsoft-azure-batch",
+        offer="ubuntu-server-container",
+        sku="20-04-lts",
+        version="latest",
+    ),
+    node_agent_sku_id="batch.node.ubuntu 20.04",
+    container_configuration=batchmodels.ContainerConfiguration(
+        type="dockerCompatible",
+        container_image_names=[_CONTAINER_PY, _CONTAINER_BIN],
+        container_registries=get_container_registries(),
+    ),
+)
+# _POOL_VM_SIZE = "STANDARD_F72S_V2"
+_POOL_VM_SIZE = "STANDARD_F32S_V2"
+# _POOL_VM_SIZE = "STANDARD_F16S_V2"
 POOL_ID = "pool_firestarr"
-_MIN_NODES = 1
+_MIN_NODES = 0
+# _MIN_NODES = 1
 _MAX_NODES = 100
 # _MAX_NODES = 1
 # if any tasks pending but not running then want enough nodes to start
@@ -53,7 +81,8 @@ _AUTO_SCALE_FORMULA = "\n".join(
         f"$max_nodes = {_MAX_NODES};",
         "$samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);",
         "$pending = val($PendingTasks.GetSample(1), 0);",
-        "$want_nodes = val($ActiveTasks.GetSample(1), 0) > 0 ? $pending : 0;",
+        "$active = val($ActiveTasks.GetSample(1), 0);",
+        "$want_nodes = $active > 0 ? $pending : 0;",
         "$use_nodes = $samples < 1 ? 0 : $want_nodes;",
         "$TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));",
         "$NodeDeallocationOption = taskcompletion;",
@@ -144,20 +173,7 @@ def create_container_pool(pool_id=POOL_ID, force=False, client=None):
     logging.debug("Creating pool [{}]...".format(pool_id))
     new_pool = batch.models.PoolAddParameter(
         id=pool_id,
-        virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
-            image_reference=batchmodels.ImageReference(
-                publisher="microsoft-azure-batch",
-                offer="ubuntu-server-container",
-                sku="20-04-lts",
-                version="latest",
-            ),
-            node_agent_sku_id="batch.node.ubuntu 20.04",
-            container_configuration=batchmodels.ContainerConfiguration(
-                type="dockerCompatible",
-                container_image_names=[_CONTAINER_PY, _CONTAINER_BIN],
-                container_registries=get_container_registries(),
-            ),
-        ),
+        virtual_machine_configuration=_VM_CONFIGURATION,
         vm_size=_POOL_VM_SIZE,
         # target_dedicated_nodes=1,
         enable_auto_scale=True,
@@ -342,17 +358,6 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None):
     # # HACK: want to check somewhere and this seems good enough for now
     # restart_unusable_nodes(client=client)
     return task.id
-
-
-def get_container_registries():
-    return [
-        batchmodels.ContainerRegistry(
-            user_name=_REGISTRY_USER_NAME,
-            password=_REGISTRY_PASSWORD,
-            # registry_server=_REGISTRY_URL,
-            registry_server=_REGISTRY_SERVER,
-        )
-    ]
 
 
 def get_container_settings(container, workdir=None, client=None):
@@ -557,20 +562,7 @@ def update_registry(pool_id, client=None):
     client.pool.patch(
         pool_id,
         batchmodels.PoolPatchParameter(
-            virtual_machine_configuration=batchmodels.VirtualMachineConfiguration(
-                image_reference=batchmodels.ImageReference(
-                    publisher="microsoft-azure-batch",
-                    offer="ubuntu-server-container",
-                    sku="20-04-lts",
-                    version="latest",
-                ),
-                node_agent_sku_id="batch.node.ubuntu 20.04",
-                container_configuration=batchmodels.ContainerConfiguration(
-                    type="dockerCompatible",
-                    container_image_names=[_CONTAINER_PY, _CONTAINER_BIN],
-                    container_registries=get_container_registries(),
-                ),
-            ),
+            virtual_machine_configuration=_VM_CONFIGURATION,
         ),
     )
 
@@ -620,7 +612,7 @@ def get_login(pool_id=POOL_ID, client=None, node=0):
         node_id,
     )
     cmd = "sudo /mnt/batch/tasks/fsmounts/firestarr_data/container/run_docker_bash.sh"
-    print(f"ssh -ti ~/.ssh/id_rsa -p {s.remote_login_port} {user}@{s.remote_login_ip_address} {cmd}")
+    print(f"ssh -ti ~/.ssh/id_azure -p {s.remote_login_port} {user}@{s.remote_login_ip_address} {cmd}")
 
 
 def enable_autoscale(pool_id=POOL_ID, client=None):
