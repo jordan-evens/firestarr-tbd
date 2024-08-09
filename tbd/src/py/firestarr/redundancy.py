@@ -19,11 +19,21 @@ def should_ignore(ex):
     # HACK: can't reset logs so ignore them
     if ".log" in str_stack:
         return False
-    ignore_ok = isinstance(ex, OSError) and 5 == ex.errno
-    ignore = ["input/output error", "i/o error", "resource temporarily unavailable", "blockingioerror"]
+    if isinstance(ex, OSError) and 5 == ex.errno:
+        return True
+    ignore = [
+        "input/output error",
+        "i/o error",
+        "resource temporarily unavailable",
+        "blockingioerror",
+        # seems weird but fails when reading valid tiffs with this error sometimes
+        "tiffreaddirectory",
+    ]
+    # no point in looping if we already know the answer
     for s in ignore:
-        ignore_ok = ignore_ok or s in str_stack
-    return ignore_ok
+        if s in str_stack:
+            return True
+    return False
 
 
 def call_safe(fct, *args, **kwargs):
