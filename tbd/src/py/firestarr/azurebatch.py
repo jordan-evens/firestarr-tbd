@@ -349,6 +349,9 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None):
     if existed:
         logging.warning(f"Deleting completed task to rerun {dir_fire}")
         client.task.delete(job_id, task.id)
+        while client.task.exists(task.id):
+            print(".", end="", flush=True)
+            time.sleep(1)
         # remake task so it can be added
         task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
     client.task.add(job_id, task)
