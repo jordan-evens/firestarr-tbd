@@ -29,7 +29,7 @@ from common import (
 from multiprocess import Lock
 from net import try_save_http
 from osgeo import gdal, ogr, osr
-from redundancy import call_safe, get_stack, should_ignore
+from redundancy import call_safe, get_stack, should_ignore, try_call_safe
 from tqdm_util import keep_trying, pmap
 
 KM_TO_M = 1000
@@ -613,7 +613,7 @@ def is_invalid_tiff(path, bands=[1], test_read=False):
 
     try:
         # HACK: do this so we can catch other i/o errors
-        return call_safe(do_check)
+        return try_call_safe(True, do_check)
     except KeyboardInterrupt as ex:
         raise ex
     except Exception:

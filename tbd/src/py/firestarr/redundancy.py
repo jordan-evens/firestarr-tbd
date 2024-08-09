@@ -28,6 +28,8 @@ def should_ignore(ex):
         "blockingioerror",
         # seems weird but fails when reading valid tiffs with this error sometimes
         "tiffreaddirectory",
+        # also TIFFReadEncodedTile
+        "tiffread",
     ]
     # no point in looping if we already know the answer
     for s in ignore:
@@ -36,7 +38,7 @@ def should_ignore(ex):
     return False
 
 
-def call_safe(fct, *args, **kwargs):
+def try_call_safe(quiet, fct, *args, **kwargs):
     retries = NUM_RETRIES
     while True:
         try:
@@ -45,9 +47,14 @@ def call_safe(fct, *args, **kwargs):
             # ignore because azure is throwing them all the time
             # OSError: [Errno 5] Input/output
             if retries <= 0 or not should_ignore(ex):
-                print(get_stack(ex))
+                if not quiet:
+                    print(get_stack(ex))
                 raise ex
             retries -= 1
+
+
+def call_safe(fct, *args, **kwargs):
+    return try_call_safe(False, fct, *args, **kwargs)
 
 
 # def load_safe(*args, **kwargs):
