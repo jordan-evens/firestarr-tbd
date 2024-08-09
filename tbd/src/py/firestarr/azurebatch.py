@@ -95,7 +95,8 @@ _STORAGE_ACCOUNT_URL = f"https://{_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
 
 RELATIVE_MOUNT_PATH = "firestarr_data"
 ABSOLUTE_MOUNT_PATH = f"/mnt/batch/tasks/fsmounts/{RELATIVE_MOUNT_PATH}"
-TASK_SLEEP = 5
+# check every 30s
+TASK_SLEEP = 30
 
 CLIENT = None
 
