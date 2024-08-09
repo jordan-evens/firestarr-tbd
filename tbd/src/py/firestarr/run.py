@@ -390,7 +390,7 @@ class Run(object):
                 logging.warning("No fires in results")
             else:
                 logging.info(
-                    f"Done running {len(df_final)} fires with a total simulation time" f"of {df_final['sim_time'].sum()}"
+                    f"Done running {len(df_final)} fires with a total simulation time of {df_final['sim_time'].sum()}"
                 )
         return df_final, changed
 
