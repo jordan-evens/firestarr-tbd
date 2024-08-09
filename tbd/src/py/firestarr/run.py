@@ -12,6 +12,7 @@ from common import (
     BOUNDS,
     DEFAULT_FILE_LOG_LEVEL,
     DIR_OUTPUT,
+    DIR_RUNS,
     DIR_SIMS,
     FILE_LOCK_PREPUBLISH,
     FILE_LOCK_PUBLISH,
@@ -160,27 +161,28 @@ class Run(object):
             self._start_time = datetime.datetime.now()
             self._id = self._start_time.strftime(FMT_RUNID)
             self._name = f"{self._prefix}_{self._id}"
-            self._dir = ensure_dir(os.path.join(DIR_SIMS, self._name))
+            self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
+            self._dir_runs = ensure_dir(os.path.join(DIR_RUNS, self._name))
         else:
             self._name = os.path.basename(dir)
             if not self._name.startswith(self._prefix):
                 raise RuntimeError(f"Trying to resume {dir} that didn't use fires from {self._prefix}")
-            self._dir = dir
+            self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
+            self._dir_runs = dir
             self._id = self._name.replace(f"{self._prefix}_", "")
             self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
         self._start_time = self._start_time.astimezone(datetime.timezone.utc)
         self._log = add_log_file(
-            os.path.join(self._dir, f"log_{self._name}.log"),
+            os.path.join(self._dir_runs, f"log_{self._name}.log"),
             level=DEFAULT_FILE_LOG_LEVEL,
         )
         self._log_order = add_log_file(
-            os.path.join(self._dir, f"log_order_{self._name}.log"),
+            os.path.join(self._dir_runs, f"log_order_{self._name}.log"),
             level=DEFAULT_FILE_LOG_LEVEL,
             logger=LOGGER_FIRE_ORDER,
         )
-        self._dir_out = ensure_dir(os.path.join(self._dir, "data"))
-        self._dir_model = ensure_dir(os.path.join(self._dir, "model"))
-        self._dir_sims = ensure_dir(os.path.join(self._dir, "sims"))
+        self._dir_out = ensure_dir(os.path.join(self._dir_runs, "data"))
+        self._dir_model = ensure_dir(os.path.join(self._dir_runs, "model"))
         self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
         self._crs = crs
         self._file_fires = vector_path(self._dir_out, "df_fires_prioritized")
@@ -456,7 +458,9 @@ class Run(object):
 
         logging.info(f"Removing file locks for {self._id}")
         force_remove(
-            itertools.chain.from_iterable([find_locks(d) for d in [self._dir, self._dir_fires, self._dir_output]])
+            itertools.chain.from_iterable(
+                [find_locks(d) for d in [self._dir_runs, self._dir_sims, self._dir_fires, self._dir_output]]
+            )
         )
         return df_final
 
@@ -865,8 +869,8 @@ def make_resume(
     if dir_resume is None:
         dirs = [
             x
-            for x in list_dirs(DIR_SIMS)
-            if os.path.exists(vector_path(os.path.join(DIR_SIMS, x, "data"), "df_fires_groups"))
+            for x in list_dirs(DIR_RUNS)
+            if os.path.exists(vector_path(os.path.join(DIR_RUNS, x, "data"), "df_fires_groups"))
         ]
         if not dirs:
             # raise RuntimeError("No valid runs to resume")
@@ -874,7 +878,7 @@ def make_resume(
             logging.warning("No valid runs to resume")
             return None
         dir_resume = dirs[-1]
-    dir_resume = os.path.join(DIR_SIMS, dir_resume)
+    dir_resume = os.path.join(DIR_RUNS, dir_resume)
     kwargs["dir"] = dir_resume
     kwargs["do_publish"] = do_publish
     kwargs["do_merge"] = do_merge

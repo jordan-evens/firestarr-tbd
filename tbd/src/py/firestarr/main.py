@@ -106,7 +106,7 @@ def run_main(args):
             do_merge=do_merge,
             prepare_only=prepare_only,
         )
-        logging.info(f"Resuming previous run in {run_current._dir}")
+        logging.info(f"Resuming previous run in {run_current._dir_runs}")
     else:
         max_days = int(args[1]) if len(args) > 1 else None
         dir_arg = args[0] if len(args) > 0 else None

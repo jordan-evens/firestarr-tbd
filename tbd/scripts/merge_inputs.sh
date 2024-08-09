@@ -26,9 +26,9 @@ LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 2 | head -n 1`
 CUR_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 1`
 
 # see if we can match exact outputs for any folders
-DIFF_RESULTS=`diff -q ${DIR_SIMS}/${LAST_RUN}/sims ${DIR_SIMS}/${CUR_RUN}/sims`
-# echo ${DIFF_RESULTS} | grep "Common subdirectories" | sed "s/.*${DIR_SIMS}/${LAST_RUN}/sims/\([^ ]*\) and.*/\1/g"
-# diff -q ${DIR_SIMS}/${LAST_RUN}/sims ${DIR_SIMS}/${CUR_RUN}/sims | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"
+DIFF_RESULTS=`diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN}`
+# echo ${DIFF_RESULTS} | grep "Common subdirectories" | sed "s/.*${DIR_SIMS}/${LAST_RUN}/\([^ ]*\) and.*/\1/g"
+# diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN} | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"
 
 echo "Merging ${LAST_RUN} into ${CUR_RUN}"
 set -e
@@ -36,10 +36,10 @@ set -e
 N=0
 copied=0
 
-for d in `diff -q ${DIR_SIMS}/${LAST_RUN}/sims ${DIR_SIMS}/${CUR_RUN}/sims | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"`; do
+for d in `diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN} | grep "Common subdirectories" | sed "s/.*\/\([^ ]*\) and.*/\1/g"`; do
     # common directories
-    old="${DIR_SIMS}/${LAST_RUN}/sims/${d}"
-    new="${DIR_SIMS}/${CUR_RUN}/sims/${d}"
+    old="${DIR_SIMS}/${LAST_RUN}/${d}"
+    new="${DIR_SIMS}/${CUR_RUN}/${d}"
     N=$(expr ${N} + 1)
     # check that sim conditions, input tif and weather are the same
     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep sim.sh > /dev/null) || continue

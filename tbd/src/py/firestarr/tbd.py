@@ -148,7 +148,6 @@ def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
             job_id = None
             if dir_fire.startswith(DIR_SIMS):
                 job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
-                job_id = job_id[: job_id.index("/")]
             JOB_ID = make_or_get_job(job_id=job_id)
             _FIND_RUNNING = find_running_batch
             return True

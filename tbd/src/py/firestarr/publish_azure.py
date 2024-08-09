@@ -8,7 +8,7 @@ from azure.storage.blob import BlobServiceClient, ExponentialRetry
 from common import (
     CONFIG,
     DIR_OUTPUT,
-    DIR_SIMS,
+    DIR_RUNS,
     DIR_ZIP,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_DATE_YMD,
@@ -138,7 +138,7 @@ def upload_dir(dir_run=None):
     if container is None:
         # wait until we know we need it
         container = get_container()
-    dir_sim_data = os.path.join(DIR_SIMS, run_name, "data")
+    dir_sim_data = os.path.join(DIR_RUNS, run_name, "data")
     dir_shp = "current_shp"
     file_root = "df_fires_prioritized"
     files_group = [x for x in listdir_sorted(dir_sim_data) if x.startswith(f"{file_root}.")]
