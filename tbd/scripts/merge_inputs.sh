@@ -8,8 +8,9 @@ export IS_CRONJOB=
 
 DIR_SIMS=/appl/data/sims
 
-echo "Checking that previous run completed successfully"
-(${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Previous run didn't finish properly" && exit -1)
+echo "Checking that previous run completed and published successfully"
+(${DIR}/update.sh --no-publish --no-merge --no-retry && ${DIR}/check_and_publish.sh) || (echo "Previous run didn't finish properly" && exit -1)
+
 # # if we could get it running
 # LAST_RUN=`ls -1 ${DIR_SIMS} | sort | tail -n 1`
 # # need to cancel this before it runs things
