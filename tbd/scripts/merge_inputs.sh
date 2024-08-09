@@ -7,8 +7,10 @@ export IS_CRONJOB=
 # use update.sh so we can lock entire script on `/usr/bin/flock -n /appl/data/update.lock`
 
 DIR_SIMS=/appl/data/sims
+set -e
 
 echo "Checking that previous run completed and published successfully"
+# NOTE: don't use --resume because if it's old weather it needs to run from scratch
 (${DIR}/update.sh --no-publish --no-merge --no-retry && ${DIR}/check_and_publish.sh) || (echo "Previous run didn't finish properly" && exit -1)
 
 # # if we could get it running
@@ -32,7 +34,6 @@ DIFF_RESULTS=`diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN}`
 # diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN} | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"
 
 echo "Merging ${LAST_RUN} into ${CUR_RUN}"
-set -e
 
 N=0
 copied=0

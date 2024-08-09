@@ -58,5 +58,5 @@ else
             && (echo $(date -u --rfc-3339=seconds): Done update  | tee -a ${FILE_LOG}) \
         ) \
     ) \
-    || (echo ${CURDATE}: Run attempt failed | tee -a ${FILE_LOG})
+    || ((echo ${CURDATE}: Run attempt failed | tee -a ${FILE_LOG}) && exit -1)
 fi
