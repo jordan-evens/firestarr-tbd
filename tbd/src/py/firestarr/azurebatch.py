@@ -75,14 +75,15 @@ _MAX_NODES = 100
 # if any tasks pending but not running then want enough nodes to start
 # those and keep the current ones running, but if nothing in queue then
 # want to deallocate everything on completion
+# nodes don't deallocate until done if currently running and we set to 0
 _AUTO_SCALE_FORMULA = "\n".join(
     [
         f"$min_nodes = {_MIN_NODES};",
         f"$max_nodes = {_MAX_NODES};",
         "$samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);",
         "$pending = val($PendingTasks.GetSample(1), 0);",
-        "$active = val($ActiveTasks.GetSample(1), 0);",
-        "$want_nodes = $active > 0 ? $pending : 0;",
+        "$dedicated = $CurrentDedicatedNodes;",
+        "$want_nodes = $pending > $dedicated ? $pending : 0;",
         "$use_nodes = $samples < 1 ? 0 : $want_nodes;",
         "$TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));",
         "$NodeDeallocationOption = taskcompletion;",
