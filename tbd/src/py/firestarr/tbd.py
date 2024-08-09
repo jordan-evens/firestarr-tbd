@@ -511,8 +511,16 @@ def run_fire_from_folder(
                 def mk_sim_sh(*a, **k):
                     with open(file_sh, "w") as f_out:
                         # HACK: use tee to pipe to file and stdout
+                        # NOTE: without stdbuf the output in tee and on the console lags
                         # add $* at end so with can call with more args from cli
-                        f_out.writelines(["#!/bin/bash\n", f"{cmd} {args} $* 2>&1 | tee -a from_tee.log\n"])
+                        f_out.writelines(
+                            [
+                                "#!/bin/bash\n",
+                                "stdbuf -o0 \\\n",
+                                f"\t{cmd} {args} $* \\\n",
+                                "\t2>&1 | stdbuf -i0 -o0 tee -a from_tee.log\n",
+                            ]
+                        )
 
                 call_safe(mk_sim_sh)
                 # NOTE: needs to be octal base
