@@ -4,6 +4,7 @@ import collections
 import math
 import os
 import re
+import shutil
 import sys
 
 import fiona.drvsupport
@@ -492,11 +493,20 @@ def gdf_to_file(df, dir, base=None):
                 df[k] = df[k].astype(int)
         # df_index = df.set_index(keys)
         fct_save = df.to_file
+
+        def save_gpkg(f):
+            # HACK: writing gpkg to azure mount is failing a lot so move after writing
+            dir_tmp = ensure_dir(f"/tmp/{os.path.dirname(f)}")
+            f_tmp = os.path.join(dir_tmp, os.path.basename(f))
+            df.to_file(f_tmp, driver="GPKG")
+            shutil.move(f_tmp, f)
+            return f
+
         if "parquet" == VECTOR_FILE_EXTENSION:
             fct_save = df.to_parquet
         elif "gpkg" == VECTOR_FILE_EXTENSION:
             # need to specify driver
-            fct_save = lambda f: df.to_file(f, driver="GPKG")
+            fct_save = save_gpkg
         call_safe(fct_save, file)
         return file
     except KeyboardInterrupt as ex:
