@@ -79,19 +79,20 @@ _MAX_NODES = 100
 # those and keep the current ones running, but if nothing in queue then
 # want to deallocate everything on completion
 # nodes don't deallocate until done if currently running and we set to 0
-_AUTO_SCALE_FORMULA = "\n".join(
-    [
-        f"$min_nodes = {_MIN_NODES};",
-        f"$max_nodes = {_MAX_NODES};",
-        "$samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);",
-        "$pending = val($PendingTasks.GetSample(1), 0);",
-        "$dedicated = $CurrentDedicatedNodes;",
-        "$want_nodes = $pending > $dedicated ? $pending : 0;",
-        "$use_nodes = $samples < 1 ? 0 : $want_nodes;",
-        "$TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));",
-        "$NodeDeallocationOption = taskcompletion;",
-    ]
-)
+# use low priority nodes if over max number, but they stay as spot nodes so maybe not great if getting preempted
+_AUTO_SCALE_FORMULA = f"""
+    $min_nodes = {_MIN_NODES};
+    $max_nodes = {_MAX_NODES};
+    $samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);
+    $pending = val($PendingTasks.GetSample(1), 0);
+    $dedicated = $CurrentDedicatedNodes;
+    $spot = $CurrentLowPriorityNodes;
+    $want_nodes = ($pending > $dedicated || $spot > 0) ? ($pending - $spot) : 0;
+    $use_nodes = $samples < 1 ? 0 : $want_nodes;
+    $TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));
+    $TargetLowPriorityNodes = max(0, min($max_nodes, $use_nodes - $TargetDedicatedNodes));
+    $NodeDeallocationOption = taskcompletion;
+"""
 _AUTO_SCALE_EVALUATION_INTERVAL = datetime.timedelta(minutes=5)
 _BATCH_ACCOUNT_URL = f"https://{_BATCH_ACCOUNT_NAME}.canadacentral.batch.azure.com"
 _STORAGE_ACCOUNT_URL = f"https://{_STORAGE_ACCOUNT_NAME}.blob.core.windows.net"
