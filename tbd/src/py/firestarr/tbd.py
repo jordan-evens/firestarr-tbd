@@ -551,6 +551,8 @@ def run_fire_from_folder(
                     real_time = run_firestarr(dir_fire)
                     # parse from file instead of using clock time
                     sim_time = parse_sim_time(file_log)
+                    if sim_time is None:
+                        raise RuntimeError(f"Invalid simulation time for {dir_fire}")
                 except FileNotFoundError as ex:
                     # HACK: work around python not seeing processes that are too fast
                     # seems to be happening when process finishes so quickly that python is still looking for it

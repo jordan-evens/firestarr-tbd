@@ -344,8 +344,12 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None):
     if client is None:
         client = get_batch_client()
     task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    if not existed:
-        client.task.add(job_id, task)
+    if existed:
+        logging.warning(f"Deleting completed task to rerun {dir_fire}")
+        client.task.delete(job_id, task.id)
+        # remake task so it can be added
+        task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+    client.task.add(job_id, task)
     if not check_successful(job_id, task.id, client=client):
         # wait if requested and task isn't done
         if wait:
