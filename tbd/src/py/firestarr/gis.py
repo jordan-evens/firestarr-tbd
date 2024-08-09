@@ -617,7 +617,7 @@ def is_invalid_tiff(path, bands=[1], test_read=False):
     except KeyboardInterrupt as ex:
         raise ex
     except Exception:
-        return False
+        return True
 
 
 def find_invalid_tiffs(paths, bands=[1], test_read=False):
