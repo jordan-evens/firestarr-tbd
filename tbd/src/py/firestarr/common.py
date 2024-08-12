@@ -129,6 +129,7 @@ DIR_TBD = "/appl/tbd"
 FILE_TBD_BINARY = os.path.join(DIR_TBD, "tbd")
 FILE_TBD_SETTINGS = os.path.join(DIR_TBD, "settings.ini")
 DIR_SCRIPTS = os.path.join(DIR_TBD, "scripts")
+FILE_SIM_LOG = "firestarr.log"
 
 DIR_DATA = ensure_dir(os.path.abspath("/appl/data"))
 DIR_DOWNLOAD = ensure_dir(os.path.join(DIR_DATA, "download"))

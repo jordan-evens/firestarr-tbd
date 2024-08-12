@@ -14,6 +14,7 @@ from common import (
     DIR_SIMS,
     DIR_TBD,
     DIR_TMP,
+    FILE_SIM_LOG,
     FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_FILE_SECOND,
     SECONDS_PER_HOUR,
@@ -412,7 +413,7 @@ def run_fire_from_folder(
         changed = False
         fire_name = data["fire_name"]
         # file_log = file_sim.replace(".geojson", ".log")
-        file_log = os.path.join(dir_fire, "firestarr.log")
+        file_log = os.path.join(dir_fire, FILE_SIM_LOG)
         df_fire["log_file"] = file_log
         sim_time = data.get("sim_time", None)
         if not sim_time:

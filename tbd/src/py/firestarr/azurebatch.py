@@ -1,12 +1,18 @@
 import datetime
 import os
+import re
 import time
 
 import azure.batch as batch
 import azure.batch.batch_auth as batchauth
 import azure.batch.models as batchmodels
+from azurebatch_helpers import (
+    STANDARD_ERROR_FILE_NAME,
+    STANDARD_OUT_FILE_NAME,
+    read_task_file_as_string,
+)
 import pandas as pd
-from common import CONFIG, SECONDS_PER_MINUTE, logging
+from common import CONFIG, FILE_SIM_LOG, SECONDS_PER_MINUTE, logging
 from multiprocess import Lock, Process
 from redundancy import get_stack
 
@@ -278,6 +284,10 @@ def get_task_name(dir_fire):
     return dir_fire.replace("/", "-")
 
 
+def get_task_path(task_id):
+    return task_id.replace("-", "/")
+
+
 def find_tasks_running(job_id, dir_fire, client=None):
     if client is None:
         client = get_batch_client()
@@ -396,6 +406,7 @@ def get_container_settings(container, workdir=None, client=None):
 def get_active(client=None, active_only=False):
     def is_active(state):
         return "active" == state if active_only else "completed" != state
+
     if client is None:
         client = get_batch_client()
     jobs = {j.id: j for j in client.job.list() if is_active(j.state)}
@@ -458,7 +469,7 @@ def show_result(job_id=None, task_id=None):
         t = list_nodes()[0].as_dict()["recent_tasks"][-1]
         job_id = t["job_id"]
         task_id = t["task_id"]
-    for f in ["stdout.txt", "stderr.txt"]:
+    for f in [STANDARD_OUT_FILE_NAME, STANDARD_ERROR_FILE_NAME]:
         file = client.file.get_from_task(job_id, task_id, f)
         print("".join([str(x) for x in file]))
 
@@ -632,10 +643,34 @@ def get_login(pool_id=POOL_ID, client=None, node=0):
     print(f"ssh -ti ~/.ssh/id_azure -p {s.remote_login_port} {user}@{s.remote_login_ip_address} {cmd}")
 
 
+def job_from_task(task):
+    # HACK: can't find a way to do this with api
+    job_id = re.match(".*/jobs/([^/]*)/tasks/.*", task.url).groups()[0]
+    return client.job.get(job_id)
+
+
 def enable_autoscale(pool_id=POOL_ID, client=None):
     if client is None:
         client = get_batch_client()
     client.pool.patch(pool_id, batchmodels.PoolPatchParameter())
+
+
+def get_log(task):
+    return os.path.join(get_task_path(task.id), FILE_SIM_LOG)
+
+
+def read_log(task):
+    # NOTE: since log is being written to while running, blob container can't see it yet
+    lines = None
+    if "running" == task.state:
+        job = job_from_task(task)
+        txt = read_task_file_as_string(client, job.id, task.id, STANDARD_OUT_FILE_NAME)
+        lines = txt.split("\n")
+    else:
+        file_log = get_log(task)
+        with open(file_log) as f:
+            lines = f.readlines()
+    return lines
 
 
 if __name__ == "__main__":
