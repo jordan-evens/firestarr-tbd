@@ -393,12 +393,14 @@ def get_container_settings(container, workdir=None, client=None):
     )
 
 
-def get_active(client=None):
+def get_active(client=None, active_only=False):
+    def is_active(state):
+        return "active" == state if active_only else "completed" != state
     if client is None:
         client = get_batch_client()
-    jobs = {j.id: j for j in client.job.list() if j.state == "active"}
-    tasks = {job.id: {t.id: t for t in client.task.list(job.id) if t.state == "active"} for job in jobs.values()}
-    pools = {p.id: p for p in client.pool.list() if p.state == "active"}
+    jobs = {j.id: j for j in client.job.list() if is_active(j.state)}
+    tasks = {job.id: {t.id: t for t in client.task.list(job.id) if is_active(t.state)} for job in jobs.values()}
+    pools = {p.id: p for p in client.pool.list() if is_active(p.state)}
     nodes = {pool.id: {n.id: n for n in list_nodes(pool.id, client=None)} for pool in pools.values()}
     return jobs, tasks, pools, nodes
 
@@ -407,6 +409,7 @@ def show_active(client=None):
     if client is None:
         client = get_batch_client()
     jobs, tasks, pools, nodes = get_active(client=client)
+    print(f"jobs:\n{jobs}\n\ntasks:\n{tasks}\n\npools:\n{pools}\n\nnodes:\n{nodes}\n")
 
 
 def run_oneoff_task(cmd, pool_id=POOL_ID, client=None):
