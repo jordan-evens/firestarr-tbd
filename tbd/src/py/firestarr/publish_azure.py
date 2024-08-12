@@ -176,8 +176,8 @@ def upload_dir(dir_run=None):
         # HACK: just upload into archive too so we don't have to move later
         upload(path, f"current/{f}")
         # FIX: copy from container link instead of uploading multiple times
-        # archive in folder with timestamp so we know when things get pushed
-        upload(path, f"archive/{push_datetime.strftime(FMT_FILE_SECOND)}/{f}")
+        # upload into folder for this run, but don't keep multiple versions
+        upload(path, f"archive/{run_id}/{f}")
 
     # delete old blobs that weren't overwritten
     for f in delete_after:
