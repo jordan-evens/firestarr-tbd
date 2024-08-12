@@ -376,7 +376,12 @@ class Run(object):
             logging.error(f"Ignored incomplete fires: {list(is_ignored.keys())}")
         if ignore_incomplete_okay:
             num_done += len(is_ignored)
-        return num_done == len(df_fires)
+        successful = num_done == len(df_fires)
+        # HACK: abstract this later
+        if successful and self._is_batch:
+            finish_job()
+        return successful
+
 
     @log_order()
     def process(self):
@@ -429,9 +434,6 @@ class Run(object):
             while is_changed:
                 is_successful = self.check_and_publish()
                 if is_successful:
-                    # HACK: abstract this later
-                    if self._is_batch:
-                        finish_job()
                     # if supposed to publish must have if we succeeded
                     self._published_clean = self.check_do_publish()
                     break
