@@ -106,12 +106,15 @@ class SourceFeatureM3Download(SourceFeature):
         # buffer around hotspots
         resolution = 100
         buffer_size = 0.1 * KM_TO_M
+        logging.info("Buffering hotspots")
         df_pts.geometry = df_pts.buffer(buffer_size, resolution=resolution)
         # gdf_to_file(df_pts, self._dir_out, "df_hotspots_buffer")
         # df_pts = df_pts.dissolve().reset_index()
         # gdf_to_file(df_pts, self._dir_out, "df_hotspots_dissolve")
+        logging.info("Simplifying buffer")
         df_pts.geometry = df_pts.simplify(resolution)
         # gdf_to_file(df_pts, self._dir_out, "df_hot/spots_simplify")
+        logging.info("Finding times")
         df_pts.loc[:, "LASTDATE"] = datetime.date.today()
         df_pts["datetime"] = to_utc(df_pts["LASTDATE"])
         # df = df.reset_index()[["datetime", "geometry"]]
@@ -119,22 +122,28 @@ class SourceFeatureM3Download(SourceFeature):
         df_pts = df_pts.reset_index()[["datetime", "geometry"]]
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_pts, self._dir_out, "df_hotspots_basic")
+        logging.info("Buffering perimeters")
         df_perims_buffer = df.iloc[:]
         df_perims_buffer.geometry = df_perims_buffer.buffer(1.1 * KM_TO_M, resolution=resolution)
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_pts, self._dir_out, "df_perims_buffer")
+        logging.info("Finding hotspots that are too close to perimeters")
         df_join = gpd.sjoin(left_df=df_pts, right_df=df_perims_buffer, how="left")
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join")
+        logging.info("Removing hotspots that are too close to perimeters")
         df_join = df_join.loc[df_join["index_right"].isnull()]
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_exclude")
+        logging.info("Dissolving features")
         df_join = df_join.dissolve().reset_index()
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_exclude_dissolve")
+        logging.info("Converting multipolygons to polygons")
         df_join = df_join.explode(index_parts=False)
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_join, self._dir_out, "df_join_explode")
+        logging.info("Combining remaining hotspots with existing perimeters")
         df_both = pd.concat([df, df_join])
         if FLAG_DEBUG_PERIMETERS:
             gdf_to_file(df_both, self._dir_out, "df_perimeters_hotspots")
@@ -143,6 +152,7 @@ class SourceFeatureM3Download(SourceFeature):
         # df_both = df_both.dissolve().reset_index()
         # gdf_to_file(df_both, self._dir_out, "df_both_dissolve")
         # exit()
+        logging.info("Done creating features from M3 polygons and hotspots")
         return df_both
 
 
