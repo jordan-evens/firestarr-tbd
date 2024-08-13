@@ -80,6 +80,7 @@ POOL_ID = "pool_firestarr"
 _MIN_NODES = 0
 # _MIN_NODES = 1
 _MAX_NODES = 100
+_USE_LOW_PRIORITY = True
 # _MAX_NODES = 1
 # if any tasks pending but not running then want enough nodes to start
 # those and keep the current ones running, but if nothing in queue then
@@ -89,6 +90,7 @@ _MAX_NODES = 100
 _AUTO_SCALE_FORMULA = f"""
     $min_nodes = {_MIN_NODES};
     $max_nodes = {_MAX_NODES};
+    $max_low = {_MAX_NODES if _USE_LOW_PRIORITY else 0};
     $samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);
     $pending = val($PendingTasks.GetSample(1), 0);
     $dedicated = $CurrentDedicatedNodes;
@@ -97,7 +99,7 @@ _AUTO_SCALE_FORMULA = f"""
     $want_nodes = ($dedicated + $spot) >= $pending ? 0 : $want_nodes;
     $use_nodes = $samples < 1 ? 0 : $want_nodes;
     $TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));
-    $TargetLowPriorityNodes = max(0, min($max_nodes, $use_nodes - $TargetDedicatedNodes));
+    $TargetLowPriorityNodes = max(0, min($max_low, $use_nodes - $TargetDedicatedNodes));
     $NodeDeallocationOption = taskcompletion;
 """
 _AUTO_SCALE_EVALUATION_INTERVAL = datetime.timedelta(minutes=5)
