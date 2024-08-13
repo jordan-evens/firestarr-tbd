@@ -107,7 +107,7 @@ class SourceFeatureM3Download(SourceFeature):
         resolution = 100
         buffer_size = 0.1 * KM_TO_M
         logging.info("Buffering hotspots")
-        df_pts.geometry = df_pts.buffer(buffer_size, resolution=resolution)
+        df_pts.geometry = df_pts.buffer(buffer_size)
         # gdf_to_file(df_pts, self._dir_out, "df_hotspots_buffer")
         # df_pts = df_pts.dissolve().reset_index()
         # gdf_to_file(df_pts, self._dir_out, "df_hotspots_dissolve")
