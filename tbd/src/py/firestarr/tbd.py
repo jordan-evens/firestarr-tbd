@@ -381,14 +381,6 @@ def run_fire_from_folder(
         raise RuntimeError("Can't prepare_only and run_only at the same time")
     log_info = dolog if verbose else nolog
 
-    was_running = check_running(dir_fire)
-    if was_running:
-        log_info(f"Already running {dir_fire} - waiting for it to finish")
-    while check_running(dir_fire):
-        time.sleep(10)
-    if was_running:
-        log_info(f"Continuing after {dir_fire} finished running")
-
     file_sim = get_simulation_file(dir_fire)
     file_sh = os.path.join(dir_fire, "sim.sh")
     files_required = [file_sim, file_sh]
@@ -532,7 +524,11 @@ def run_fire_from_folder(
             try:
                 # HACK: return this again since it waits for the fire to finish at the start
                 if check_running(dir_fire):
-                    logging.info(f"Retrying for running fire {dir_fire}")
+                    # don't check this at the start since azure batch will create job and try to run it
+                    log_info(f"Already running {dir_fire} - waiting for it to finish")
+                    while check_running(dir_fire):
+                        time.sleep(10)
+                    log_info(f"Continuing after {dir_fire} finished running")
                     return run_fire_from_folder(
                         dir_fire,
                         dir_output,
