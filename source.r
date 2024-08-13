@@ -1,10 +1,10 @@
-setwd("//wsl$/Ubuntu-20.04/mnt/data/FireSTARR")
+setwd("\\\\wsl.localhost\\Ubuntu-22.04\\mnt\\data\\FireSTARR")
 library(data.table)
 # library(raster)
 library(terra)
 library(lattice)
 library(rasterVis)
-DIR <- "../data/test_output"
+DIR <- "../firestarr_outputs"
 # DIR_OUT <- "."
 DIR_OUT <- Sys.getenv("HOME")
 FILE_OUT <- file.path(DIR_OUT, paste0(basename(DIR), ".pdf"))
