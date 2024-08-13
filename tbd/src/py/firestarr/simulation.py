@@ -10,6 +10,8 @@ from common import (
     cffdrs,
     ensure_dir,
     ensures,
+    in_run_folder,
+    in_sim_folder,
     is_empty,
     logging,
     remove_timezone_utc,
@@ -84,6 +86,8 @@ class Simulation(object):
         fire_name = row_fire["fire_name"]
         dir_fire = os.path.join(self._dir_sims, fire_name)
         file_sim = get_simulation_file(dir_fire)
+        ensure_dir(dir_fire)
+        ensure_dir(os.path.dirname(dir_fire))
 
         # want to return directory name of created file
         @ensures(
@@ -113,8 +117,10 @@ class Simulation(object):
             utcoffset_hours = utcoffset.total_seconds() / SECONDS_PER_HOUR
             # do this instead of using utcoffset() so we know it's LST
             tz_lst = tz_from_offset(utcoffset)
-            file_wx = _.replace(".geojson", "_wx.csv")
-            file_wx_streams = _.replace(".geojson", "_wx_streams.geojson")
+            file_wx = in_sim_folder(_.replace(".geojson", "_wx.csv"))
+            ensure_dir(os.path.dirname(file_wx))
+            file_wx_streams = in_run_folder(_.replace(".geojson", "_wx_streams.geojson"))
+            ensure_dir(os.path.dirname(file_wx_streams))
             # add so that loop can decrement before call
             date_try = self._origin.offset(1)
             # if no data yet then problem with data source so stop

@@ -341,6 +341,19 @@ def try_remove(paths, verbose=False, force=False):
 def force_remove(paths, verbose=True):
     return try_remove(paths, verbose=verbose, force=True)
 
+def in_sim_folder(path):
+    if DIR_RUNS in path:
+        return path.replace(DIR_RUNS, DIR_SIMS)
+    if DIR_SIMS in path:
+        return path
+    raise RuntimeError(f"Trying to find sim folder for invalid path {path}")
+
+def in_run_folder(path):
+    if DIR_SIMS in path:
+        return path.replace(DIR_SIMS, DIR_RUNS)
+    if DIR_RUNS in path:
+        return path
+    raise RuntimeError(f"Trying to find run folder for invalid path {path}")
 
 def split_line(line):
     """!

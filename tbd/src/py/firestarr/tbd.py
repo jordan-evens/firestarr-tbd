@@ -22,6 +22,7 @@ from common import (
     ensure_dir,
     force_remove,
     get_stack,
+    in_run_folder,
     is_newer_than,
     listdir_sorted,
     locks_for,
@@ -208,7 +209,7 @@ def finish_job():
 
 def get_simulation_file(dir_fire):
     fire_name = os.path.basename(dir_fire)
-    return os.path.join(dir_fire, f"firestarr_{fire_name}.geojson")
+    return in_run_folder(os.path.join(dir_fire, f"firestarr_{fire_name}.geojson"))
 
 
 def find_outputs(dir_fire):
@@ -453,7 +454,7 @@ def run_fire_from_folder(
                     perim = None
                 # NOTE: save point file either way so we can see where it is
                 # think this should be fine for using individual points
-                save_point_file(lat, lon, dir_fire, fire_name)
+                save_point_file(lat, lon, in_run_folder(dir_fire), fire_name)
                 log_info("Startup coordinates are {}, {}".format(lat, lon))
                 hour = start_time.hour
                 minute = start_time.minute
