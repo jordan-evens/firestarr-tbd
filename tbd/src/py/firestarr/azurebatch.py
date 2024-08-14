@@ -327,6 +327,16 @@ def check_successful(job_id, task_id=None, client=None):
                 return False
         return True
 
+def task_exists(job_id, task_id, client=None):
+    if client is None:
+        client = get_batch_client()
+    try:
+        task = client.task.get(job_id, task_id)
+        return True
+    except batchmodels.BatchErrorException as ex:
+        if "TaskNotFound" != ex.error.code:
+            raise ex
+    return False
 
 def make_or_get_simulation_task(job_id, dir_fire, client=None):
     if client is None:
@@ -361,7 +371,7 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None):
     if existed:
         logging.warning(f"Deleting completed task to rerun {dir_fire}")
         client.task.delete(job_id, task.id)
-        while client.task.exists(task.id):
+        while task_exists(job_id, task.id):
             print(".", end="", flush=True)
             time.sleep(1)
         # remake task so it can be added
