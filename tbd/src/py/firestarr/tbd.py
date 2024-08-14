@@ -11,6 +11,7 @@ import psutil
 from common import (
     CONFIG,
     DIR_DATA,
+    DIR_OUTPUT,
     DIR_SIMS,
     DIR_TBD,
     DIR_TMP,
@@ -66,6 +67,8 @@ JOB_ID = None
 IS_USING_BATCH = None
 TIFF_SLEEP = 10
 
+FILE_LOCK_BATCH_JOB = os.path.join(DIR_OUTPUT, "batch_job")
+
 
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
@@ -104,13 +107,14 @@ def find_running_local(dir_fire):
 
 
 def run_firestarr_batch(dir_fire, wait=True):
-    add_simulation_task(JOB_ID, dir_fire, wait=wait)
+    add_simulation_task(assign_job(dir_fire), dir_fire, wait=wait)
 
 
 def find_running_batch(dir_fire):
     while True:
         try:
-            return find_tasks_running(JOB_ID, dir_fire)
+            job_id = get_job_id(dir_fire)
+            return find_tasks_running(job_id, dir_fire)
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
@@ -118,21 +122,39 @@ def find_running_batch(dir_fire):
 
 
 def get_simulation_task(dir_fire):
-    return make_or_get_simulation_task(JOB_ID, dir_fire)
+    return make_or_get_simulation_task(assign_job(dir_fire), dir_fire)
 
 
-def schedule_tasks(tasks):
-    schedule_job_tasks(JOB_ID, tasks)
+def schedule_tasks(dir_fire, tasks):
+    # HACK: use any dir_fire for now since they should all work
+    schedule_job_tasks(assign_job(dir_fire), tasks)
 
 
 def get_nodes():
     return list_nodes()
 
 
+def get_job_id(dir_fire):
+    job_id = None
+    if dir_fire.startswith(DIR_SIMS):
+        job_id = dir_fire.replace(DIR_SIMS, "").strip("/").split("/")[0]
+    return job_id
+
+
+def assign_job(dir_fire):
+    global JOB_ID
+    with locks_for(FILE_LOCK_BATCH_JOB) as locks:
+        job_id = get_job_id(dir_fire)
+        if JOB_ID != job_id:
+            JOB_ID = make_or_get_job(job_id=job_id)
+    return JOB_ID
+
+
 def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
     global _RUN_FIRESTARR
     global _FIND_RUNNING
     global JOB_ID
+    global IS_USING_BATCH
     if force_local is None:
         force_local = CONFIG.get("FORCE_LOCAL_TASKS", False)
     if force_batch is None:
@@ -149,11 +171,9 @@ def assign_firestarr_batch(dir_fire, force_local=None, force_batch=None):
                 logging.warning("Not running on azure but using batch")
             logging.info("Running using batch tasks")
             _RUN_FIRESTARR = run_firestarr_batch
-            job_id = None
-            if dir_fire.startswith(DIR_SIMS):
-                job_id = dir_fire.replace(DIR_SIMS, "").strip("/")
-            JOB_ID = make_or_get_job(job_id=job_id)
+            JOB_ID = None
             _FIND_RUNNING = find_running_batch
+            IS_USING_BATCH = True
             return True
         if force_batch:
             raise RuntimeError("Forcing batch mode but no config set")
@@ -197,14 +217,15 @@ def check_running(dir_fire):
     return 0 < len(processes)
 
 
-def finish_job():
+def finish_job(dir_fire):
+    job_id = get_job_id(dir_fire)
     if IS_USING_BATCH is None:
         logging.error("Didn't use batch, but trying to finish job")
     else:
-        if check_successful(JOB_ID):
-            get_batch_client().job.terminate(JOB_ID)
+        if check_successful(job_id):
+            get_batch_client().job.terminate(job_id)
         else:
-            logging.error(f"Finishing incomplete job {JOB_ID}")
+            logging.error(f"Finishing incomplete job {job_id}")
 
 
 def get_simulation_file(dir_fire):

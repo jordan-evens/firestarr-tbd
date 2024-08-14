@@ -6,12 +6,12 @@ import time
 import azure.batch as batch
 import azure.batch.batch_auth as batchauth
 import azure.batch.models as batchmodels
+import pandas as pd
 from azurebatch_helpers import (
     STANDARD_ERROR_FILE_NAME,
     STANDARD_OUT_FILE_NAME,
     read_task_file_as_string,
 )
-import pandas as pd
 from common import CONFIG, FILE_SIM_LOG, SECONDS_PER_MINUTE, logging
 from multiprocess import Lock, Process
 from redundancy import get_stack
@@ -293,6 +293,9 @@ def get_task_path(task_id):
 def find_tasks_running(job_id, dir_fire, client=None):
     if client is None:
         client = get_batch_client()
+    # no tasks if job doesn't exist
+    if job_id not in client.job.list():
+        return []
     # # HACK: want to check somewhere and this seems good enough for now
     # restart_unusable_nodes(client=client)
     task_name = get_task_name(dir_fire)
@@ -327,6 +330,7 @@ def check_successful(job_id, task_id=None, client=None):
                 return False
         return True
 
+
 def task_exists(job_id, task_id, client=None):
     if client is None:
         client = get_batch_client()
@@ -337,6 +341,7 @@ def task_exists(job_id, task_id, client=None):
         if "TaskNotFound" != ex.error.code:
             raise ex
     return False
+
 
 def make_or_get_simulation_task(job_id, dir_fire, client=None):
     if client is None:
@@ -368,15 +373,16 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None):
     if client is None:
         client = get_batch_client()
     task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    if existed:
-        logging.warning(f"Deleting completed task to rerun {dir_fire}")
-        client.task.delete(job_id, task.id)
-        while task_exists(job_id, task.id):
-            print(".", end="", flush=True)
-            time.sleep(1)
-        # remake task so it can be added
-        task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    client.task.add(job_id, task)
+    # if existed:
+    #     logging.warning(f"Deleting completed task to rerun {dir_fire}")
+    #     client.task.delete(job_id, task.id)
+    #     while task_exists(job_id, task.id):
+    #         print(".", end="", flush=True)
+    #         time.sleep(1)
+    #     # remake task so it can be added
+    #     task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+    if not existed:
+        client.task.add(job_id, task)
     if not check_successful(job_id, task.id, client=client):
         # wait if requested and task isn't done
         if wait:

@@ -379,9 +379,8 @@ class Run(object):
         successful = num_done == len(df_fires)
         # HACK: abstract this later
         if successful and self._is_batch:
-            finish_job()
+            finish_job(self._dir_sims)
         return successful
-
 
     @log_order()
     def process(self):
@@ -795,7 +794,8 @@ class Run(object):
                 desc="Creating simulation taks",
             )
             tasks_new = [x[0] for x in tasks_existed if not x[1]]
-            schedule_tasks(tasks_new)
+            # HACK: use any dir_fire for now since they should all work
+            schedule_tasks(dirs_fire[0], tasks_new)
             successful, unsuccessful = keep_trying_groups(
                 fct=run_fire,
                 values=successful,
