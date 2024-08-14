@@ -20,6 +20,7 @@ def make_query_geoserver(
     filter=None,
     wfs_root=WFS_ROOT,
     output_format="application/json",
+    crs=None,
 ):
     logging.debug(f"Getting table {table_name} in projection {str(CRS_COMPARISON)}")
     url = "&".join(
@@ -31,6 +32,8 @@ def make_query_geoserver(
     )
     if features is not None:
         url += f"&propertyName={features}"
+    if crs is not None:
+        url += f"&SRSName={crs}"
     if filter is not None:
         url += f"&CQL_FILTER={urllib.parse.quote(filter)}"
     logging.debug(url)

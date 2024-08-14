@@ -3,9 +3,9 @@ import os
 from collections import Counter
 from functools import cache
 
+import geopandas as gpd
 import model_data
 import pandas as pd
-import geopandas as gpd
 import tqdm_util
 from common import (
     DEFAULT_LAST_ACTIVE_SINCE_OFFSET,
@@ -223,15 +223,32 @@ class SourceFireDipService(SourceFire):
             )
             gdf["fire_name"] = make_name_ciffc(gdf)
             gdf = gdf.to_crs(CRS_WGS84)
-            return gdf
+            return clean_fires(gdf, self._year)
 
         return try_save_http(
-            make_query_geoserver(self.TABLE_NAME, filter=filter),
+            make_query_geoserver(self.TABLE_NAME, filter=filter, crs="EPSG:4326"),
             save_as,
             False,
             None,
             do_parse,
         )
+
+
+def clean_fires(gdf, year):
+    gdf["datetime"] = pd.to_datetime(gdf["datetime"], errors="coerce")
+    gdf["fire_name"] = make_name_ciffc(gdf)
+    gdf = gdf.loc[gdf["datetime"].apply(lambda x: x.year) == year]
+    gdf = gdf.set_index(["fire_name"])
+    dupes = [k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1]
+    df_dupes = gdf.loc[dupes].reset_index()
+    gdf = gdf.drop(dupes)
+    df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)[
+        ["fire_name", "datetime", "area", "status"]
+    ]
+    df_pick = df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False).groupby(["fire_name"]).first()
+    df_pick.crs = df_dupes.crs
+    gdf = pd.concat([gdf, df_pick])
+    return gdf
 
 
 class SourceFireCiffcService(SourceFire):
@@ -261,22 +278,7 @@ class SourceFireCiffcService(SourceFire):
                     "field_fire_size": "area",
                 }
             )
-            gdf["datetime"] = pd.to_datetime(gdf["datetime"], errors="coerce")
-            gdf["fire_name"] = make_name_ciffc(gdf)
-            gdf = gdf.loc[gdf["datetime"].apply(lambda x: x.year) == self._year]
-            gdf = gdf.set_index(["fire_name"])
-            dupes = [k for k, v in Counter(gdf.reset_index()["fire_name"]).items() if v > 1]
-            df_dupes = gdf.loc[dupes].reset_index()
-            gdf = gdf.drop(dupes)
-            df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False)[
-                ["fire_name", "datetime", "area", "status"]
-            ]
-            df_pick = (
-                df_dupes.sort_values(["fire_name", "datetime", "area"], ascending=False).groupby(["fire_name"]).first()
-            )
-            df_pick.crs = df_dupes.crs
-            gdf = pd.concat([gdf, df_pick])
-            return gdf
+            return clean_fires(gdf, self._year)
 
         return try_save_http(
             make_query_geoserver(
