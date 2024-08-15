@@ -44,12 +44,14 @@ for d in `diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN} | grep "Common 
     new="${DIR_SIMS}/${CUR_RUN}/${d}"
     N=$(expr ${N} + 1)
     # check that sim conditions, input tif and weather are the same
-    (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep sim.sh > /dev/null) || continue
+    # only care about simulation call line being the same so we can tweak script otherwise and still see as the same
+    diff <(grep tbd ${old}/sim.sh) <(grep tbd ${new}/sim.sh) > /dev/null || continue
     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/${d}.tif) > /dev/null || continue
     (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/firestarr_${d}_wx.csv) > /dev/null || continue
     echo "Results for ${d} are from same inputs so copying"
     # cp -rv ${old}/* ${new}/
-    rsync -avHP --exclude="*.lock" --delete ${old}/ ${new}/
+    # sim file tbd call compares the same but want to keep newer version
+    rsync -avHP --exclude="sim.sh" --exclude="*.lock" --exclude="interim_*" --exclude="from_tee.log" --delete ${old}/ ${new}/
     copied=$(expr ${copied} + 1)
 done
 
