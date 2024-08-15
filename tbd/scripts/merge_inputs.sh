@@ -38,20 +38,26 @@ echo "Merging ${LAST_RUN} into ${CUR_RUN}"
 N=0
 copied=0
 
+# anything that's already a symlink will not show up in diff output so won't happen in this loop
 for d in `diff -q ${DIR_SIMS}/${LAST_RUN} ${DIR_SIMS}/${CUR_RUN} | grep "Common subdirectories" | sed "s/.*\/\([^ ]*\) and.*/\1/g"`; do
     # common directories
     old="${DIR_SIMS}/${LAST_RUN}/${d}"
     new="${DIR_SIMS}/${CUR_RUN}/${d}"
     N=$(expr ${N} + 1)
-    # check that sim conditions, input tif and weather are the same
-    # only care about simulation call line being the same so we can tweak script otherwise and still see as the same
-    diff <(grep tbd ${old}/sim.sh) <(grep tbd ${new}/sim.sh) > /dev/null || continue
-    (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/${d}.tif) > /dev/null || continue
-    (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/firestarr_${d}_wx.csv) > /dev/null || continue
-    echo "Results for ${d} are from same inputs so copying"
-    # cp -rv ${old}/* ${new}/
-    # sim file tbd call compares the same but want to keep newer version
-    rsync -avHP --exclude="sim.sh" --exclude="*.lock" --exclude="interim_*" --exclude="from_tee.log" --delete ${old}/ ${new}/
+    echo "Checking ${d}"
+    if [ "$(realpath ${old})" == "$(realpath ${new})" ]; then
+        # NOTE: this should never get reached but leaving it for clarity about what's going on
+        echo "Results for ${d} are already reused"
+    else
+        # check that sim conditions, input tif and weather are the same
+        # only care about simulation call line being the same so we can tweak script otherwise and still see as the same
+        diff <(grep tbd ${old}/sim.sh) <(grep tbd ${new}/sim.sh) > /dev/null || continue
+        (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/${d}.tif) > /dev/null || continue
+        (diff -rqs ${old} ${new} | grep -v ".lock" | grep identical | grep ${d}/firestarr_${d}_wx.csv) > /dev/null || continue
+        echo "Results for ${d} are from same inputs so reusing"
+        # instead of copying just use symlinks
+        rm -rf ${new} && ln -s ${old} ${new}
+    fi
     copied=$(expr ${copied} + 1)
 done
 
