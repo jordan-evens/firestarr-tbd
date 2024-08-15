@@ -94,12 +94,14 @@ _AUTO_SCALE_FORMULA = f"""
     $max_low = {_MAX_NODES if _USE_LOW_PRIORITY else 0};
     $samples = $PendingTasks.GetSamplePercent(TimeInterval_Minute);
     $pending = val($PendingTasks.GetSample(1), 0);
+    $preempted = max(0, val($PreemptedNodeCount.GetSample(5 * TimeInterval_Minute), 0));
     $dedicated = $CurrentDedicatedNodes;
     $spot = $CurrentLowPriorityNodes;
     $want_nodes = ($pending > $dedicated || $spot > 0) ? ($pending - $spot) : 0;
     $want_nodes = ($dedicated + $spot) >= $pending ? 0 : $want_nodes;
     $use_nodes = $samples < 1 ? 0 : $want_nodes;
-    $TargetDedicatedNodes = max($min_nodes, min($max_nodes, $use_nodes));
+    $max_dedicated = max($min_nodes, min($max_nodes, $use_nodes));
+    $TargetDedicatedNodes = min($preempted + $dedicated, $max_dedicated);
     $TargetLowPriorityNodes = max(0, min($max_low, $use_nodes - $TargetDedicatedNodes));
     $NodeDeallocationOption = taskcompletion;
 """
@@ -678,10 +680,26 @@ def job_from_task(task):
     return client.job.get(job_id)
 
 
+def evaluate_autoscale(pool_id=POOL_ID, client=None, print_result=True):
+    if client is None:
+        client = get_batch_client()
+    r = client.pool.evaluate_auto_scale(pool_id, _AUTO_SCALE_FORMULA)
+    r = r.results.replace(";", ";\n").replace("=", " = ")
+    if print_result:
+        print(r)
+    else:
+        return r
+
+
 def enable_autoscale(pool_id=POOL_ID, client=None):
     if client is None:
         client = get_batch_client()
-    client.pool.patch(pool_id, batchmodels.PoolPatchParameter())
+    client.pool.enable_auto_scale(
+        pool_id,
+        auto_scale_formula=_AUTO_SCALE_FORMULA,
+        auto_scale_evaluation_interval=_AUTO_SCALE_EVALUATION_INTERVAL,
+    )
+    evaluate_autoscale(pool_id=pool_id, client=client)
 
 
 def get_log(task):
