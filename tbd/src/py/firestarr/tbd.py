@@ -106,9 +106,15 @@ def find_running_local(dir_fire):
     return processes
 
 
+def mark_as_done(dir_fire):
+    if IS_USING_BATCH:
+        # HACK: if using azure then mark task as completed
+        add_simulation_task(assign_job(dir_fire), dir_fire, wait=False, mark_as_done=True)
+    # FIX: should we kill the process if running locally?
+
+
 def run_firestarr_batch(dir_fire, wait=True):
-    file_log = os.path.join(dir_fire, FILE_SIM_LOG)
-    sim_time = parse_sim_time(file_log)
+    sim_time = parse_sim_time(dir_fire)
     mark_as_done = sim_time is not None
     add_simulation_task(assign_job(dir_fire), dir_fire, wait=wait, mark_as_done=mark_as_done)
 
@@ -368,10 +374,11 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
     return changed, is_interim, files_project
 
 
-def parse_sim_time(file_log):
+def parse_sim_time(dir_fire):
     # try parsing log for simulation time
     sim_time = None
     try:
+        file_log = get_log_file(dir_fire)
         if os.path.isfile(file_log):
             # if log says it ran then don't run it
             # HACK: just use tail instead of looping or seeking ourselves
@@ -388,7 +395,12 @@ def parse_sim_time(file_log):
     return sim_time
 
 
-def run_fire_from_folder(
+def get_log_file(dir_fire):
+    return os.path.join(dir_fire, FILE_SIM_LOG)
+
+
+# HACK: wrap in check for sim_time and marking task as done if there
+def _run_fire_from_folder(
     dir_fire,
     dir_output,
     verbose=False,
@@ -406,7 +418,7 @@ def run_fire_from_folder(
         raise RuntimeError("Can't prepare_only and run_only at the same time")
     log_info = dolog if verbose else nolog
 
-    file_sim = get_simulation_file(dir_fire)
+    file_sim = get_simulation_file(ensure_dir(dir_fire))
     file_sh = os.path.join(dir_fire, "sim.sh")
     files_required = [file_sim, file_sh]
     # need directory for lock
@@ -429,11 +441,10 @@ def run_fire_from_folder(
         #     return df_fire
         changed = False
         fire_name = data["fire_name"]
-        # file_log = file_sim.replace(".geojson", ".log")
-        file_log = os.path.join(dir_fire, FILE_SIM_LOG)
+        file_log = get_log_file(dir_fire)
         df_fire["log_file"] = file_log
         # FIX: parsing log file is authoritative result until we figure out why dataframe would have a different time
-        sim_time_parsed = parse_sim_time(file_log)
+        sim_time_parsed = parse_sim_time(dir_fire)
         sim_time = data.get("sim_time", None)
         if not sim_time or sim_time != sim_time_parsed:
             sim_time = sim_time_parsed
@@ -566,7 +577,7 @@ def run_fire_from_folder(
                     while check_running(dir_fire):
                         time.sleep(10)
                     # parse from file instead of using clock time
-                    sim_time = parse_sim_time(file_log)
+                    sim_time = parse_sim_time(dir_fire)
                     if sim_time is None:
                         raise RuntimeError(f"Invalid simulation time for {dir_fire}")
                 except FileNotFoundError as ex:
@@ -574,7 +585,7 @@ def run_fire_from_folder(
                     # seems to be happening when process finishes so quickly that python is still looking for it
                     #       [Errno 2] No such file or directory: '/proc/[0-9]*/cwd'
                     # parse from file instead of using clock time
-                    sim_time = parse_sim_time(file_log)
+                    sim_time = parse_sim_time(dir_fire)
                     if sim_time is None:
                         raise ex
             except KeyboardInterrupt as ex:
@@ -613,3 +624,25 @@ def run_fire_from_folder(
         changed, is_interim, files_project = copy_fire_outputs(dir_fire, dir_output, changed)
         df_fire["changed"] = changed
         return df_fire
+
+
+def run_fire_from_folder(
+    dir_fire,
+    dir_output,
+    verbose=False,
+    prepare_only=False,
+    run_only=False,
+    no_wait=False,
+):
+    result = _run_fire_from_folder(
+        dir_fire=dir_fire,
+        dir_output=dir_output,
+        verbose=verbose,
+        prepare_only=prepare_only,
+        run_only=run_only,
+        no_wait=no_wait,
+    )
+    sim_time = parse_sim_time(dir_fire)
+    if sim_time is not None:
+        mark_as_done(dir_fire)
+    return result
