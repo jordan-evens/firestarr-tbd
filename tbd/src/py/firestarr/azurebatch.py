@@ -294,7 +294,8 @@ def find_tasks_running(job_id, dir_fire, client=None):
     if client is None:
         client = get_batch_client()
     # no tasks if job doesn't exist
-    if job_id not in client.job.list():
+    jobs = [x.id for x in client.job.list()]
+    if job_id not in jobs:
         return []
     # # HACK: want to check somewhere and this seems good enough for now
     # restart_unusable_nodes(client=client)
