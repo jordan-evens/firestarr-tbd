@@ -26,6 +26,7 @@ def should_ignore(ex):
         "i/o error",
         "resource temporarily unavailable",
         "blockingioerror",
+        "fread",
         # seems weird but fails when reading valid tiffs with this error sometimes
         "tiffreaddirectory",
         # also TIFFReadEncodedTile
