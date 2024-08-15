@@ -432,22 +432,11 @@ def run_fire_from_folder(
         # file_log = file_sim.replace(".geojson", ".log")
         file_log = os.path.join(dir_fire, FILE_SIM_LOG)
         df_fire["log_file"] = file_log
+        # FIX: parsing log file is authoritative result until we figure out why dataframe would have a different time
+        sim_time_parsed = parse_sim_time(file_log)
         sim_time = data.get("sim_time", None)
-        if not sim_time:
-            sim_time = parse_sim_time(file_log)
-            # rely on sim_time being applied to df_fire later
-            # if sim_time is not None:
-            #     try:
-            #         # HACK: repeat here for now
-            #         df_fire["sim_time"] = sim_time
-            #         if "dates_out" in df_fire.columns:
-            #             del df_fire["dates_out"]
-            #         save_geojson(df_fire, file_sim)
-            #     except KeyboardInterrupt as ex:
-            #         raise ex
-            #     except Exception:
-            #         pass
-            # HACK: save if found sim_tim
+        if not sim_time or sim_time != sim_time_parsed:
+            sim_time = sim_time_parsed
             df_fire["sim_time"] = sim_time
             save_geojson(df_fire, file_sim)
         want_dates = WANT_DATES
