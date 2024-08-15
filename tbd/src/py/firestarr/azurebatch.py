@@ -369,20 +369,29 @@ def make_or_get_simulation_task(job_id, dir_fire, client=None):
     return task, existed
 
 
-def add_simulation_task(job_id, dir_fire, wait=True, client=None):
+def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=False):
     if client is None:
         client = get_batch_client()
     task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    # if existed:
-    #     logging.warning(f"Deleting completed task to rerun {dir_fire}")
-    #     client.task.delete(job_id, task.id)
-    #     while task_exists(job_id, task.id):
-    #         print(".", end="", flush=True)
-    #         time.sleep(1)
-    #     # remake task so it can be added
-    #     task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+    if existed:
+        # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
+        # if task.state not in ["active", "running"]:
+        if "completed" == task.state and not mark_as_done:
+            logging.warning(f"Deleting completed task to rerun {dir_fire}")
+            client.task.delete(job_id, task.id)
+            while task_exists(job_id, task.id):
+                print(".", end="", flush=True)
+                time.sleep(1)
+            # remake task so it can be added
+            task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
     if not existed:
         client.task.add(job_id, task)
+        # wait until task is added
+        while not task_exists(job_id, task.id, client):
+            time.sleep(1)
+    if mark_as_done:
+        # already done so terminate
+        client.task.terminate(job_id, task.id)
     if not check_successful(job_id, task.id, client=client):
         # wait if requested and task isn't done
         if wait:

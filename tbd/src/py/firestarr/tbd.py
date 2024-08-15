@@ -107,7 +107,10 @@ def find_running_local(dir_fire):
 
 
 def run_firestarr_batch(dir_fire, wait=True):
-    add_simulation_task(assign_job(dir_fire), dir_fire, wait=wait)
+    file_log = os.path.join(dir_fire, FILE_SIM_LOG)
+    sim_time = parse_sim_time(file_log)
+    mark_as_done = sim_time is not None
+    add_simulation_task(assign_job(dir_fire), dir_fire, wait=wait, mark_as_done=mark_as_done)
 
 
 def find_running_batch(dir_fire):
@@ -527,13 +530,16 @@ def run_fire_from_folder(
                     with open(file_sh, "w") as f_out:
                         # HACK: use tee to pipe to file and stdout
                         # NOTE: without stdbuf the output in tee and on the console lags
+                        # use grep first so this finishes successfully if task starts again and time is there already
                         # add $* at end so with can call with more args from cli
                         f_out.writelines(
                             [
                                 "#!/bin/bash\n",
-                                "stdbuf -o0 \\\n",
+                                f"(grep 'Total simulation time was' {os.path.basename(file_log)} > /dev/null 2>&1) || ( \\\n",
+                                "\tstdbuf -o0 \\\n",
                                 f"\t{cmd} {args} $* \\\n",
-                                "\t2>&1 | stdbuf -i0 -o0 tee -a from_tee.log\n",
+                                "\t2>&1 | stdbuf -i0 -o0 tee -a from_tee.log\\\n",
+                                ")\n",
                             ]
                         )
 
@@ -568,6 +574,8 @@ def run_fire_from_folder(
                     shutil.move(file_log, file_log_old)
                 try:
                     real_time = run_firestarr(dir_fire)
+                    while check_running(dir_fire):
+                        time.sleep(10)
                     # parse from file instead of using clock time
                     sim_time = parse_sim_time(file_log)
                     if sim_time is None:
