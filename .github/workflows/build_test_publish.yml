@@ -36,6 +36,7 @@ jobs:
         run: |
           # make a data directory so volume works
           mkdir -p data/generated/grid/100m/default
+          mkdir -p sims
           # HACK: docker compose doesn't seem to be using the .env file
           source ./.env
           echo VERSION=${VERSION}
