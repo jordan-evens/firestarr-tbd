@@ -70,10 +70,12 @@ ENTRYPOINT sudo cron -f
 
 
 FROM gcc-cmake-with_libs AS tbd_build
+ARG VERSION
 WORKDIR /appl/tbd
 COPY ./tbd/src/cpp src/cpp/
 COPY ./tbd/CMakeLists.txt .
-RUN cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
+RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
+  && cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
   && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
 
 FROM debian:trixie-slim AS minimal-with-user
