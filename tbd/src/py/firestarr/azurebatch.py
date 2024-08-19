@@ -80,7 +80,7 @@ _POOL_VM_SIZE = "STANDARD_F4S_V2"
 POOL_ID = "pool_firestarr"
 _MIN_NODES = 0
 # _MIN_NODES = 1
-_MAX_NODES = 100
+_MAX_NODES = 50
 _USE_LOW_PRIORITY = True
 # _MAX_NODES = 1
 # if any tasks pending but not running then want enough nodes to start
