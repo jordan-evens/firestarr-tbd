@@ -99,7 +99,7 @@ _AUTO_SCALE_FORMULA = f"""
     $spot = $CurrentLowPriorityNodes;
     $want_nodes = ($pending > $dedicated || $spot > 0) ? ($pending - $spot) : 0;
     $want_nodes = ($dedicated + $spot) >= $pending ? 0 : $want_nodes;
-    $use_nodes = $samples < 1 ? 0 : $want_nodes;
+    $use_nodes = $samples < 1 ? $min_nodes : $want_nodes;
     $max_dedicated = max($min_nodes, min($max_nodes, $use_nodes));
     $TargetDedicatedNodes = min($preempted + $dedicated, $max_dedicated);
     $TargetLowPriorityNodes = max(0, min($max_low, $use_nodes - $TargetDedicatedNodes));
