@@ -157,9 +157,11 @@ FILE_LOCK_PREPUBLISH = os.path.join(DIR_OUTPUT, "prepublish")
 
 
 def listdir_sorted(path, ignore_locks=True):
-    paths = sorted(os.listdir(path))
-    if ignore_locks:
-        paths = [x for x in paths if not x.endswith(".lock")]
+    paths = []
+    if os.path.exists(path):
+        paths = sorted(os.listdir(path))
+        if ignore_locks:
+            paths = [x for x in paths if not x.endswith(".lock")]
     return paths
 
 
