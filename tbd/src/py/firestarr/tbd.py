@@ -230,7 +230,11 @@ def finish_job(job_id):
     if IS_USING_BATCH is None:
         logging.error("Didn't use batch, but trying to finish job")
     else:
-        get_batch_client().job.terminate(job_id)
+        client = get_batch_client()
+        job = client.job.get(job_id)
+        # mark as completed if not already
+        if "completed" != job.state:
+            client.job.terminate(job_id)
 
 
 def get_simulation_file(dir_fire):

@@ -396,6 +396,8 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
         while not task_exists(job_id, task.id, client):
             time.sleep(1)
     if not check_successful(job_id, task.id, client=client):
+        # need to get task again in case it was just added
+        task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
         if "completed" != task.state and mark_as_done:
             # already done so terminate
             client.task.terminate(job_id, task.id)
