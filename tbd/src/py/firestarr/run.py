@@ -69,10 +69,12 @@ from tqdm_util import (
 
 import tbd
 from tbd import (
+    IS_USING_BATCH,
     assign_firestarr_batch,
     check_running,
     copy_fire_outputs,
     finish_job,
+    get_job_id,
     get_simulation_file,
     get_simulation_task,
     schedule_tasks,
@@ -379,7 +381,7 @@ class Run(object):
         successful = num_done == len(df_fires)
         # HACK: abstract this later
         if successful and self._is_batch:
-            finish_job(self._dir_sims)
+            finish_job(get_job_id(self._dir_sims))
         return successful
 
     @log_order()

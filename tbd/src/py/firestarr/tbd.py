@@ -226,15 +226,11 @@ def check_running(dir_fire):
     return 0 < len(processes)
 
 
-def finish_job(dir_fire):
-    job_id = get_job_id(dir_fire)
+def finish_job(job_id):
     if IS_USING_BATCH is None:
         logging.error("Didn't use batch, but trying to finish job")
     else:
-        if check_successful(job_id):
-            get_batch_client().job.terminate(job_id)
-        else:
-            logging.error(f"Finishing incomplete job {job_id}")
+        get_batch_client().job.terminate(job_id)
 
 
 def get_simulation_file(dir_fire):
