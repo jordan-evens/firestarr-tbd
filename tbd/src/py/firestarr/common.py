@@ -69,7 +69,7 @@ CREATION_OPTIONS = [
     # # doesn't work
     # "PREDICTOR=YES",
     "BIGTIFF=YES",
-    "OVERVIEW_RESAMPLING=MODE",
+    "OVERVIEW_RESAMPLING=AVERAGE",
     "OVERVIEWS=AUTO",
     # # incredibly slow
     # "TILING_SCHEME=GoogleMapsCompatible",
