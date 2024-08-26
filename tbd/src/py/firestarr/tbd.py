@@ -8,6 +8,18 @@ import timeit
 
 import pandas as pd
 import psutil
+from azurebatch import (
+    add_simulation_task,
+    check_successful,
+    find_tasks_running,
+    get_batch_client,
+    have_batch_config,
+    is_running_on_azure,
+    list_nodes,
+    make_or_get_job,
+    make_or_get_simulation_task,
+    schedule_job_tasks,
+)
 from common import (
     CONFIG,
     DIR_DATA,
@@ -41,19 +53,6 @@ from gis import (
     save_point_file,
 )
 from redundancy import call_safe
-
-from azurebatch import (
-    add_simulation_task,
-    check_successful,
-    find_tasks_running,
-    get_batch_client,
-    have_batch_config,
-    is_running_on_azure,
-    list_nodes,
-    make_or_get_job,
-    make_or_get_simulation_task,
-    schedule_job_tasks,
-)
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -339,12 +338,13 @@ def copy_fire_outputs(dir_fire, dir_output, changed):
             # FIX: still doesn't show whole area that was simulated
             file_out = os.path.join(dir_region, d, f"{fire_name}{suffix}.tif")
             file_out_interim = os.path.join(dir_region, d, f"{fire_name}{TMP_SUFFIX}.tif")
-            if file_out != file_out_interim:
-                # remove interim if we have final
-                force_remove(file_out_interim)
-                # FIX: which one?
-                files_changed[file_out] = True
-            files_changed[prob] = True
+            # if interim file already exists and is newer than last output it's fine
+            if os.path.exists(file_out_interim) and not is_newer_than(file_out_interim, file_out):
+                files_changed[prob] = True
+                files_project[prob] = file_out
+                if file_out != file_out_interim:
+                    # remove interim if we have final
+                    force_remove(file_out_interim)
             files_project[prob] = file_out
     if not FLAG_IGNORE_PERIM_OUTPUTS:
         if len(files_perim) > 0:

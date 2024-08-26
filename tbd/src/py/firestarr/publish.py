@@ -27,7 +27,8 @@ from gis import CRS_COMPARISON, find_invalid_tiffs, project_raster
 from osgeo import gdal
 from redundancy import call_safe, get_stack
 from tqdm_util import keep_trying, pmap, tqdm
-from osgeo import gdal
+
+from tbd import TMP_SUFFIX
 
 
 def publish_all(
@@ -59,6 +60,8 @@ def publish_all(
             import publish_geoserver
 
             publish_geoserver.publish_folder(dir_output)
+        else:
+            logging.info(f"No changes for {os.path.basename(dir_output)} so not publishing")
 
 
 def find_latest_outputs(dir_output=None):
@@ -171,13 +174,18 @@ def merge_dirs(
             file_tmp = os.path.join(dir_tmp, f"{file_root}_tmp.tif")
             file_base = os.path.join(ensure_dir(dir_merge), f"{file_root}.tif")
             # no point in doing this if nothing was added
-            if force or changed or not os.path.isfile(file_base) or not changed_only:
+            if force or changed or not os.path.isfile(file_base):
                 force_remove(file_tmp)
                 invalid_files = None
-
+                # # NOTE: this doesn't work if previously had temp file and now it's final
+                # if any([x for x in files_crs_changed if TMP_SUFFIX in x]):
+                #     # if anything is a temporary output we can't only merge changed files
+                #     changed_only = False
                 # HACK: seems like currently making empty combined raster so delete
                 #       first in case it's merging into existing and causing problems
                 if changed_only and os.path.isfile(file_base):
+                    # this seems like it would be fine but if interim fire outputs update then cell probability generally
+                    # goes down, so merging with old final raster won't update those cells
                     files_merge = files_crs_changed + [file_base]
                 else:
                     files_merge = files_crs

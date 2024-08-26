@@ -219,7 +219,8 @@ def keep_trying(fct, values, return_with_status=False, *args, **kwargs):
             return (True, i, fct(dir_fire))
         except KeyboardInterrupt as ex:
             raise ex
-        except Exception:
+        except Exception as ex:
+            logging.error(get_stack(ex))
             return (False, i, dir_fire)
 
     while not done:

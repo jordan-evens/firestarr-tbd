@@ -334,6 +334,9 @@ class Run(object):
                         is_complete[dir_fire] = df_fire
                 if dir_fire not in is_complete:
                     not_complete[dir_fire] = df_fire
+            else:
+                # if nothing changed then fire is complete
+                is_complete[dir_fire] = df_fire
         # publish before and after fixing things
         if not no_publish and not no_wait:
             logging.info("Publishing")
