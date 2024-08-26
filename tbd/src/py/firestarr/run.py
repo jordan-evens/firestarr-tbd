@@ -684,7 +684,7 @@ class Run(object):
             with locks_for(FILE_LOCK_PREPUBLISH):
                 for i in range(len(sim_results)):
                     # result should be a geodataframe of the simulation data
-                    okay, result = sim_results[i]
+                    okay, dir_input, result = sim_results[i]
                     # should be in the same order as input
                     dir_fire = dirs_sim[g][i]
                     if isinstance(result, Exception):

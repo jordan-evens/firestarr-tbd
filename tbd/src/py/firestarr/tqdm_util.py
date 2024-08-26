@@ -9,6 +9,7 @@ import multiprocess.queues
 import numpy as np
 import pandas as pd
 from log import logging
+from redundancy import get_stack
 from tqdm.auto import tqdm
 
 MAX_ATTEMPTS = 1
@@ -178,17 +179,17 @@ def pmap_by_group(
         kwargs["miniters"] = MINITERS
         result = {}
         results = [None] * len(all_values)
-        for i, v in (
+        for i, v, r in (
             pbar := apply(
                 pool.imap_unordered(
-                    lambda p: (p[0], fct(p[1])),
+                    lambda p: (p[0], p[1], fct(p[1])),
                     [(i, v) for i, v in enumerate(all_values)],
                 ),
                 *args,
                 **kwargs,
             )
         ):
-            results[i] = v
+            results[i] = r
             g = groups_by_index[i]
             groups_left[g] -= 1
             if 0 == groups_left[g]:
@@ -260,13 +261,14 @@ def keep_trying_groups(fct, values, *args, **kwargs):
 
     def fct_try(dir_fire):
         try:
-            return (True, fct(dir_fire))
+            return (True, dir_fire, fct(dir_fire))
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
             # was returning directory but that doesn't help
-            # return (False, dir_fire)
-            return (False, ex)
+            logging.error(get_stack(ex))
+            return (False, dir_fire, ex)
+            # return (False, ex)
 
     while not done:
         try:
@@ -279,11 +281,18 @@ def keep_trying_groups(fct, values, *args, **kwargs):
             unsuccessful = {}
             done = True
             num_cur = 0
-            for g, v in run_completed.items():
-                good = [r[1] for r in v if r[0]]
+            for g, ret in run_completed.items():
+                good = []
+                bad = []
+                for r in ret:
+                    success, input, output = r
+                    if success:
+                        good.append(input)
+                    else:
+                        bad.append(input)
+                        logging.error(f"{input} returned {output}")
                 if good:
                     successful[g] = successful.get(g, []) + good
-                bad = [r[1] for r in v if not r[0]]
                 if bad:
                     unsuccessful[g] = bad
                     num_cur += len(bad)
