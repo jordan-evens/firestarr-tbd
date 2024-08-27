@@ -374,8 +374,6 @@ class Run(object):
                 force=any_change or force,
                 merge_only=not self.check_do_publish(),
             )
-        if not any_change:
-            return True
         num_done = len(is_complete)
         if is_ignored:
             logging.error(f"Ignored incomplete fires: {list(is_ignored.keys())}")
@@ -385,7 +383,7 @@ class Run(object):
         # HACK: abstract this later
         if successful and self._is_batch:
             finish_job(get_job_id(self._dir_sims))
-        return successful
+        return not any_change or successful
 
     @log_order()
     def process(self):

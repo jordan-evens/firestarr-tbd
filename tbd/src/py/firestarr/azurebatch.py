@@ -237,12 +237,13 @@ def make_or_get_job(pool_id=POOL_ID, job_id=None, client=None, *args, **kwargs):
         job_id = f"job_container_{run_id}"
     try:
         job = client.job.get(job_id)
-        # delete if exists and completed
-        if "completed" == job.state:
-            logging.info(f"Deleting completed job {job_id}")
-            client.job.delete(job_id)
-        else:
-            return job_id
+        # # delete if exists and completed
+        # if "completed" == job.state:
+        #     logging.info(f"Deleting completed job {job_id}")
+        #     client.job.delete(job_id)
+        # else:
+        #     return job_id
+        return job, True
     except batchmodels.BatchErrorException:
         pass
     logging.info("Creating job [{}]...".format(job_id))
@@ -253,7 +254,7 @@ def make_or_get_job(pool_id=POOL_ID, job_id=None, client=None, *args, **kwargs):
         **kwargs,
     )
     client.job.add(job)
-    return job_id
+    return client.job.get(job_id), False
 
 
 def get_user_identity():
@@ -378,26 +379,30 @@ def make_or_get_simulation_task(job_id, dir_fire, client=None):
 def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=False):
     if client is None:
         client = get_batch_client()
-    task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    if existed:
+    task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+    job, job_existed = make_or_get_job(job_id=job_id)
+    if task_existed:
         # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
         # if task.state not in ["active", "running"]:
         if "completed" == task.state and not mark_as_done:
+            if job_existed and "completed" == job.state:
+                # need to not be completed to edit
+                client.job.enable(job.id)
             logging.warning(f"Deleting completed task to rerun {dir_fire}")
             client.task.delete(job_id, task.id)
             while task_exists(job_id, task.id):
                 print(".", end="", flush=True)
                 time.sleep(1)
             # remake task so it can be added
-            task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    if not existed:
+            task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+    if not task_existed:
         client.task.add(job_id, task)
         # wait until task is added
         while not task_exists(job_id, task.id, client):
             time.sleep(1)
     if not check_successful(job_id, task.id, client=client):
         # need to get task again in case it was just added
-        task, existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+        task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
         if "completed" != task.state and mark_as_done:
             # already done so terminate
             client.task.terminate(job_id, task.id)
@@ -477,7 +482,7 @@ def run_oneoff_task(cmd, pool_id=POOL_ID, client=None):
     #     #     pass
     # except batchmodels.BatchErrorException:
     #     pass
-    job = make_or_get_job(pool_id, job_id, priority=500, client=client)
+    job, job_existed = make_or_get_job(pool_id, job_id, priority=500, client=client)
     task_id = f"task_oneoff_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
     task = batch.models.TaskAddParameter(
         id=task_id,

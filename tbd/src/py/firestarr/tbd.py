@@ -154,7 +154,8 @@ def assign_job(dir_fire):
     with locks_for(FILE_LOCK_BATCH_JOB) as locks:
         job_id = get_job_id(dir_fire)
         if JOB_ID != job_id:
-            JOB_ID = make_or_get_job(job_id=job_id)
+            job, job_existed = make_or_get_job(job_id=job_id)
+            JOB_ID = job.id
     return JOB_ID
 
 
