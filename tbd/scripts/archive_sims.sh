@@ -33,9 +33,6 @@ function do_archive()
   else
     echo "Archiving without deleting ${run}"
     if [ -f "${file_out}" ]; then
-      echo "Creating ${file_out}"
-      7za a ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
-    else
       if [ "${file_newest}" -nt "${file_out}" ]; then
         echo "Updating ${file_out}"
         # 7za u -u- -up0q0r2w2x0y2z0 ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
@@ -43,6 +40,9 @@ function do_archive()
       else
         echo "Archive already up-to-date"
       fi
+    else
+      echo "Creating ${file_out}"
+      7za a ${OPTIONS} "${file_out}" "${DIR_FROM}/${run}/*"
     fi
   fi
 }
