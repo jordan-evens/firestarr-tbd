@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pyproj
 from common import (
+    CREATION_OPTIONS,
     DIR_DOWNLOAD,
     DIR_EXTRACTED,
     DIR_RASTER,
@@ -222,7 +223,7 @@ def GetCellSize(raster):
     return pixelSizeX
 
 
-def Rasterize(file_lyr, raster, reference):
+def Rasterize(file_lyr, raster, reference, datatype=gdal.GDT_Byte, creation_options=CREATION_OPTIONS):
     """!
     Convert a shapefile into a raster with the given spatial reference
     # @param shp Shapefile to convert to raster
@@ -242,7 +243,7 @@ def Rasterize(file_lyr, raster, reference):
             sys.exit(-2)
 
         gdalformat = "GTiff"
-        datatype = gdal.GDT_Byte
+        # datatype = gdal.GDT_Byte
         # datatype = gdal.GDT_UInt16
         burnVal = 1  # value for the output image pixels
 
@@ -260,7 +261,7 @@ def Rasterize(file_lyr, raster, reference):
             ref_raster.RasterYSize,
             1,
             datatype,
-            options=["TFW=YES", "COMPRESS=LZW", "TILED=YES"],
+            options=creation_options,
         )
         output.SetProjection(crs)
         output.SetGeoTransform(ref_raster.GetGeoTransform())
