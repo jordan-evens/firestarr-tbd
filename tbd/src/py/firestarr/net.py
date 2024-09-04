@@ -63,7 +63,7 @@ MASK_PARAM = "#######"
 WAS_MASKED = set()
 
 CACHE_DOWNLOADED = {}
-CACHE_LOCK_FILE = "/tmp/firestarr_cache"
+CACHE_LOCK_FILE = "firestarr_cache"
 
 
 def _save_http_uncached(

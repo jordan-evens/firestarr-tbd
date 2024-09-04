@@ -7,6 +7,7 @@ import numpy as np
 from common import (
     CREATION_OPTIONS,
     DIR_OUTPUT,
+    DIR_TMP,
     DIR_ZIP,
     FILE_LOCK_PUBLISH,
     FLAG_IGNORE_PERIM_OUTPUTS,
@@ -118,7 +119,7 @@ def merge_dirs(
         files = files_by_for_what[for_what]
         dir_in_for_what = os.path.basename(for_what)
         dir_crs = ensure_dir(os.path.join(dir_parent, "reprojected", dir_in_for_what))
-        dir_tmp = ensure_dir(f"/tmp/{run_name}/reprojected/{dir_in_for_what}")
+        dir_tmp = ensure_dir(os.path.join(DIR_TMP, f"{run_name}/reprojected/{dir_in_for_what}"))
 
         def reproject(f):
             changed = False
@@ -127,7 +128,7 @@ def merge_dirs(
             if force_project or is_newer_than(f, f_crs):
                 # FIX: this is super slow for perim tifs
                 #       (because they're the full exz\\V tent of the UTM zone?)
-                # do this to /tmp and then copy so it's faster (?)
+                # do this to temp directory and then copy so it's faster (?)
                 f_tmp = os.path.join(dir_tmp, os.path.basename(f))
                 force_remove(f_tmp)
                 b = project_raster(
@@ -169,7 +170,7 @@ def merge_dirs(
             files_crs_changed = [x[1] for x in results_crs if x[0]]
             changed = 0 < len(files_crs_changed)
             file_root = os.path.join(f"firestarr_{run_id}_{dir_for_what}_{date_cur.strftime('%Y%m%d')}")
-            dir_tmp = ensure_dir(f"/tmp{dir_merge.replace(dir_parent, '')}")
+            dir_tmp = ensure_dir(os.path.join(DIR_TMP, dir_merge.replace(dir_parent, "").strip("/")))
 
             file_tmp = os.path.join(dir_tmp, f"{file_root}_tmp.tif")
             file_base = os.path.join(ensure_dir(dir_merge), f"{file_root}.tif")

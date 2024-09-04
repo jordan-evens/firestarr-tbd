@@ -143,7 +143,10 @@ DIR_RUNS = ensure_dir(os.path.join(DIR_DATA, "runs"))
 DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
 # DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
 # should be better to not use container for temporary files?
-DIR_TMP = ensure_dir(os.path.join("/tmp/firestarr"))
+DIR_SYS_TMP = os.environ.get("TEMP") or "/tmp"
+DIR_TMP = ensure_dir(os.path.join(DIR_SYS_TMP, "firestarr"))
+DIR_LOCKS = ensure_dir(os.path.join(DIR_TMP, "locks"))
+
 DIR_ZIP = ensure_dir(os.path.join(DIR_DATA, "zip"))
 
 MINUTES_PER_HOUR = 60
@@ -553,7 +556,12 @@ class LockTracker(object):
         self._lock_files = set()
 
     def get_lock(self, path):
-        file_lock = path + ".lock"
+        # HACK: keep locks out of directories that might be in azure
+        # file_lock = os.path.join(DIR_LOCKS, path + ".lock")
+        # os.path.join() doesn't work if path starts with '/' ?
+        file_lock = f"{DIR_LOCKS}/{path.strip('/')}.lock"
+        ensure_dir(os.path.dirname(file_lock))
+        logging.info(f"Getting lock for '{path}' as '{file_lock}'")
         self._lock_files.add(file_lock)
         return FileLock(file_lock, DEFAULT_LOCK_TIMEOUT, thread_local=False)
 
