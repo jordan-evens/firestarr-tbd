@@ -28,6 +28,7 @@ from redundancy import call_safe, get_stack
 
 FLAG_IGNORE_PERIM_OUTPUTS = True
 FLAG_DEBUG = True
+FLAG_DEBUG_LOCKS = True
 FLAG_SAVE_PREPARED = False
 
 FMT_DATETIME = "%Y-%m-%d %H:%M:%S"
@@ -585,19 +586,28 @@ def locks_for(paths):
                 call_safe(lock.acquire)
                 locks.append(lock)
             except FileNotFoundError:
+                if FLAG_DEBUG_LOCKS:
+                    logging.debug(f"FileNotFoundError for {lock.lock_file}")
                 # lock is missing, so must have been deleted
                 pass
             except Exception as ex:
+                if FLAG_DEBUG_LOCKS:
+                    logging.debug(f"Exception for {lock.lock_file}")
                 logging.error(get_stack(ex))
         yield locks
     finally:
         for lock in locks:
             # HACK: is this causing the errors about deleting locks
             try:
+                if FLAG_DEBUG_LOCKS:
+                    logging.debug(f"Releasing lock {lock.lock_file}")
                 lock.release()
             except KeyboardInterrupt as ex:
                 raise ex
-            except Exception:
+            except Exception as ex:
+                if FLAG_DEBUG_LOCKS:
+                    logging.debug(f"Exception for {lock.lock_file}")
+                    logging.debug(get_stack(ex))
                 pass
 
 
