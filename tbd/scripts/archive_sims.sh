@@ -9,7 +9,7 @@ DIR_BKUP="/appl/data/sims.bkup"
 
 function do_archive()
 {
-  OPTIONS="-mtm -mtc -r -mx=9 -stl"
+  OPTIONS="-mtm -mtc -mx=9 -stl"
   run="$1"
   do_delete="$2"
   file_out="${DIR_BKUP}/${run}.7z"
