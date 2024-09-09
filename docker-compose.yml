@@ -32,6 +32,7 @@ services:
       target: tbd_dev
       dockerfile: .docker/Dockerfile_tbd
       args:
+        VERSION: ${VERSION}
         GCC_VERSION: ${GCC_VERSION}
         PERF_VERSION: ${PERF_VERSION}
         USERNAME: ${USERNAME}
@@ -53,6 +54,8 @@ services:
     restart: on-failure
     cap_add:
       - SYS_PTRACE
+    env_file:
+      - .env
 
   tbd_dev_svc:
     image: tbd_dev_svc
