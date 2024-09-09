@@ -2,7 +2,7 @@ ARG GCC_VERSION
 
 
 # So we can start from an updated image at various steps
-FROM gcc:$GCC_VERSION AS gcc-updated
+FROM gcc:${GCC_VERSION:-13.3} AS gcc-updated
 RUN apt-get update --fix-missing
 
 
