@@ -562,7 +562,7 @@ class LockTracker(object):
         # os.path.join() doesn't work if path starts with '/' ?
         file_lock = f"{DIR_LOCKS}/{path.strip('/')}.lock"
         ensure_dir(os.path.dirname(file_lock))
-        logging.info(f"Getting lock for '{path}' as '{file_lock}'")
+        logging.debug(f"Getting lock for '{path}' as '{file_lock}'")
         self._lock_files.add(file_lock)
         return FileLock(file_lock, DEFAULT_LOCK_TIMEOUT, thread_local=False)
 
