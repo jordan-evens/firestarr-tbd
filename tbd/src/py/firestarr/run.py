@@ -400,7 +400,9 @@ class Run(object):
                     f"Done running {len(df_final)} fires with a total simulation time of {df_final['sim_time'].sum()}"
                 )
         # HACK: df_final isn't saved in some cases so do that here
-        gdf_to_file(df_final, self._file_fires)
+        if df_final is not None:
+            # if only prepared then will be empty
+            gdf_to_file(df_final, self._file_fires)
         return df_final, changed
 
     def run_until_successful_or_outdated(self, no_retry=False):
