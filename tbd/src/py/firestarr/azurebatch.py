@@ -317,7 +317,9 @@ def find_tasks_running(job_id, dir_fire, client=None):
 
 
 def is_successful(obj):
-    return "active" != obj.state and "success" == obj.execution_info.result
+    return "active" != obj.state and (
+        "success" == obj.execution_info.result or "TaskEnded" == obj.execution_info.failure_info.code
+    )
 
 
 def is_failed(obj):
@@ -411,7 +413,12 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
         task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
         if "completed" != task.state and mark_as_done:
             # already done so terminate
-            client.task.terminate(job_id, task.id)
+            # HACK: can't find documentation on what terminate_reason options are so might not be right
+            client.task.terminate(
+                job_id,
+                task.id,
+                terminate_reason="AllTasksComplete",
+            )
         # wait if requested and task isn't done
         if wait:
             while True:
