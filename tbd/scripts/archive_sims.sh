@@ -58,7 +58,9 @@ pushd ${DIR_FROM_RUNS}
 mkdir -p ${DIR_BKUP}
 rmdir * > /dev/null 2>&1
 set -e
-for run in `ls -1 | head -n-${KEEP_UNARCHIVED}`
+match_last=`ls -1 | tail -n1 | sed "s/.*\([0-9]\{8\}\)[0-9]\{4\}/\1/"`
+# also filter out anything for today since might be symlinking to it
+for run in `ls -1 | head -n-${KEEP_UNARCHIVED} | grep -v "${match_last}"`
 do
   do_archive "${run}" 1
 done
