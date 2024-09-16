@@ -381,6 +381,12 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
         client = get_batch_client()
     task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
     job, job_existed = make_or_get_job(job_id=job_id)
+    # HACK: assume jobs will never be completed without directories being correct
+    if "completed" == job.state:
+        if not mark_as_done:
+            logging.fatal(f"Job {job_id} is completed but simulation for {dir_fire} didn't finish properly")
+        else:
+            return task.id
     if task_existed:
         # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
         # if task.state not in ["active", "running"]:

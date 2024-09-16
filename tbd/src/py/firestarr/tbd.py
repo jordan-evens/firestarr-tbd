@@ -59,6 +59,8 @@ NO_INTENSITY = "--no-intensity"
 # NO_INTENSITY = ""
 
 TMP_SUFFIX = "__tmp__"
+# tasks that have this in their logs are considered successful
+SUCCESS_TEXT = "Total simulation time was"
 
 _RUN_FIRESTARR = None
 _FIND_RUNNING = None
@@ -536,10 +538,11 @@ def _run_fire_from_folder(
                         f_out.writelines(
                             [
                                 "#!/bin/bash\n",
-                                f"(grep 'Total simulation time was' {os.path.basename(file_log)} > /dev/null 2>&1) || ( \\\n",
+                                f"(grep '{SUCCESS_TEXT}' {os.path.basename(file_log)} > /dev/null 2>&1) || ( \\\n",
                                 "\tstdbuf -o0 \\\n",
                                 f"\t{cmd} {args} $* \\\n",
-                                "\t2>&1 | stdbuf -i0 -o0 tee -a from_tee.log\\\n",
+                                "\t2>&1 | stdbuf -i0 -o0 tee -a from_tee.log \\\n",
+                                f"| grep '{SUCCESS_TEXT}' \\\n",
                                 ")\n",
                             ]
                         )
