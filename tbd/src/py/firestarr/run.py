@@ -599,10 +599,11 @@ class Run(object):
         dir_names = set(dirs_fire)
         diff_extra = dir_names.difference(fire_names)
         if diff_extra:
+            error = f"Have directories for fires that aren't in input:\n{diff_extra}"
+            logging.error(f"Stopping completely since folder structure is invalid\n{error}")
             # HACK: deal with extra folders by always stopping for now
-            logging.error("Stopping completely since folder structure is invalid")
             sys.exit(-1)
-            raise RuntimeError(f"Have directories for fires that aren't in input:\n{diff_extra}")
+            raise RuntimeError(error)
         expected = {f: get_simulation_file(os.path.join(self._dir_sims, f)) for f in fire_names}
 
         def check_file(file_sim):
@@ -879,7 +880,7 @@ def make_resume(
         dirs = [
             x
             for x in list_dirs(DIR_RUNS)
-            if os.path.exists(vector_path(os.path.join(DIR_RUNS, x, "data"), "df_fires_groups"))
+            if ("current" != x and os.path.exists(vector_path(os.path.join(DIR_RUNS, x, "data"), "df_fires_groups")))
         ]
         if not dirs:
             # raise RuntimeError("No valid runs to resume")

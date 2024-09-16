@@ -14,7 +14,7 @@ from azurebatch_helpers import (
 )
 from common import CONFIG, FILE_SIM_LOG, SECONDS_PER_MINUTE, logging
 from multiprocess import Lock, Process
-from redundancy import get_stack
+from redundancy import call_safe, get_stack
 
 # from common import SECONDS_PER_MINUTE
 # from multiprocess import Lock, Process
@@ -289,11 +289,13 @@ def schedule_job_tasks(job_id, tasks, client=None):
 
 
 def get_task_name(dir_fire):
-    return dir_fire.replace("/", "-")
+    # return dir_fire.replace("/", "-")
+    # just use group name
+    return os.path.basename(dir_fire)
 
 
-def get_task_path(task_id):
-    return task_id.replace("-", "/")
+# def get_task_path(task_id):
+#     return task_id.replace("-", "/")
 
 
 def find_tasks_running(job_id, dir_fire, client=None):
@@ -310,7 +312,7 @@ def find_tasks_running(job_id, dir_fire, client=None):
     # try:
     for task in client.task.list(job_id):
         if task_name in task.id and "completed" != task.state:
-            tasks.append(task.id.replace("-", "/"))
+            tasks.append(task.id)
     return tasks
     # except batchmodels.BatchErrorException:
     #     return False
@@ -379,62 +381,69 @@ def make_or_get_simulation_task(job_id, dir_fire, client=None):
 
 
 def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=False):
-    if client is None:
-        client = get_batch_client()
-    task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    job, job_existed = make_or_get_job(job_id=job_id)
-    # HACK: assume jobs will never be completed without directories being correct
-    if "completed" == job.state:
-        if not mark_as_done:
-            logging.fatal(f"Job {job_id} is completed but simulation for {dir_fire} didn't finish properly")
-        else:
-            return task.id
-    if task_existed:
-        # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
-        # if task.state not in ["active", "running"]:
-        if "completed" == task.state and not mark_as_done:
-            if job_existed and "completed" == job.state:
-                # need to not be completed to edit
-                client.job.enable(job.id)
-            logging.warning(f"Deleting completed task to rerun {dir_fire}")
-            client.task.delete(job_id, task.id)
-            while task_exists(job_id, task.id):
-                print(".", end="", flush=True)
-                time.sleep(1)
-            # remake task so it can be added
-            task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-    if not task_existed:
-        client.task.add(job_id, task)
-        # wait until task is added
-        while not task_exists(job_id, task.id, client):
-            time.sleep(1)
-    if not check_successful(job_id, task.id, client=client):
-        # need to get task again in case it was just added
+    # def do_add_simulation_task():
+    #     nonlocal client
+    try:
+        if client is None:
+            client = get_batch_client()
         task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-        if "completed" != task.state and mark_as_done:
-            # already done so terminate
-            # HACK: can't find documentation on what terminate_reason options are so might not be right
-            client.task.terminate(
-                job_id,
-                task.id,
-                terminate_reason="AllTasksComplete",
-            )
-        # wait if requested and task isn't done
-        if wait:
-            while True:
+        job, job_existed = make_or_get_job(job_id=job_id)
+        # HACK: assume jobs will never be completed without directories being correct
+        if "completed" == job.state:
+            if not mark_as_done:
+                logging.fatal(f"Job {job_id} is completed but simulation for {dir_fire} didn't finish properly")
+            else:
+                return task.id
+        if task_existed:
+            # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
+            # if task.state not in ["active", "running"]:
+            if "completed" == task.state and not mark_as_done:
+                if job_existed and "completed" == job.state:
+                    # need to not be completed to edit
+                    client.job.enable(job.id)
+                logging.warning(f"Deleting completed task to rerun {dir_fire}")
+                client.task.delete(job_id, task.id)
+                while task_exists(job_id, task.id):
+                    print(".", end="", flush=True)
+                    time.sleep(1)
+                # remake task so it can be added
+                task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+        if not task_existed:
+            client.task.add(job_id, task)
+            # wait until task is added
+            while not task_exists(job_id, task.id, client):
+                time.sleep(1)
+        if not check_successful(job_id, task.id, client=client):
+            # need to get task again in case it was just added
+            task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+            if "completed" != task.state and mark_as_done:
+                # already done so terminate
+                # HACK: can't find documentation on what terminate_reason options are so might not be right
+                client.task.terminate(
+                    job_id,
+                    task.id,
+                    terminate_reason="AllTasksComplete",
+                )
+            # wait if requested and task isn't done
+            if wait:
                 while True:
-                    task = client.task.get(job_id, task.id)
-                    if "active" == task.state:
-                        time.sleep(TASK_SLEEP)
+                    while True:
+                        task = client.task.get(job_id, task.id)
+                        if "active" == task.state:
+                            time.sleep(TASK_SLEEP)
+                        else:
+                            break
+                    if "failure" == task.execution_info.result:
+                        client.task.reactivate(job_id, task.id)
                     else:
                         break
-                if "failure" == task.execution_info.result:
-                    client.task.reactivate(job_id, task.id)
-                else:
-                    break
-    # # HACK: want to check somewhere and this seems good enough for now
-    # restart_unusable_nodes(client=client)
-    return task.id
+        # # HACK: want to check somewhere and this seems good enough for now
+        # restart_unusable_nodes(client=client)
+        return task.id
+    except Exception as ex:
+        return ex
+    # # HACK: getting SSL errors so use call_safe()
+    # return call_safe(do_add_simulation_task)
 
 
 def get_container_settings(container, workdir=None, client=None):
@@ -724,22 +733,22 @@ def enable_autoscale(pool_id=POOL_ID, client=None):
     evaluate_autoscale(pool_id=pool_id, client=client)
 
 
-def get_log(task):
-    return os.path.join(get_task_path(task.id), FILE_SIM_LOG)
+# def get_log(task):
+#     return os.path.join(get_task_path(task.id), FILE_SIM_LOG)
 
 
-def read_log(task):
-    # NOTE: since log is being written to while running, blob container can't see it yet
-    lines = None
-    if "running" == task.state:
-        job = job_from_task(task)
-        txt = read_task_file_as_string(client, job.id, task.id, STANDARD_OUT_FILE_NAME)
-        lines = txt.split("\n")
-    else:
-        file_log = get_log(task)
-        with open(file_log) as f:
-            lines = f.readlines()
-    return lines
+# def read_log(task):
+#     # NOTE: since log is being written to while running, blob container can't see it yet
+#     lines = None
+#     if "running" == task.state:
+#         job = job_from_task(task)
+#         txt = read_task_file_as_string(client, job.id, task.id, STANDARD_OUT_FILE_NAME)
+#         lines = txt.split("\n")
+#     else:
+#         file_log = get_log(task)
+#         with open(file_log) as f:
+#             lines = f.readlines()
+#     return lines
 
 
 if __name__ == "__main__":

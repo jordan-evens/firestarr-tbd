@@ -31,6 +31,7 @@ from common import (
     FLAG_IGNORE_PERIM_OUTPUTS,
     FMT_FILE_SECOND,
     SECONDS_PER_HOUR,
+    SUBDIR_CURRENT,
     WANT_DATES,
     ensure_dir,
     force_remove,
@@ -124,7 +125,10 @@ def find_running_batch(dir_fire):
     while True:
         try:
             job_id = get_job_id(dir_fire)
-            return find_tasks_running(job_id, dir_fire)
+            task_ids = find_tasks_running(job_id, dir_fire)
+            # HACK: need to return directories not ids
+            dir_job = os.path.dirname(dir_fire)
+            return [os.path.join(dir_job, task_id) for task_id in task_ids]
         except KeyboardInterrupt as ex:
             raise ex
         except Exception as ex:
@@ -147,7 +151,9 @@ def get_nodes():
 def get_job_id(dir_fire):
     job_id = None
     if dir_fire.startswith(DIR_SIMS):
-        job_id = dir_fire.replace(DIR_SIMS, "").strip("/").split("/")[0]
+        # job_id = dir_fire.replace(DIR_SIMS, "").strip("/").split("/")[0]
+        # always use the same job since we'll update/delete things as required
+        job_id = SUBDIR_CURRENT
     return job_id
 
 

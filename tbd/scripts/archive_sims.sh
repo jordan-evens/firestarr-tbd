@@ -5,6 +5,7 @@ KEEP_UNARCHIVED=10
 DIR_FROM_SIMS="/appl/data/sims"
 DIR_FROM_RUNS="/appl/data/runs"
 DIR_BKUP="/appl/data/sims.bkup"
+SUBDIR_COMMON="current"
 
 # override KEEP_UNARCHIVED if set in config
 . /appl/data/config || . /appl/config
@@ -58,15 +59,15 @@ pushd ${DIR_FROM_RUNS}
 mkdir -p ${DIR_BKUP}
 rmdir * > /dev/null 2>&1
 set -e
-match_last=`ls -1 | tail -n1 | sed "s/.*\([0-9]\{8\}\)[0-9]\{4\}/\1/"`
+match_last=`ls -1 | grep -v "${SUBDIR_COMMON}" | tail -n1 | sed "s/.*\([0-9]\{8\}\)[0-9]\{4\}/\1/"`
 # also filter out anything for today since might be symlinking to it
-for run in `ls -1 | head -n-${KEEP_UNARCHIVED} | grep -v "${match_last}"`
+for run in `ls -1  | grep -v "${SUBDIR_COMMON}" | grep -v "${match_last}" | head -n-${KEEP_UNARCHIVED}`
 do
   do_archive "${run}" 1
 done
 
 # do for everything after doing things that can be deleted
-for run in `ls -1`
+for run in `ls -1 | grep -v "${SUBDIR_COMMON}"`
 do
   do_archive "${run}"
 done

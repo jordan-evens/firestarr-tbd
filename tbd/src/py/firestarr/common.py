@@ -142,6 +142,7 @@ DIR_OUTPUT = ensure_dir(os.path.join(DIR_DATA, "output"))
 DIR_RASTER = ensure_dir(os.path.join(DIR_GENERATED, "grid", f"{CELL_SIZE}m"))
 DIR_RUNS = ensure_dir(os.path.join(DIR_DATA, "runs"))
 DIR_SIMS = ensure_dir(os.path.join(DIR_DATA, "sims"))
+SUBDIR_CURRENT = "current"
 # DIR_TMP = ensure_dir(os.path.join(DIR_DATA, "tmp"))
 # should be better to not use container for temporary files?
 DIR_SYS_TMP = os.environ.get("TEMP") or "/tmp"
