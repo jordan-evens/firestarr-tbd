@@ -8,7 +8,7 @@ export IS_CRONJOB=
 
 DIR_SIMS="/appl/data/sims"
 DIR_RUNS="/appl/data/runs"
-SUDDIR_COMMON="current"
+SUBDIR_COMMON="current"
 set -e
 
 echo "Checking that previous run completed and published successfully"
@@ -47,18 +47,13 @@ CUR_RUN=`ls -1 ${DIR_SIMS} | sort | grep -v "${SUBDIR_COMMON}" | tail -n 1`
 dir_cur_sims="${DIR_SIMS}/${CUR_RUN}"
 dir_cur_runs="${DIR_RUNS}/${CUR_RUN}"
 
-# see if we can match exact outputs for any folders
-DIFF_RESULTS=`diff -q ${dir_last_sims} ${dir_cur_sims}`
-# echo ${DIFF_RESULTS} | grep "Common subdirectories" | sed "s/.*${dir_last_sims}/\([^ ]*\) and.*/\1/g"
-# diff -q ${dir_last_sims} ${dir_cur_sims} | grep "Common subdirectories" | sed "s/.*sims\/\([^ ]*\) and.*/\1/g"
-
 echo "Merging ${LAST_RUN} into ${CUR_RUN}"
 
 N=0
 copied=0
 
 # anything that's already a symlink will not show up in diff output so won't happen in this loop
-for d in `diff -q ${dir_last_sims} ${dir_cur_sims} | grep "Common subdirectories" | sed "s/.*\/\([^ ]*\) and.*/\1/g"`; do
+for d in `diff -q ${dir_last_sims} ${dir_cur_sims} | grep -v "model" | grep "Common subdirectories" | sed "s/.*\/\([^ ]*\) and.*/\1/g"`; do
     # common directories
     old="${dir_last_sims}/${d}"
     new="${dir_cur_sims}/${d}"
@@ -96,9 +91,13 @@ if [ "${copied}" -eq "${N}" ]; then
     echo "${LAST_RUN} was already up-to-date so deleted ${CUR_RUN}"
 else
     echo "Running merged run in ${CUR_RUN}"
-    ln -sf `realpath ${dir_cur_sims} --relative-to=${DIR_SIMS}` ${DIR_SIMS}/${SUBDIR_COMMON}
-    ln -sf `realpath ${dir_cur_runs} --relative-to=${DIR_RUNS}` ${DIR_RUNS}/${SUBDIR_COMMON}
-    # (${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Merged run didn't finish properly" && exit -1)
+    # update symlinks for current folders
+    dir_common_sims="${DIR_SIMS}/${SUBDIR_COMMON}"
+    dir_common_runs="${DIR_RUNS}/${SUBDIR_COMMON}"
+    ln -sfn "`realpath ${dir_cur_sims} --relative-to=${DIR_SIMS}`" "${dir_common_sims}"
+    ln -sfn "`realpath ${dir_cur_runs} --relative-to=${DIR_RUNS}`" "${dir_common_runs}"
+    # if we call pointing at current directory it should make tasks there instead of using actual folder name
+    (${DIR}/update.sh --no-publish --no-merge --no-retry "${dir_common_runs}") || (echo "Merged run didn't finish properly" && exit -1)
     # echo "Validating merged run in ${CUR_RUN}"
     # (${DIR}/update.sh --no-publish --no-merge --no-retry) || (echo "Validating merged run" && exit -1)
     # echo "Publishing merged run in ${CUR_RUN}"

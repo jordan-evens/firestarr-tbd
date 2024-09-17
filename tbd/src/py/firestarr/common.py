@@ -159,6 +159,7 @@ DEFAULT_BOUNDS = "bounds.geojson"
 
 FILE_LOCK_PUBLISH = os.path.join(DIR_OUTPUT, "publish")
 FILE_LOCK_PREPUBLISH = os.path.join(DIR_OUTPUT, "prepublish")
+FILE_LOCK_MODEL = os.path.join(DIR_OUTPUT, "model")
 
 
 def listdir_sorted(path, ignore_locks=True):

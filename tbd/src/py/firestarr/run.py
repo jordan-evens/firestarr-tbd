@@ -14,6 +14,7 @@ from common import (
     DIR_OUTPUT,
     DIR_RUNS,
     DIR_SIMS,
+    FILE_LOCK_MODEL,
     FILE_LOCK_PREPUBLISH,
     FILE_LOCK_PUBLISH,
     FILE_TBD_BINARY,
@@ -154,50 +155,89 @@ class Run(object):
         self._do_merge = do_merge
         self._prepare_only = prepare_only
         self._dir_fires = dir_fires
-        self._prefix = (
-            "m3" if self._dir_fires is None else self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
-        )
         FMT_RUNID = "%Y%m%d%H%M"
         self._modelrun = None
-        if dir is None:
-            self._start_time = datetime.datetime.now()
-            self._id = self._start_time.strftime(FMT_RUNID)
-            self._name = f"{self._prefix}_{self._id}"
-            self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
-            self._dir_runs = ensure_dir(os.path.join(DIR_RUNS, self._name))
-        else:
-            self._name = os.path.basename(dir)
-            if not self._name.startswith(self._prefix):
-                raise RuntimeError(f"Trying to resume {dir} that didn't use fires from {self._prefix}")
-            self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
-            self._dir_runs = dir
-            self._id = self._name.replace(f"{self._prefix}_", "")
-            self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
-        self._start_time = self._start_time.astimezone(datetime.timezone.utc)
-        self._log = add_log_file(
-            os.path.join(self._dir_runs, f"log_{self._name}.log"),
-            level=DEFAULT_FILE_LOG_LEVEL,
-        )
-        self._log_order = add_log_file(
-            os.path.join(self._dir_runs, f"log_order_{self._name}.log"),
-            level=DEFAULT_FILE_LOG_LEVEL,
-            logger=LOGGER_FIRE_ORDER,
-        )
-        self._dir_out = ensure_dir(os.path.join(self._dir_runs, "data"))
-        self._dir_model = ensure_dir(os.path.join(self._dir_runs, "model"))
-        self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
-        self._crs = crs
-        self._file_fires = vector_path(self._dir_out, "df_fires_prioritized")
-        self._file_rundata = os.path.join(self._dir_out, "run.json")
-        self.load_rundata()
-        if not self._modelrun:
-            self._modelrun = os.path.basename(get_model_dir(WX_MODEL))
-        self.save_rundata()
-        # UTC time
-        self._origin = Origin(self._start_time)
-        self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
-        self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
-        self._is_batch = assign_firestarr_batch(self._dir_sims)
+        # use a common lock to ensure two files aren't open in different places
+        with locks_for(FILE_LOCK_MODEL):
+
+            def model_path(d):
+                return os.path.join(d, "model", "name")
+
+            def ensure_model_marker(d):
+                file_model = model_path(d)
+                ensure_dir(os.path.dirname(file_model))
+                if not os.path.isfile(file_model):
+                    with open(file_model, "w") as s_out:
+                        s_out.write(self._name)
+
+            def get_model_marker(d):
+                file_model = model_path(d)
+                if not os.path.isfile(file_model):
+                    raise RuntimeError(f"Model name file is missing for {file_model}")
+                with open(file_model, "r") as s_in:
+                    # HACK: prevent whitespaces
+                    return "".join(s_in.readlines()).strip()
+
+            if dir is None:
+                self._prefix = "m3"
+                self._start_time = datetime.datetime.now()
+                self._id = self._start_time.strftime(FMT_RUNID)
+                self._name = f"{self._prefix}_{self._id}"
+                self._dir_runs = ensure_dir(os.path.join(DIR_RUNS, self._name))
+                self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
+
+                # if folder name was generated then add marker for name
+                ensure_model_marker(self._dir_runs)
+                ensure_model_marker(self._dir_sims)
+            else:
+                self._dir_runs = dir
+                self._name = os.path.basename(dir)
+                # use same name as runs directory
+                # i.e. use "current" if that's what it is, but read name from file
+                self._dir_sims = ensure_dir(os.path.join(DIR_SIMS, self._name))
+                file_model = model_path(self._dir_runs)
+                if not os.path.isfile(file_model):
+                    ensure_model_marker(self._dir_runs)
+                    ensure_model_marker(self._dir_sims)
+                    self._prefix = self._dir_fires.replace("\\", "/").strip("/").replace("/", "_")
+                # read name from file either way to ensure they match
+                self._name = get_model_marker(self._dir_runs)
+                sims_name = get_model_marker(self._dir_sims)
+                if sims_name != self._name:
+                    raise RuntimeError(
+                        f"Simulation folder and runs folder don't match:\n\t{self._dir_runs}:\t{self._name}\n\t{self._dir_sims}:\t{sims_name}"
+                    )
+                self._prefix = self._name.split("_")[0]
+                # not sure how this would happen but make sure it doesn't
+                if not self._name.startswith(self._prefix):
+                    raise RuntimeError(f"Trying to resume {dir} that didn't use fires from {self._prefix}")
+                self._id = self._name.replace(f"{self._prefix}_", "")
+                self._start_time = datetime.datetime.strptime(self._id, FMT_RUNID)
+            self._start_time = self._start_time.astimezone(datetime.timezone.utc)
+            self._log = add_log_file(
+                os.path.join(self._dir_runs, f"log_{self._name}.log"),
+                level=DEFAULT_FILE_LOG_LEVEL,
+            )
+            self._log_order = add_log_file(
+                os.path.join(self._dir_runs, f"log_order_{self._name}.log"),
+                level=DEFAULT_FILE_LOG_LEVEL,
+                logger=LOGGER_FIRE_ORDER,
+            )
+            self._dir_out = ensure_dir(os.path.join(self._dir_runs, "data"))
+            self._dir_model = ensure_dir(os.path.join(self._dir_runs, "model"))
+            self._dir_output = ensure_dir(os.path.join(DIR_OUTPUT, self._name))
+            self._crs = crs
+            self._file_fires = vector_path(self._dir_out, "df_fires_prioritized")
+            self._file_rundata = os.path.join(self._dir_out, "run.json")
+            self.load_rundata()
+            if not self._modelrun:
+                self._modelrun = os.path.basename(get_model_dir(WX_MODEL))
+            self.save_rundata()
+            # UTC time
+            self._origin = Origin(self._start_time)
+            self._simulation = Simulation(self._dir_out, self._dir_sims, self._origin)
+            self._src_fires = SourceFireGroup(self._dir_out, self._dir_fires, self._origin)
+            self._is_batch = assign_firestarr_batch(self._dir_sims)
 
     def load_rundata(self):
         self._modelrun = None
@@ -594,7 +634,8 @@ class Run(object):
         return result
 
     def find_unprepared(self, df_fires, remove_directory=False):
-        dirs_fire = list_dirs(self._dir_sims)
+        # HACK: exclude model directory since it's in the same root as group names
+        dirs_fire = [x for x in list_dirs(self._dir_sims) if x != os.path.basename(self._dir_model)]
         fire_names = set(df_fires.index)
         dir_names = set(dirs_fire)
         diff_extra = dir_names.difference(fire_names)
