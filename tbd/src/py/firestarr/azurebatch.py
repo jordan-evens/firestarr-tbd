@@ -12,13 +12,22 @@ from azurebatch_helpers import (
     STANDARD_OUT_FILE_NAME,
     read_task_file_as_string,
 )
-from common import CONFIG, FILE_SIM_LOG, SECONDS_PER_MINUTE, logging
+from common import (
+    CONFIG,
+    DIR_OUTPUT,
+    FILE_SIM_LOG,
+    SECONDS_PER_MINUTE,
+    locks_for,
+    logging,
+)
 from multiprocess import Lock, Process
 from redundancy import call_safe, get_stack
 
 # from common import SECONDS_PER_MINUTE
 # from multiprocess import Lock, Process
 from tqdm import tqdm
+
+FILE_LOCK_BATCH_JOB = os.path.join(DIR_OUTPUT, "batch_job")
 
 # HACK: just get the values out of here for now
 _BATCH_ACCOUNT_NAME = CONFIG.get("BATCH_ACCOUNT_NAME")
@@ -232,29 +241,30 @@ def make_or_get_job(pool_id=POOL_ID, job_id=None, client=None, *args, **kwargs):
         client = get_batch_client()
     # # start monitoring pool for unusable nodes
     # monitor_pool(pool_id, client=client)
-    if job_id is None:
-        run_id = datetime.datetime.now().strftime("%Y%m%d%H%S")
-        job_id = f"job_container_{run_id}"
-    try:
-        job = client.job.get(job_id)
-        # # delete if exists and completed
-        # if "completed" == job.state:
-        #     logging.info(f"Deleting completed job {job_id}")
-        #     client.job.delete(job_id)
-        # else:
-        #     return job_id
-        return job, True
-    except batchmodels.BatchErrorException:
-        pass
-    logging.info("Creating job [{}]...".format(job_id))
-    job = batch.models.JobAddParameter(
-        id=job_id,
-        pool_info=batch.models.PoolInformation(pool_id=pool_id),
-        *args,
-        **kwargs,
-    )
-    client.job.add(job)
-    return client.job.get(job_id), False
+    with locks_for(FILE_LOCK_BATCH_JOB) as locks:
+        if job_id is None:
+            run_id = datetime.datetime.now().strftime("%Y%m%d%H%S")
+            job_id = f"job_container_{run_id}"
+        try:
+            job = client.job.get(job_id)
+            # delete if exists and completed
+            if "completed" == job.state:
+                logging.info(f"Deleting completed job {job_id}")
+                client.job.delete(job_id)
+            else:
+                return job, True
+        except batchmodels.BatchErrorException:
+            job_existed = False
+            pass
+        logging.info("Creating job [{}]...".format(job_id))
+        job = batch.models.JobAddParameter(
+            id=job_id,
+            pool_info=batch.models.PoolInformation(pool_id=pool_id),
+            *args,
+            **kwargs,
+        )
+        client.job.add(job)
+        return client.job.get(job_id), False
 
 
 def get_user_identity():
@@ -398,9 +408,9 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
             # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
             # if task.state not in ["active", "running"]:
             if "completed" == task.state and not mark_as_done:
-                if job_existed and "completed" == job.state:
-                    # need to not be completed to edit
-                    client.job.enable(job.id)
+                # if job_existed and "completed" == job.state:
+                #     # need to not be completed to edit
+                #     client.job.enable(job.id)
                 logging.warning(f"Deleting completed task to rerun {dir_fire}")
                 client.task.delete(job_id, task.id)
                 while task_exists(job_id, task.id):

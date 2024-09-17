@@ -69,9 +69,6 @@ JOB_ID = None
 IS_USING_BATCH = None
 TIFF_SLEEP = 10
 
-FILE_LOCK_BATCH_JOB = os.path.join(DIR_OUTPUT, "batch_job")
-
-
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
     try:
@@ -157,13 +154,12 @@ def get_job_id(dir_fire):
     return job_id
 
 
-def assign_job(dir_fire):
+def assign_job(dir_fire, client=None):
     global JOB_ID
-    with locks_for(FILE_LOCK_BATCH_JOB) as locks:
-        job_id = get_job_id(dir_fire)
-        if JOB_ID != job_id:
-            job, job_existed = make_or_get_job(job_id=job_id)
-            JOB_ID = job.id
+    job_id = get_job_id(dir_fire)
+    if JOB_ID != job_id:
+        job, job_existed = make_or_get_job(job_id=job_id)
+        JOB_ID = job.id
     return JOB_ID
 
 
