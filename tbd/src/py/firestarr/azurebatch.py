@@ -251,6 +251,9 @@ def make_or_get_job(pool_id=POOL_ID, job_id=None, client=None, *args, **kwargs):
             if "completed" == job.state:
                 logging.info(f"Deleting completed job {job_id}")
                 client.job.delete(job_id)
+                while job_exists(job_id):
+                    print(".", end="", flush=True)
+                    time.sleep(1)
             else:
                 return job, True
         except batchmodels.BatchErrorException:
@@ -360,6 +363,18 @@ def task_exists(job_id, task_id, client=None):
         return True
     except batchmodels.BatchErrorException as ex:
         if "TaskNotFound" != ex.error.code:
+            raise ex
+    return False
+
+
+def job_exists(job_id, client=None):
+    if client is None:
+        client = get_batch_client()
+    try:
+        job = client.job.get(job_id)
+        return True
+    except batchmodels.BatchErrorException as ex:
+        if "JobNotFound" != ex.error.code:
             raise ex
     return False
 
