@@ -169,5 +169,8 @@ if __name__ == "__main__":
         except Exception as ex:
             logging.error(ex)
             logging.error(get_stack(ex))
+            if no_retry:
+                logging.error("Stopping because of error")
+                sys.exit(-1)
             logging.info("Trying again because of error")
     logging.info("Finished successfully")
