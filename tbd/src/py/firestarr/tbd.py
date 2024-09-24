@@ -160,6 +160,8 @@ def assign_job(dir_fire, client=None):
     if JOB_ID != job_id:
         job, job_existed = make_or_get_job(job_id=job_id)
         JOB_ID = job.id
+    if JOB_ID is None:
+        raise RuntimeError("No job id assigned")
     return JOB_ID
 
 
