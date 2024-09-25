@@ -47,7 +47,14 @@ merge_results=`diff -q ${dir_last_sims} ${dir_cur_sims} \
     | grep "Common subdirectories" \
     | sed "s/.*\/\([^ ]*\) and.*/\1/g" \
     | xargs -P $(nproc) -I {} ${DIR}/merge_folders.sh "${dir_last_sims}" "${dir_cur_sims}" "{}"`
-copied=`echo -n "${merge_results}" \
+RESULT=$?
+if [ 0 -ne "${RESULT}" ]; then
+ echo "Merging failed:"
+ echo -n "${merge_results}"
+ exit ${RESULT}
+fi
+# HACK: 0 needs to be there to determine number of copied if nothing copied since blank in that case
+copied=`cat <(echo -n "${merge_results}") <(echo 0) \
     | paste -sd+ - \
     | bc`
 RESULT=$?
@@ -58,11 +65,11 @@ if [ 0 -ne "${RESULT}" ]; then
 fi
 echo "Copied outputs from ${copied} / ${N} directories"
 
-if [ "${copied}" -eq "${N}" ]; then
+if [ "${copied}" -eq "0" ]; then
     # FIX: kind of dumb to copy everything if it's the same and then delete but simpler for now
     echo "All inputs are the same so no reason to run anything or keep this version"
     echo "Deleting ${CUR_RUN}"
-    rm -rfv "${dir_cur_sims}"
+    rm -rf "${dir_cur_sims}" "${dir_cur_runs}"
     echo "${LAST_RUN} was already up-to-date so deleted ${CUR_RUN}"
 else
     echo "Running merged run in ${CUR_RUN}"
