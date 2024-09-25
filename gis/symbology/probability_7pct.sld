@@ -27,7 +27,7 @@
               <sld:ColorMapEntry opacity="0.929412" label="0.7 - 0.8" color="#ee4f2c" quantity="0.80000000000000004"/>
               <sld:ColorMapEntry label="0.8 - 0.9" color="#eb3326" quantity="0.90000000000000002"/>
               <sld:ColorMapEntry label="> 0.9" color="#e6151f" quantity="1.0000000010000001"/>
-              <sld:ColorMapEntry label="Existing" color="#ad595a" quantity="2.0000000010000001"/>
+              <sld:ColorMapEntry label="Existing" color="#64292a" quantity="2.0000000010000001"/>
               <sld:ColorMapEntry label="Unprocessed" color="#b7b7b7" quantity="999"/>
             </sld:ColorMap>
           </sld:RasterSymbolizer>

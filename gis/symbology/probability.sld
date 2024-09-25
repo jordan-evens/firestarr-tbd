@@ -27,7 +27,7 @@
               <sld:ColorMapEntry color="#ee4f2c" quantity="0.8" label="0.7 - 0.8"/>
               <sld:ColorMapEntry color="#eb3326" quantity="0.9" label="0.8 - 0.9"/>
               <sld:ColorMapEntry color="#e6151f" quantity="1.000000001" label="> 0.9"/>
-              <sld:ColorMapEntry color="#ad595a" quantity="2.000000001" label="Existing"/>
+              <sld:ColorMapEntry color="#64292a" quantity="2.000000001" label="Existing"/>
               <sld:ColorMapEntry color="#b7b7b7" quantity="999" label="Unprocessed"/>
             </sld:ColorMap>
           </sld:RasterSymbolizer>

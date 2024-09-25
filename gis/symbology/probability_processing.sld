@@ -29,7 +29,7 @@
               <sld:ColorMapEntry label="> 0.9" quantity="1.0000000001" color="#e6151f"/>
               <sld:ColorMapEntry label="Unprocessed" quantity="2.0000000001" color="#b7b7b7"/>
               <sld:ColorMapEntry label="Processing" quantity="3.0000000001" color="#ff00ff"/>
-              <sld:ColorMapEntry label="Existing" quantity="4.0000000001" color="#ad595a"/>
+              <sld:ColorMapEntry label="Existing" quantity="4.0000000001" color="#64292a"/>
             </sld:ColorMap>
           </sld:RasterSymbolizer>
         </sld:Rule>

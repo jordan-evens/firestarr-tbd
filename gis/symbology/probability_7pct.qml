@@ -158,7 +158,7 @@
           <item value="0.8" label="0.7 - 0.8" color="#ee4f2c" alpha="237"/>
           <item value="0.9" label="0.8 - 0.9" color="#eb3326" alpha="255"/>
           <item value="1.000000001" label="> 0.9" color="#e6151f" alpha="255"/>
-          <item value="2.000000001" label="Existing" color="#ad595a" alpha="255"/>
+          <item value="2.000000001" label="Existing" color="#64292a" alpha="255"/>
           <item value="999" label="Unprocessed" color="#b7b7b7" alpha="255"/>
           <rampLegendSettings orientation="2" maximumLabel="" suffix="" direction="0" prefix="" useContinuousLegend="1" minimumLabel="">
             <numericFormat id="basic">

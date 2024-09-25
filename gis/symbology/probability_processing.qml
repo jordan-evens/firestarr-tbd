@@ -160,7 +160,7 @@
           <item label="> 0.9" alpha="255" value="1.000000001" color="#e6151f"/>
           <item label="Unprocessed" alpha="255" value="2" color="#b7b7b7"/>
           <item label="Processing" alpha="255" value="3" color="#ff00ff"/>
-          <item label="Existing" alpha="255" value="4" color="#ad595a"/>
+          <item label="Existing" alpha="255" value="4" color="#64292a"/>
           <rampLegendSettings minimumLabel="" prefix="" useContinuousLegend="1" suffix="" direction="0" orientation="2" maximumLabel="">
             <numericFormat id="basic">
               <Option type="Map">
