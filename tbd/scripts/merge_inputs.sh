@@ -27,17 +27,23 @@ dir_last_runs="${DIR_RUNS}/${LAST_RUN}"
 # since previous run finished fine we can do this
 echo "Preparing new run to merge into"
 (${DIR}/update.sh --prepare-only --no-resume --no-retry)
-# do this instead of || so we can copy the whole line above when debugging
+# delay this so we can delete if failed
 RESULT=$?
-if [ 0 -ne "${RESULT}" ]; then
- echo "Couldn't create new run to merge into"
- exit ${RESULT}
-fi
 
+# do this instead of || so we can copy the whole line above when debugging
 # same as above since we just added another directory to the end of the list
 CUR_RUN=`ls -1 ${DIR_SIMS} | sort | grep -v "${SUBDIR_COMMON}" | tail -n 1`
 dir_cur_sims="${DIR_SIMS}/${CUR_RUN}"
 dir_cur_runs="${DIR_RUNS}/${CUR_RUN}"
+
+if [ 0 -ne "${RESULT}" ]; then
+ if [ "${CUR_RUN}" != "${LAST_RUN}" ]; then
+  echo "Deleting failed run ${CUR_RUN}"
+  rm -rf "${dir_cur_sims}" "${dir_cur_runs}"
+ fi
+ echo "Couldn't create new run to merge into"
+ exit ${RESULT}
+fi
 
 echo "Merging ${LAST_RUN} into ${CUR_RUN}"
 N=`ls -1 "${dir_cur_sims}" | grep -v "model" | wc -l`
