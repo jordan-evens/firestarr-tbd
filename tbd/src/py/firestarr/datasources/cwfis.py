@@ -2,6 +2,7 @@ import datetime
 import os
 from collections import Counter
 from functools import cache
+from urllib.error import HTTPError
 
 import geopandas as gpd
 import model_data
@@ -367,15 +368,22 @@ class SourceFwiCwfisDownload(SourceFwi):
         ymd = date.strftime(FMT_DATE_YMD)
         url = f"{URL_CWFIS_DOWNLOADS}/fwi_obs/current/cwfis_fwi_{ymd}.csv"
         stns = cls._get_stns(dir_out)
-
-        return try_save_http(
-            url,
-            os.path.join(dir_out, os.path.basename(url)),
-            keep_existing=True,
-            fct_pre_save=None,
-            fct_post_save=do_parse,
-            check_code=True,
-        )
+        try:
+            # HACK: catch 404 here so other functions don't cache values
+            return try_save_http(
+                url,
+                os.path.join(dir_out, os.path.basename(url)),
+                keep_existing=True,
+                fct_pre_save=None,
+                fct_post_save=do_parse,
+                check_code=True,
+            )
+        except HTTPError as ex:
+            if 404 == ex.code:
+                logging.warning(ex)
+                return None
+            else:
+                raise ex
 
     def _get_fwi(self, lat, lon, date):
         return select_fwi(lat, lon, self._get_wx_base(self._dir_out, date), self.columns)
