@@ -27,21 +27,20 @@ function do_archive()
     options="${options} -sdel"
   else
     echo "Archiving without deleting ${run}"
-    file_newest=`(find ${dir_sims} -type f -printf '%T@ %P\n'; find ${dir_runs} -type f -printf '%T@ %P\n')  | sort -n | tail -n1 | awk '{print $2}'`
-    echo "Archiving ${run} as ${file_out}"
-    if [ -f "${file_out}" ]; then
-      echo "Updating ${file_out}"
-      if [ "${file_newest}" -nt "${file_out}" ]; then
-        echo "Checking existing archive ${file_out}"
-        # if 7z can't open the archive then we need to get rid of it
-        7za t "${file_out}" || (rm "${file_out}")
-      else
-        echo "Archive already up-to-date"
-        return
-      fi
-    else
-      echo "Creating ${file_out}"
+  fi
+  file_newest=`(find ${dir_sims} -type f -printf '%T@ %P\n'; find ${dir_runs} -type f -printf '%T@ %P\n')  | sort -n | tail -n1 | awk '{print $2}'`
+  echo "Archiving ${run} as ${file_out}"
+  if [ -f "${file_out}" ]; then
+    echo "Updating ${file_out}"
+    echo "Checking existing archive ${file_out}"
+    # if 7z can't open the archive then we need to get rid of it
+    7za t "${file_out}" || (echo "Removing invalid file ${file_out}" && rm "${file_out}")
+    if [ -f "${file_out}" ] && [ ! "${file_newest}" -nt "${file_out}" ]; then
+      echo "Archive already up-to-date"
+      return
     fi
+  else
+    echo "Creating ${file_out}"
   fi
   if [ -d "${dir_sims}" ]; then
     echo "Adding ${dir_sims}"
