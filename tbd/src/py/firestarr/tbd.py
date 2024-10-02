@@ -44,6 +44,8 @@ from common import (
     run_process,
     try_remove,
 )
+from redundancy import call_safe
+
 from gis import (
     Rasterize,
     find_best_raster,
@@ -53,7 +55,6 @@ from gis import (
     save_geojson,
     save_point_file,
 )
-from redundancy import call_safe
 
 # set to "" if want intensity grids
 NO_INTENSITY = "--no-intensity"
@@ -68,6 +69,7 @@ _FIND_RUNNING = None
 JOB_ID = None
 IS_USING_BATCH = None
 TIFF_SLEEP = 10
+
 
 def run_firestarr_local(dir_fire):
     stdout, stderr = None, None
@@ -93,7 +95,8 @@ def run_firestarr_local(dir_fire):
 
 def find_running_local(dir_fire):
     processes = []
-    for p in psutil.process_iter(attrs=["pid", "name", "cwd"]):
+    # NOTE: using as_dict() causes errors if process is finished
+    for p in psutil.process_iter():
         try:
             if p.name() == "tbd" and psutil.pid_exists(p.pid):
                 cwd = p.cwd()
