@@ -420,9 +420,15 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
             else:
                 return task.id
         if task_existed:
+            if mark_as_done:
+                # just return if no task but it's done already
+                # HACK: delete since can't mark as complete without showing as failure and still requesting nodes in AutoScale
+                client.task.delete(job_id, task.id)
+                return None
+
             # HACK: since sim.sh will complete successfully without running if run already succeeded, there's no harm in running tasks again
             # if task.state not in ["active", "running"]:
-            if "completed" == task.state and not mark_as_done:
+            if "completed" == task.state:
                 # if job_existed and "completed" == job.state:
                 #     # need to not be completed to edit
                 #     client.job.enable(job.id)
@@ -433,6 +439,9 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
                     time.sleep(1)
                 # remake task so it can be added
                 task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
+        if mark_as_done:
+            # task doesn't exist so just return
+            return None
         if not task_existed:
             client.task.add(job_id, task)
             # wait until task is added
@@ -441,14 +450,6 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
         if not check_successful(job_id, task.id, client=client):
             # need to get task again in case it was just added
             task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
-            if "completed" != task.state and mark_as_done:
-                # already done so terminate
-                # HACK: can't find documentation on what terminate_reason options are so might not be right
-                client.task.terminate(
-                    job_id,
-                    task.id,
-                    terminate_reason="AllTasksComplete",
-                )
             # wait if requested and task isn't done
             if wait:
                 while True:
