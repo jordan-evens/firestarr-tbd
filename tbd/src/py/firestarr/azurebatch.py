@@ -411,8 +411,8 @@ def add_simulation_task(job_id, dir_fire, wait=True, client=None, mark_as_done=F
     try:
         if client is None:
             client = get_batch_client()
-        task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
         job, job_existed = make_or_get_job(job_id=job_id)
+        task, task_existed = make_or_get_simulation_task(job_id, dir_fire, client=client)
         # HACK: assume jobs will never be completed without directories being correct
         if "completed" == job.state:
             if not mark_as_done:
@@ -498,7 +498,24 @@ def get_active(client=None, active_only=False):
     if client is None:
         client = get_batch_client()
     jobs = {j.id: j for j in client.job.list() if is_active(j.state)}
-    tasks = {job.id: {t.id: t for t in client.task.list(job.id) if is_active(t.state)} for job in jobs.values()}
+
+    def get_tasks_by_job(job):
+        nonlocal jobs
+        tasks = {}
+        try:
+            tasks = {t.id: t for t in client.task.list(job.id) if is_active(t.state)}
+        except batchmodels.BatchErrorException as ex:
+            if "JobNotFound" != ex.error.code:
+                raise ex
+            # job is listed as active but is invalid so need to recreate
+            logging.error(f"Batch task {job.id} is listed as active but invalid")
+            j = make_or_get_job(job_id=job.id)
+            # HACK: replace value in outside dictionary
+            jobs[j.id] = j
+        return tasks
+
+    tasks = {job.id: get_tasks_by_job(job) for job in jobs.values()}
+
     pools = {p.id: p for p in client.pool.list() if is_active(p.state)}
     nodes = {pool.id: {n.id: n for n in list_nodes(pool.id, client=None)} for pool in pools.values()}
     return jobs, tasks, pools, nodes
@@ -594,6 +611,9 @@ def get_batch_client():
             batchauth.SharedKeyCredentials(_BATCH_ACCOUNT_NAME, _BATCH_ACCOUNT_KEY),
             batch_url=_BATCH_ACCOUNT_URL,
         )
+        # HACK:
+        # first load so use get_active() to force checking if jobs are valid
+        jobs, tasks, pools, nodes = get_active(client=CLIENT)
     return CLIENT
 
 
