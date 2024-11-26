@@ -39,7 +39,12 @@ function do_archive()
     echo "Archiving and deleting ${run}"
     # sims is the bigger folder so move it
     # NOTE: this is on azure so really slow
-    mv -v ${dir_sims} ${dir_tmp}
+    # if the folder was backed up previously and is still in there then mv doesn't work
+    if [ -d "${dir_tmp}" ]; then
+      rsync -avHP ${dir_sims}/ ${dir_tmp}
+    else
+      mv -v ${dir_sims} ${dir_tmp}
+    fi
     # dir_runs copied below and deleted at end
   else
     echo "Archiving without deleting ${run}"
