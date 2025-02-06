@@ -99,7 +99,6 @@ class Source(ABC):
         self._bounds = bounds if bounds is None else bounds.dissolve()
 
     @classmethod
-    @property
     @abstractmethod
     def _provides(cls):
         pass
@@ -110,21 +109,19 @@ class Source(ABC):
         return None if self._bounds is None else self._bounds.loc[:]
 
     @classmethod
-    @property
     @final
     def columns(cls):
-        return COLUMNS[cls._provides]["columns"]
+        return COLUMNS[cls._provides()]["columns"]
 
     @classmethod
-    @property
     @final
     def key(cls):
-        return COLUMNS[cls._provides]["key"]
+        return COLUMNS[cls._provides()]["key"]
 
     @classmethod
     @final
     def check_columns(cls, df):
-        return check_columns(df, cls._provides)
+        return check_columns(df, cls._provides())
 
     def applies_to(self, lat, lon) -> bool:
         return self._bounds is None or np.any(self._bounds.contains(make_point(lat, lon, self._bounds.crs)))
@@ -135,7 +132,6 @@ class SourceFeature(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "feature"
 
@@ -153,7 +149,6 @@ class SourceFire(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "fire"
 
@@ -171,7 +166,6 @@ class SourceModel(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "model"
 
@@ -189,7 +183,6 @@ class SourceHourly(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "hourly"
 
@@ -207,7 +200,6 @@ class SourceFwi(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "fwi"
 
@@ -225,7 +217,6 @@ class SourceFireWeather(Source):
         super().__init__(bounds)
 
     @classmethod
-    @property
     def _provides(cls):
         return "fire_weather"
 

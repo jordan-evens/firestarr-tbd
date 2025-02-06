@@ -365,7 +365,7 @@ class SourceFwiCwfisDownload(SourceFwi):
             df = df.loc[~df["ffmc"].isna()]
             df["wmo"] = df["wmo"].astype(str)
             df = pd.merge(df, stns, on=["aes", "wmo"])
-            df = df[["lat", "lon"] + cls.columns]
+            df = df[["lat", "lon"] + cls.columns()]
             df["datetime"] = pd.to_datetime(date) + datetime.timedelta(hours=12)
             df = df.sort_values(["datetime", "lat", "lon"])
             return to_gdf(df)
@@ -391,7 +391,7 @@ class SourceFwiCwfisDownload(SourceFwi):
                 raise ex
 
     def _get_fwi(self, lat, lon, date):
-        return select_fwi(lat, lon, self._get_wx_base(self._dir_out, date), self.columns)
+        return select_fwi(lat, lon, self._get_wx_base(self._dir_out, date), self.columns())
 
 
 class SourceFwiCwfisService(SourceFwi):
@@ -400,8 +400,8 @@ class SourceFwiCwfisService(SourceFwi):
         self._dir_out = dir_out
 
     def _get_fwi(self, lat, lon, date):
-        df_wx = model_data.get_wx_cwfis(self._dir_out, date, indices=",".join(self.columns))
-        return select_fwi(lat, lon, df_wx, self.columns)
+        df_wx = model_data.get_wx_cwfis(self._dir_out, date, indices=",".join(self.columns()))
+        return select_fwi(lat, lon, df_wx, self.columns())
 
 
 class SourceFwiCwfis(SourceFwi):

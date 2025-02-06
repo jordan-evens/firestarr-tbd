@@ -225,12 +225,11 @@ class SourceGEPS(SourceModel):
         self._dir_out = dir_out
 
     @classmethod
-    @property
     def model(cls):
         return "geps"
 
     def _get_wx_model(self, lat, lon):
-        file_out = os.path.join(self._dir_out, make_filename(self.model, lat, lon, "geojson"))
+        file_out = os.path.join(self._dir_out, make_filename(self.model(), lat, lon, "geojson"))
 
         # retry once in case existing file doesn't parse
         @ensures(
@@ -240,7 +239,7 @@ class SourceGEPS(SourceModel):
             retries=1,
         )
         def do_create(_):
-            gdf = to_gdf(get_wx_ensembles(self.model, lat, lon).reset_index())
+            gdf = to_gdf(get_wx_ensembles(self.model(), lat, lon).reset_index())
             save_geojson(gdf, _)
             return _
 
