@@ -32,13 +32,12 @@ RUN apt-get update --fix-missing \
 FROM gcc-cmake-with_libs AS tbd_build
 ARG USERNAME
 ARG VERSION
-WORKDIR /appl/tbd
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/cpp src/cpp/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/CMakeLists.txt .
+WORKDIR /appl/firestarr
+COPY --chown=${USERNAME}:${USERNAME} ./firestarr ./
 USER ${USERNAME}
+WORKDIR /appl/firestarr
 RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc \
-  && cmake -S . -B /appl/tbd/build -D CMAKE_BUILD_TYPE=Release \
-  && cmake --build /appl/tbd/build --config Release --target all -j $(nproc)
+  && /appl/firestarr/scripts/build.sh
 
 
 FROM minimal-with-libs AS firestarr-base
@@ -47,9 +46,9 @@ ARG VERSION
 USER root
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 WORKDIR /appl/tbd
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/fuel.lut /appl/tbd/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/settings.ini /appl/tbd/
-COPY --chown=${USERNAME}:${USERNAME} --from=tbd_build /appl/tbd/tbd /appl/tbd/
+COPY --chown=${USERNAME}:${USERNAME} ./firestarr/fuel.lut .
+COPY --chown=${USERNAME}:${USERNAME} ./firestarr/settings.ini .
+COPY --chown=${USERNAME}:${USERNAME} --from=tbd_build /appl/firestarr/tbd .
 USER ${USERNAME}
 RUN echo cd /appl/tbd >> /home/${USERNAME}/.bashrc
 RUN echo export VERSION=${VERSION} >> /home/${USERNAME}/.bashrc
@@ -148,13 +147,13 @@ ARG USERNAME
 ARG VERSION
 WORKDIR /appl/tbd
 COPY --chown=${USERNAME}:${USERNAME} ./config /appl/
-COPY --chown=${USERNAME}:${USERNAME} --from=tbd_build /appl/tbd/tbd .
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/bounds.geojson /appl/tbd/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/fuel.lut /appl/tbd/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/settings.ini /appl/tbd/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/scripts /appl/tbd/scripts/
-COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/py/firestarr /appl/tbd/src/py/firestarr/
-WORKDIR /appl/tbd/src/py/cffdrs-ng
+COPY --chown=${USERNAME}:${USERNAME} --from=tbd_build /appl/firestarr/tbd .
+COPY --chown=${USERNAME}:${USERNAME} ./tbd/bounds.geojson .
+COPY --chown=${USERNAME}:${USERNAME} ./firestarr/fuel.lut .
+COPY --chown=${USERNAME}:${USERNAME} ./firestarr/settings.ini .
+COPY --chown=${USERNAME}:${USERNAME} ./tbd/scripts ./scripts/
+COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/py/firestarr ./src/py/firestarr/
+WORKDIR ./src/py/cffdrs-ng
 COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/py/cffdrs-ng/NG_FWI.py .
 COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/py/cffdrs-ng/old_cffdrs.py .
 COPY --chown=${USERNAME}:${USERNAME} ./tbd/src/py/cffdrs-ng/util.py .

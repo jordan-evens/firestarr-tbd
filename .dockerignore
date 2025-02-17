@@ -5,11 +5,9 @@
 !.docker/crontab
 !gis
 !tbd/src
-!tbd/CMakeLists.txt
-!tbd/fuel.lut
 !tbd/bounds.geojson
 !tbd/scripts/*.sh
-!tbd/settings.ini
+!firestarr
 !./config
 
 **/__pycache__

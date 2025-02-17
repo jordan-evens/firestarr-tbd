@@ -1,3 +1,8 @@
+# firestarr-tbd
+
+A series of scripts to collect data for, run, and post results for the FireSTARR FGM.
+
+
 # About FireSTARR
 
 ## Overview
