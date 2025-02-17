@@ -45,8 +45,17 @@ services:
       - data:/appl/data
       - sims:/appl/data/sims
       - type: bind
+        source: firestarr
+        target: /appl/firestarr
+      - type: bind
         source: ./tbd
         target: /appl/tbd
+      - type: bind
+        source: ./firestarr/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./firestarr/fuel.lut
+        target: /appl/tbd/fuel.lut
     restart: on-failure
     cap_add:
       - SYS_PTRACE
@@ -75,8 +84,17 @@ services:
       - data:/appl/data
       - sims:/appl/data/sims
       - type: bind
+        source: firestarr
+        target: /appl/firestarr
+      - type: bind
         source: ./tbd
         target: /appl/tbd
+      - type: bind
+        source: ./firestarr/settings.ini
+        target: /appl/tbd/settings.ini
+      - type: bind
+        source: ./firestarr/fuel.lut
+        target: /appl/tbd/fuel.lut
     restart: on-failure
     cap_add:
       - SYS_PTRACE
